@@ -2,6 +2,7 @@
     <hook:MenuLayer>
         <layout:Line dir=down>
             <label>Epic text</label>
+            <button>My button</button>
         </layout>
     </hook>
 </gdml>

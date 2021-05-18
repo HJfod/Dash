@@ -1,27 +1,29 @@
 using System;
-using System.Collections;
+using System.IO;
+using utils;
 
 namespace gdml {
-    class GDMLNode {
-        private ArrayList children;
-        private string name;
-        public string content {
-            get { return content; }
-            set { content = value; }
-        };
-
-        public void AddChild(GDMLNode node) {
-            this.children.add(node);
-        }
-    }
-    
-    class GDMLDocument : GDMLNode {
-
-    }
-
     class Parser {
-        public Parser() {
-            Console.WriteLine("bruh");
+        private GDMLDocument document;
+
+        public Parser() {}
+        public Parser(string path) {
+            var res = this.Parse(path);
+            if (res.Success)
+                this.document = res.Data;
+        }
+
+        public Result<GDMLDocument> Parse(string path) {
+            if (!File.Exists(path))
+                return new ErrorResult<GDMLDocument>("File not found!");
+
+            this.document = new GDMLDocument();
+
+            foreach (var line in File.ReadAllLines(path)) {
+                Console.WriteLine(line);
+            }
+            
+            return new SuccessResult<GDMLDocument>(this.document);
         }
     }
 }
