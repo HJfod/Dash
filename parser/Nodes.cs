@@ -28,7 +28,7 @@ namespace gdml {
         public void AddAttribute(PGDMLAttribute attr) {
             this.attributes.Add(attr);
         }
-        
+
         public void AddAttribute<T>(string name, T value) {
             this.attributes.Add(new GDMLAttribute<T>(name, value));
         }
@@ -43,5 +43,9 @@ namespace gdml {
     class GDMLDocument {
         public string rawData { get; internal set; }
         public List<GDMLScene> scenes { get; internal set; }
+
+        public GDMLDocument(string raw) {
+            this.rawData = raw;
+        }
     }
 }
