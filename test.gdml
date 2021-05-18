@@ -1,0 +1,7 @@
+<gdml>
+    <hook:MenuLayer>
+        <layout:Line dir=down>
+            <label>Epic text</label>
+        </layout>
+    </hook>
+</gdml>
