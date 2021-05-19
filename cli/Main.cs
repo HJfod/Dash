@@ -4,9 +4,12 @@ namespace gdml {
     public static class Program {
         [STAThread]
         static void Main(string[] args) {
-            if (args.Length == 0)
-                // todo: recread directory for gdml files
+            if (args.Length == 0) {
+                // todo: recurread directory for gdml files
+
+                Console.WriteLine("no files provided");
                 return;
+            }
 
             var parser = new Parser();
 

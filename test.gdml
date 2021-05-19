@@ -1,7 +1,18 @@
-<gdml><hook:MenuLayer>
+<gdml>
+    <define:MyStruct>
+        <label>Cool</Label>
+    </define>
+
+    <hook:MenuLayer>
         <layout:Line dir=down>
             <label>Epic text</label>
-            <button>My button</button>
+            <button>My button
+                <cpp>
+                    std::cout << "Clicked!" << std::endl;
+                </cpp>
+            </button>
+            <inline />
+            <MyStruct />
         </layout>
     </hook>
 </gdml>

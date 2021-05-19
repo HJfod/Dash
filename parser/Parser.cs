@@ -1,58 +1,54 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using utils;
 
 namespace gdml {
     class Parser {
-        private GDMLDocument document;
-        private List<string> currentTag = new List<string>();
-        private string rawData = null;
-        private int currentPosition = 0;
+        private GDMLDocument Document;
+        private List<GDMLNode> CurrentTag = new List<GDMLNode>();
+        private string RawData = null;
+        private int CurrentPosition = 0;
 
         private class ReachedEndOfFile<T> : Result<T> {
             public ReachedEndOfFile() : base(default) {}
         }
 
-        private string GetTypeFromTag(string tag) {
-            var nSpace = tag.IndexOf(' ');
-            var nColon = tag.IndexOf(':');
-
-            if (nSpace == -1 && nColon == -1)
-                return tag;
-            
-            if (nSpace == -1) return tag.Substring(0, nColon);
-            if (nColon == -1) return tag.Substring(0, nSpace);
-
-            if (nSpace > nColon)
-                return tag.Substring(0, nColon);
-            if (nColon > nSpace)
-                return tag.Substring(0, nSpace);
-            
-            return "";
-        }
-
         private Result<string> FindNextTag() {
-            var startPoint = rawData.IndexOf('<', this.currentPosition);
+            var startPoint = RawData.IndexOf('<', this.CurrentPosition);
 
             if (startPoint == -1)
                 return new ReachedEndOfFile<string>();
 
-            var endPoint = rawData.IndexOf('>', startPoint) + 1;
+            var endPoint = RawData.IndexOf('>', startPoint) + 1;
 
-            this.currentPosition = endPoint;
+            this.CurrentPosition = endPoint;
 
-            var ret = rawData.Substring(
+            var ret = RawData.Substring(
                 startPoint + 1,
                 endPoint - 2 - startPoint
             ).Trim();
 
             if (ret.StartsWith('/'))
-                currentTag.RemoveAt(currentTag.Count - 1);
-            else if (!ret.EndsWith('/'))
-                currentTag.Add(this.GetTypeFromTag(ret));
+                CurrentTag.RemoveAt(CurrentTag.Count - 1);
+            else {
+                var res = new GDMLNode();
+                var success = res.Parse(ret);
+
+                if (success.Failure)
+                    return success;
+
+                if (this.CurrentTag.Count == 0)
+                    this.Document.Root = res;
+                else
+                    CurrentTag.Last().AddChild(res);
+
+                if (!ret.EndsWith('/'))
+                    CurrentTag.Add(res);
+            }
             
-            Console.WriteLine('>' + string.Join(' ', this.currentTag));
+            Console.WriteLine(string.Join(' ', this.CurrentTag));
 
             return new SuccessResult<string>(ret);
         }
@@ -61,7 +57,7 @@ namespace gdml {
         public Parser(string path) {
             var res = this.Parse(path);
             if (res.Success)
-                this.document = res.Data;
+                this.Document = res.Data;
         }
 
         public Result<GDMLDocument> Parse(string path) {
@@ -69,12 +65,12 @@ namespace gdml {
                 return new ErrorResult<GDMLDocument>("File not found!");
 
             var data = File.ReadAllText(path).Replace('\n', ' ').Replace('\r', ' ');
-            this.rawData = data;
-            this.document = new GDMLDocument(data);
+            this.RawData = data;
+            this.Document = new GDMLDocument(data);
             
             while (!(this.FindNextTag() is ReachedEndOfFile<string>));
             
-            return new SuccessResult<GDMLDocument>(this.document);
+            return new SuccessResult<GDMLDocument>(this.Document);
         }
     }
 }
