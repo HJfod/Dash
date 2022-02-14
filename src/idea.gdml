@@ -1,0 +1,11 @@
+<!DOCTYPE gdml>
+
+<gdml>
+
+    <layout center>
+
+        <label>Hello World!</label>
+
+    </layout>
+
+</gdml>

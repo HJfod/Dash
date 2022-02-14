@@ -1,0 +1,19 @@
+{
+	"geode": 1,
+	"version": "v1.0.0",
+	"id": "com.hjfod.gdml",
+	"name": "GDML",
+	"developer": "HJfod",
+	"description": "",
+	"details": null,
+	"credits": null,
+	"binary": {
+		"*": "gdml"
+	},
+	"dependencies": [
+		{
+			"id": "com.geode.api",
+			"required": true
+		}
+	]
+}
