@@ -20,6 +20,7 @@ Result<> GDML::handleEdit(tinyxml2::XMLElement* elem, cocos2d::CCNode* node) {
 
     auto rgba = dynamic_cast<CCRGBAProtocol*>(node);
     auto label = dynamic_cast<CCLabelProtocol*>(node);
+    auto sprite = dynamic_cast<CCSprite*>(node);
 
     auto replaceExpShortHand = [this, node](std::string str) -> std::string {
         // because you can't just replace "w" with something else when 
@@ -32,6 +33,10 @@ Result<> GDML::handleEdit(tinyxml2::XMLElement* elem, cocos2d::CCNode* node) {
         string_utils::replaceIP(str, "wh", "_giigii");
         string_utils::replaceIP(str, "sw", "_grrgrr");
         string_utils::replaceIP(str, "sh", "_ghhghh");
+        string_utils::replaceIP(str, "tx", "_gggggg");
+        string_utils::replaceIP(str, "ty", "_g88g88");
+        string_utils::replaceIP(str, "tw", "_g00g00");
+        string_utils::replaceIP(str, "th", "_g22g22");
         string_utils::replaceIP(str, "x",  "_gkkgkk");
         string_utils::replaceIP(str, "y",  "_gllgll");
         string_utils::replaceIP(str, "w",  "_gnngnn");
@@ -49,6 +54,10 @@ Result<> GDML::handleEdit(tinyxml2::XMLElement* elem, cocos2d::CCNode* node) {
         string_utils::replaceIP(str, "_gllgll", m_varNames[node] + "->getPositionY()");
         string_utils::replaceIP(str, "_gnngnn", m_varNames[node] + "->getContentSize().width");
         string_utils::replaceIP(str, "_gppgpp", m_varNames[node] + "->getContentSize().height");
+        string_utils::replaceIP(str, "_gggggg", m_varNames[node] + "->getTextureRect().origin.x");
+        string_utils::replaceIP(str, "_g88g88", m_varNames[node] + "->getTextureRect().origin.y");
+        string_utils::replaceIP(str, "_g00g00", m_varNames[node] + "->getTextureRect().size.width");
+        string_utils::replaceIP(str, "_g22g22", m_varNames[node] + "->getTextureRect().size.height");
         normalizeExp(str);
         return str;
     };
@@ -62,11 +71,25 @@ Result<> GDML::handleEdit(tinyxml2::XMLElement* elem, cocos2d::CCNode* node) {
     table.add_constant("sh", node->getScaledContentSize().height);
     table.add_constant("ww", winSize.width);
     table.add_constant("wh", winSize.height);
+    for (auto& [var, val] : m_variables) {
+        if (val.m_type == Variable::Float) {
+            table.add_constant(var, std::any_cast<float>(val.m_value));
+        }
+        if (val.m_type == Variable::Int) {
+            table.add_constant(var, std::any_cast<int>(val.m_value));
+        }
+    }
     if (node->getParent()) {
         table.add_constant("px", node->getParent()->getPositionX());
         table.add_constant("py", node->getParent()->getPositionY());
         table.add_constant("pw", node->getParent()->getContentSize().width);
         table.add_constant("ph", node->getParent()->getContentSize().height);
+    }
+    if (sprite) {
+        table.add_constant("tx", sprite->getTextureRect().origin.x);
+        table.add_constant("ty", sprite->getTextureRect().origin.y);
+        table.add_constant("tw", sprite->getTextureRect().size.width);
+        table.add_constant("th", sprite->getTextureRect().size.height);
     }
 
     exprtk::expression<float> exp;
@@ -74,69 +97,68 @@ Result<> GDML::handleEdit(tinyxml2::XMLElement* elem, cocos2d::CCNode* node) {
 
     exprtk::parser<float> parser;
 
-    auto xEdit = elem->Attribute("x");
-    if (xEdit) {
-        auto val = std::string(xEdit);
-        if (parser.compile(val, exp)) {
-            node->setPositionX(exp.value());
-            m_cppData << m_varNames[node] << "->setPositionX(" << replaceExpShortHand(val) << ");\n";
-        } else {
-            Log::get() << "Error parsing math for X pos";
+    #define EDIT_NAME(f) edit_ ## f
+
+    #define RESOLVE_EXP(_var_, _val_, _type_) \
+        {auto expVal = this->replaceVariables(_val_);\
+        if (parser.compile(_val_, exp)) {\
+            _var_ = static_cast<_type_>(exp.value());\
+        } else {\
+            Log::get() << "Error parsing math expression \"" #_var_ "\": " << parser.error();\
+        }}
+
+    #define ADD_EDIT(_attr_, _func_, _type_) \
+        auto EDIT_NAME(_func_) = elem->Attribute(_attr_); \
+        if (EDIT_NAME(_func_)) {\
+            auto val = this->replaceVariables(EDIT_NAME(_func_));\
+            if (parser.compile(val, exp)) {\
+                node->_func_(static_cast<_type_>(exp.value()));\
+                m_cppData << m_varNames[node] << "->" #_func_ "(" << replaceExpShortHand(val) << ");\n";\
+            } else {\
+                Log::get() << "Error parsing math expression for \"" _attr_ "\": " << parser.error();\
+            }\
         }
-    }
 
-    auto yEdit = elem->Attribute("y");
-    if (yEdit) {
-        auto val = std::string(yEdit);
-        if (parser.compile(val, exp)) {
-            node->setPositionY(exp.value());
-            m_cppData << m_varNames[node] << "->setPositionY(" << replaceExpShortHand(val) << ");\n";
-        } else {
-            Log::get() << "Error parsing math for Y pos";
-        }
-    }
-
-    auto zEdit = elem->Attribute("z");
-    if (zEdit) {
-        try {
-            node->setZOrder(std::stoi(zEdit));
-            m_cppData << m_varNames[node] << "->setZOrder("
-                << zEdit << ");\n";
-        } catch(...) {}
-    }
-
-    auto scaleEdit = elem->Attribute("scale");
-    if (scaleEdit) {
-        try {
-            auto val = std::string(scaleEdit);
-            if (val._Starts_with(".")) val = "0" + val;
-            node->setScale(std::stof(val));
-            m_cppData << m_varNames[node] << "->setScale("
-                << floatFormat(val) << ");\n";
-        } catch(...) {}
-    }
-
-    auto rotateEdit = elem->Attribute("rotate");
-    if (rotateEdit) {
-        try {
-            auto val = std::string(rotateEdit);
-            if (val._Starts_with(".")) val = "0" + val;
-            node->setRotation(std::stof(val));
-            m_cppData << m_varNames[node] << "->setRotation("
-                << floatFormat(val) << ");\n";
-        } catch(...) {}
-    }
+    ADD_EDIT("x", setPositionX, float);
+    ADD_EDIT("y", setPositionY, float);
+    ADD_EDIT("z", setZOrder,    int);
+    ADD_EDIT("scale", setScale, float);
+    ADD_EDIT("scale-x", setScaleX, float);
+    ADD_EDIT("scale-y", setScaleY, float);
+    ADD_EDIT("rotate", setRotation, float);
+    ADD_EDIT("rotate-x", setRotationX, float);
+    ADD_EDIT("rotate-y", setRotationY, float);
+    ADD_EDIT("skew-x", setSkewX, float);
+    ADD_EDIT("skew-y", setSkewY, float);
 
     auto sizeEdit = elem->Attribute("size");
     if (sizeEdit) {
         auto val = std::string(sizeEdit);
         try {
-            if (string_utils::contains(val, ':')) {
-                auto width = std::stof(val.substr(0, val.find(':')));
-                auto height = std::stof(val.substr(val.find(':') + 1));
-                node->setContentSize({ width, height });
-                m_cppData << m_varNames[node] << "->setContentSize({ "
-                    << floatFormat(width) << ", " << floatFormat(height) << " });\n";
+            if (string_utils::contains(val, ',')) {
+                CCSize size = node->getContentSize();
+                RESOLVE_EXP(size.width, val.substr(0, val.find(',')), float);
+                RESOLVE_EXP(size.height, val.substr(val.find(',') + 1), float);
+                node->setContentSize(size);
+                m_cppData << m_varNames[node] << "->setContentSize({ " << val << " });\n";
+            } else {
+                Log::get() << "Invalid format for size";
+            }
+        } catch(...) {}
+    }
+
+    auto anchorEdit = elem->Attribute("anchor");
+    if (anchorEdit) {
+        auto val = std::string(anchorEdit);
+        try {
+            if (string_utils::contains(val, ',')) {
+                CCPoint point = node->getAnchorPoint();
+                RESOLVE_EXP(point.x, val.substr(0, val.find(',')), float);
+                RESOLVE_EXP(point.y, val.substr(val.find(',') + 1), float);
+                node->setContentSize(point);
+                m_cppData << m_varNames[node] << "->setAnchorPoint({ " << val << " });\n";
+            } else {
+                Log::get() << "Invalid format for anchor";
             }
         } catch(...) {}
     }
@@ -145,7 +167,7 @@ Result<> GDML::handleEdit(tinyxml2::XMLElement* elem, cocos2d::CCNode* node) {
     if (colorEdit) {
         try {
             if (rgba) {
-                auto color = parseColor(colorEdit);
+                auto color = parseColor(this->replaceVariables(colorEdit));
                 if (color) {
                     rgba->setColor(color.value());
                     m_cppData << m_varNames[node] << "->setColor("
@@ -163,7 +185,9 @@ Result<> GDML::handleEdit(tinyxml2::XMLElement* elem, cocos2d::CCNode* node) {
     if (opacityEdit) {
         try {
             if (rgba) {
-                rgba->setOpacity(static_cast<GLubyte>(std::stoi(opacityEdit)));
+                rgba->setOpacity(static_cast<GLubyte>(std::stoi(
+                    this->replaceVariables(opacityEdit)
+                )));
                 m_cppData << m_varNames[node] << "->setOpacity("
                     << opacityEdit << ");\n";
             } else {
@@ -176,9 +200,9 @@ Result<> GDML::handleEdit(tinyxml2::XMLElement* elem, cocos2d::CCNode* node) {
     if (textEdit) {
         try {
             if (label) {
-                label->setString(textEdit);
+                label->setString(this->replaceVariables(textEdit).c_str());
                 m_cppData << m_varNames[node] << "->setString(\""
-                    << textEdit << "\");\n";
+                    << string_utils::replace(textEdit, "\"", "\\\"") << "\");\n";
             } else {
                 Log::get() << "text called on non-textable node";
             }

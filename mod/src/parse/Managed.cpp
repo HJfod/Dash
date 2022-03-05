@@ -11,9 +11,16 @@ void Managed::touch(CCNode* node, bool recursive) {
 
     edit.pos = node->getPosition();
     edit.contentSize = node->getContentSize();
-    edit.rotation = node->getRotation();
     edit.scale = node->getScale();
+    edit.scaleX = node->getScaleX();
+    edit.scaleY = node->getScaleY();
+    edit.rotation = node->getRotation();
+    edit.rotationX = node->getRotationX();
+    edit.rotationY = node->getRotationY();
+    edit.skewX = node->getSkewX();
+    edit.skewY = node->getSkewY();
     edit.zOrder = node->getZOrder();
+    edit.anchorPoint = node->getAnchorPoint();
     
     auto rgba = dynamic_cast<CCRGBAProtocol*>(node);
     if (rgba) {
@@ -46,8 +53,15 @@ void Managed::clear() {
         node->setPosition(edit.pos);
         node->setContentSize(edit.contentSize);
         node->setRotation(edit.rotation);
+        node->setRotationX(edit.rotationX);
+        node->setRotationY(edit.rotationY);
         node->setScale(edit.scale);
+        node->setScaleX(edit.scaleX);
+        node->setScaleY(edit.scaleY);
+        node->setSkewX(edit.skewX);
+        node->setSkewY(edit.skewY);
         node->setZOrder(edit.zOrder);
+        node->setAnchorPoint(edit.anchorPoint);
 
         auto rgba = dynamic_cast<CCRGBAProtocol*>(node);
         if (rgba) {
@@ -66,6 +80,14 @@ void Managed::clear() {
         auto node = *it;
         node->removeFromParent();
     }
+    for (size_t i = 0; i < m_pushedScenes; i++) {
+        CCDirector::sharedDirector()->popScene();
+    }
     m_edits.clear();
     m_nodes.clear();
+    m_pushedScenes = 0;
+}
+
+void Managed::scene() {
+    m_pushedScenes++;
 }

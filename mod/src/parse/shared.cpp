@@ -79,7 +79,10 @@ std::string floatFormat(std::string f) {
         while (string_utils::endsWith(f, "0")) f.pop_back();
         return f + "f";
     }
-    return f + ".f";
+    if (f.size()) {
+        return f + ".f";
+    }
+    return ".0f";
 }
 
 std::string floatFormat(float f) {

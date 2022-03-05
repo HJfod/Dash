@@ -9,3 +9,7 @@ add_definitions(-DGDML_EXPORT)
 
 set(SOURCE_FILES ${SOURCES})
 include(../sdk/Geode.cmake)
+
+add_subdirectory(../sdk/include/fmt ${CMAKE_BINARY_DIR}/fmt)
+
+target_link_libraries(GDML fmt)

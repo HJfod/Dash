@@ -1,4 +1,5 @@
 #include "GDML.hpp"
+#include <fmt/include/fmt/format.h>
 
 using namespace std::string_literals;
 
@@ -33,6 +34,44 @@ GDML* GDML::get() {
     return inst;
 }
 
+std::string GDML::replaceVariables(const char* str) {
+    return this->replaceVariables(str ? std::string(str) : ""s);
+}
+
+std::string GDML::replaceVariables(std::string const& str) {
+    auto s = str;
+    size_t ix = 0;
+    for (auto& [varName, val] : m_variables) {
+        // absolutely flabber-gastedly shitty fix for 
+        // double-escaping
+        ix++;
+        if (ix < m_variables.size()) {
+            string_utils::replaceIP(s, "{{", "__ESCAPED0__");
+            string_utils::replaceIP(s, "}}", "__ESCAPED1__");
+        }
+        try {
+            switch (val.m_type) {
+                case Variable::Int:
+                    s = fmt::format(s, fmt::arg(varName.c_str(), std::any_cast<int>(val.m_value)));
+                    break;
+
+                case Variable::Float:
+                    s = fmt::format(s, fmt::arg(varName.c_str(), std::any_cast<float>(val.m_value)));
+                    break;
+
+                case Variable::String:
+                    s = fmt::format(s, fmt::arg(varName.c_str(), std::any_cast<std::string>(val.m_value)));
+                    break;
+            }
+        } catch(...) {}
+        if (ix < m_variables.size()) {
+            string_utils::replaceIP(s, "__ESCAPED0__", "{{");
+            string_utils::replaceIP(s, "__ESCAPED1__", "}}");
+        }
+    }
+    return s;
+}
+
 void GDML::acquireVarName(tinyxml2::XMLElement* elem, CCNode* node) {
     if (m_varNames.count(node)) return;
     auto name = elem->Attribute("var");
@@ -46,6 +85,23 @@ void GDML::acquireVarName(tinyxml2::XMLElement* elem, CCNode* node) {
 Result<CCNode*> GDML::createNode(tinyxml2::XMLElement* child, cocos2d::CCNode* node) {
     m_cppData << "\n";
     switch (hash(child->Name())) {
+        case hash("scene"): case hash("CCScene"): {
+            auto scene = CCScene::create();
+            this->acquireVarName(child, scene);
+            m_cppData << "auto " << m_varNames[scene] << " = CCScene::create();\n";
+            CCDirector::sharedDirector()->pushScene(scene);
+            Managed::get()->scene();
+            Managed::get()->add(scene);
+            this->handleEdit(child, scene);
+
+            auto res = this->parseRecursive(child, scene);
+            if (!res) return Err<>(res.error());
+
+            m_cppData << "\n";
+
+            return Ok<CCNode*>(scene);
+        } break;
+
         case hash("menu"): case hash("CCMenu"): {
             auto menu = CCMenu::create();
             this->acquireVarName(child, menu);
@@ -89,18 +145,20 @@ Result<CCNode*> GDML::createNode(tinyxml2::XMLElement* child, cocos2d::CCNode* n
         } break;
 
         case hash("label"): case hash("CCLabelBMFont"): {
-            auto font = child->Attribute("font");
-            if (!font) font = "bigFont.fnt";
+            std::string font = this->replaceVariables(child->Attribute("font"));
+            if (!font.size()) font = "bigFont.fnt";
             auto etext = child->FirstChild();
             std::string text = "";
             if (etext && (etext = etext->ToText())) {
-                text = string_utils::trim(etext->Value());
+                text = this->replaceVariables(
+                    string_utils::trim(etext->Value())
+                );
             }
 
-            auto label = CCLabelBMFont::create(text.c_str(), font);
+            auto label = CCLabelBMFont::create(text.c_str(), font.c_str());
             this->acquireVarName(child, label);
             m_cppData << "auto " << m_varNames[label] << " = CCLabelBMFont::create(\""
-                << text << "\", \"" << font << "\");\n";
+                << string_utils::replace(text, "\"", "\\\"") << "\", \"" << font << "\");\n";
             if (node) {
                 node->addChild(label);
                 Managed::get()->add(label);
@@ -120,9 +178,9 @@ Result<CCNode*> GDML::createNode(tinyxml2::XMLElement* child, cocos2d::CCNode* n
         case hash("sprite"): case hash("CCSprite"): {
             CCSprite* sprite = nullptr;
             auto src = child->Attribute("src");
-            if (src) sprite = CCSprite::create(src);
+            if (src) sprite = CCSprite::create(this->replaceVariables(src).c_str());
             auto frame = child->Attribute("frame");
-            if (frame) sprite = CCSprite::createWithSpriteFrameName(frame);
+            if (frame) sprite = CCSprite::createWithSpriteFrameName(this->replaceVariables(frame).c_str());
             if (sprite) {
                 this->acquireVarName(child, sprite);
                 m_cppData << "auto " << m_varNames[sprite] << " = CCSprite::" << 
@@ -156,14 +214,18 @@ Result<CCNode*> GDML::createNode(tinyxml2::XMLElement* child, cocos2d::CCNode* n
                 if (!rrect) return Err<>(rrect.error());
                 rect = rrect.value();
                 src = child->Attribute("src");
-                if (src) sprite = CCScale9Sprite::create(src, rect);
+                if (src) sprite = CCScale9Sprite::create(
+                    this->replaceVariables(src).c_str(), rect
+                );
                 frame = child->Attribute("frame");
-                if (frame) sprite = CCScale9Sprite::createWithSpriteFrameName(frame, rect);
+                if (frame) sprite = CCScale9Sprite::createWithSpriteFrameName(
+                    this->replaceVariables(frame).c_str(), rect
+                );
             } else {
                 src = child->Attribute("src");
-                if (src) sprite = CCScale9Sprite::create(src);
+                if (src) sprite = CCScale9Sprite::create(this->replaceVariables(src).c_str());
                 frame = child->Attribute("frame");
-                if (frame) sprite = CCScale9Sprite::createWithSpriteFrameName(frame);
+                if (frame) sprite = CCScale9Sprite::createWithSpriteFrameName(this->replaceVariables(frame).c_str());
             }
             if (sprite) {
                 this->acquireVarName(child, sprite);
@@ -194,10 +256,10 @@ Result<CCNode*> GDML::createNode(tinyxml2::XMLElement* child, cocos2d::CCNode* n
 
         case hash("bsprite"): case hash("ButtonSprite"): {
             CCSprite* sprite = nullptr;
-            auto src = child->Attribute("src");
-            if (!src) src = "GJ_button_01.png";
-            auto font = child->Attribute("font");
-            if (!font) font = "bigFont.fnt";
+            std::string src = child->Attribute("src");
+            if (!src.size()) src = this->replaceVariables("GJ_button_01.png");
+            std::string font = child->Attribute("font");
+            if (!font.size()) font = "bigFont.fnt";
             auto etext = child->FirstChild();
             auto tscale = child->Attribute("tscale");
             float scale = 1.f;
@@ -206,15 +268,15 @@ Result<CCNode*> GDML::createNode(tinyxml2::XMLElement* child, cocos2d::CCNode* n
             }
             std::string text = "";
             if (etext && (etext = etext->ToText())) {
-                text = string_utils::trim(etext->Value());
+                text = this->replaceVariables(string_utils::trim(etext->Value()));
             }
-            if (src) sprite = ButtonSprite::create(
-                text.c_str(), font, src, scale
+            if (src.size()) sprite = ButtonSprite::create(
+                text.c_str(), font.c_str(), src.c_str(), scale
             );
             if (sprite) {
                 this->acquireVarName(child, sprite);
                 m_cppData << "auto " << m_varNames[sprite] << " = ButtonSprite::create(\""
-                    << text << "\", \"" << font << "\", \"" << src << "\", " << floatFormat(scale) << ");\n";
+                    << string_utils::replace(text, "\"", "\\\"") << "\", \"" << font << "\", \"" << src << "\", " << floatFormat(scale) << ");\n";
                 if (node) {
                     node->addChild(sprite);
                     Managed::get()->add(sprite);
@@ -272,95 +334,234 @@ Result<CCNode*> GDML::createNode(tinyxml2::XMLElement* child, cocos2d::CCNode* n
 
 Result<std::vector<CCNode*>> GDML::createLayout(tinyxml2::XMLElement* child, CCNode* parent) {
     m_cppData << "\n";
-    switch (hash(child->Name())) {
-        case hash("l-row"): {
-            auto res = this->parseRecursive(child, parent);
-            if (!res) return res;
-            float pad = 0.f;
-            auto paddingText = child->Attribute("pad");
-            if (paddingText) {
-                try { pad = std::stof(paddingText); } catch(...) {}
+    auto name = std::string(child->Name());
+    if (name._Starts_with("layout:")) {
+        auto type = name.substr(name.find(":") + 1);
+        auto pos = this->handleLayoutEdit(child, parent);
+        CCNode* asNode = nullptr;
+        auto asNodeAttr = child->Attribute("as");
+        if (asNodeAttr) {
+            auto asNodeStr = std::string(asNodeAttr);
+            if (asNodeStr != "") {
+                asNode = asNodeStr == "menu" ? CCMenu::create() : CCNode::create();
+                asNode->setPositionX(pos.x != g_none ? pos.x : 0.f);
+                asNode->setPositionY(pos.y != g_none ? pos.y : 0.f);
+                pos = CCPoint { g_none, g_none };
+                this->acquireVarName(child, asNode);
+                m_cppData << "auto " << m_varNames[asNode] << " = "
+                    << (asNodeStr == "menu" ? "CCMenu" : "CCNode")
+                    <<"::create();\n"
+                    << m_varNames[asNode] << "->setPosition("
+                    << floatFormat(asNode->getPositionX()) << ", "
+                    << floatFormat(asNode->getPositionY()) << ");\n\n";
+                if (parent) {
+                    parent->addChild(asNode);
+                    Managed::get()->add(asNode);
+                }
             }
-            auto pos = this->handleLayoutEdit(child, parent);
-            auto nodes = res.value();
+        }
+        auto res = this->parseRecursive(child, asNode ? asNode : parent);
+        if (!res) return res;
+        float pad = 0.f;
+        auto paddingText = child->Attribute("pad");
+        if (paddingText) {
+            try { pad = std::stof(this->replaceVariables(paddingText)); } catch(...) {}
+        }
+        auto nodes = res.value();
+        if (type == "row") {
             std::reverse(nodes.begin(), nodes.end());
-            float width = 0;
+        }
+        CCSize totalSize = { 0, 0 };
+        for (auto& node : nodes) {
+            totalSize += node->getScaledContentSize() + CCSize { pad, pad };
+        }
+        if (totalSize.width > pad) totalSize.width -= pad;
+        if (totalSize.height > pad) totalSize.height -= pad;
+
+        switch (hash(type.c_str())) {
+            case hash("row"): case hash("column"): {
+                float caretPos = 0;
+                float alignOffset = calcAlignFromString(
+                    child->Attribute("align"),
+                    type == "row" ? totalSize.width : totalSize.height
+                );
+                for (auto& node : nodes) {
+                    auto caretInc = type == "row" ? 
+                        node->getScaledContentSize().width :
+                        node->getScaledContentSize().height;
+                    caretPos += caretInc / 2;
+                    auto aligned = caretPos + alignOffset;
+
+                    const char* alignAxis;
+                    const char* altAxis;
+                    float alignPos;
+                    float altPos;
+                    float altOrg;
+                    if (type == "row") {
+                        alignAxis = "X";
+                        altAxis = "Y";
+                        alignPos = pos.x;
+                        altPos = pos.y;
+                        altOrg = node->getPositionY();
+                    } else {
+                        alignAxis = "Y";
+                        altAxis = "X";
+                        alignPos = pos.y;
+                        altPos = pos.x;
+                        altOrg = node->getPositionX();
+                    }
+
+                    if (alignPos != g_none) {
+                        m_cppData << m_varNames[node] << "->setPosition" << alignAxis << "("
+                            << m_varNames[parent] + "_layout" << alignAxis
+                            << (aligned > 0 ? " + " + floatFormat(aligned) : (aligned < 0 ? " - " + floatFormat(-aligned) : ""))
+                            << ");\n";
+                    } else if (aligned) {
+                        m_cppData << m_varNames[node] << "->setPosition" << alignAxis
+                            << "(" << floatFormat(aligned) << ");\n";
+                    }
+                    if (altPos != g_none) {
+                        m_cppData << m_varNames[node] << "->setPosition" << altAxis
+                            << "(" << m_varNames[parent] + "_layout" << altAxis
+                            << (altOrg > 0 ? " + " + floatFormat(altOrg) :
+                                (altOrg < 0 ? " - " + floatFormat(-altOrg) : "")
+                            ) << ");\n";
+                    }
+
+                    if (type == "row") {
+                        node->setPosition(
+                            (alignPos == g_none ? 0.f : alignPos) + aligned,
+                            (altPos != g_none ? altPos : .0f) + altOrg
+                        );
+                    } else {
+                        node->setPosition(
+                            (altPos != g_none ? altPos : .0f) + altOrg,
+                            (alignPos == g_none ? 0.f : alignPos) + aligned
+                        );
+                    }
+
+                    caretPos += caretInc / 2 + pad;
+                }
+            } break;
+        }
+        
+        m_cppData << "\n";
+        if (asNode) {
+            float coveredLeft = 0.f;
+            float coveredRight = 0.f;
+            float coveredTop = 0.f;
+            float coveredBottom = 0.f;
             for (auto& node : nodes) {
-                width += node->getScaledContentSize().width + pad;
+                auto nleft  = node->getPositionX() - node->getScaledContentSize().width / 2;
+                auto nright = node->getPositionX() + node->getScaledContentSize().width / 2;
+                auto nbottom= node->getPositionY() - node->getScaledContentSize().height/ 2;
+                auto ntop   = node->getPositionY() + node->getScaledContentSize().height/ 2;
+                if (nleft < coveredLeft) coveredLeft = nleft;
+                if (nright > coveredRight) coveredRight = nright;
+                if (nbottom < coveredBottom) coveredBottom = nbottom;
+                if (ntop > coveredTop) coveredTop = ntop;
             }
-            width -= pad;
-            float x = 0;
-            float alignOffset = calcAlignFromString(child->Attribute("align"), width);
-            for (auto& node : nodes) {
-                x += node->getScaledContentSize().width / 2;
-                auto aligned = x + alignOffset;
-                node->setPositionX((pos.x == g_none ? 0.f : pos.x) + aligned);
-                if (pos.x != g_none) {
-                    m_cppData << m_varNames[node] << "->setPositionX("
-                        << m_varNames[parent] + "_layoutX"
-                        << (aligned > 0 ? " + " + floatFormat(aligned) : (aligned < 0 ? " - " + floatFormat(-aligned) : ""))
-                        << ");\n";
-                } else if (aligned) {
-                    m_cppData << m_varNames[node] << "->setPositionX(" << floatFormat(aligned) << ");\n";
-                }
-                if (pos.y != g_none) {
-                    auto y = node->getPositionY();
-                    node->setPositionY(pos.y + y);
-                    m_cppData << m_varNames[node] << "->setPositionY(" << m_varNames[parent] + "_layoutY"
-                        << (y > 0 ? " + " + floatFormat(y) : (y < 0 ? " - " + floatFormat(-y) : "")) << ");\n";
-                }
-                x += node->getScaledContentSize().width / 2 + pad;
+            CCSize coveredSize = {
+                fabsf(coveredRight - coveredLeft),
+                fabsf(coveredTop - coveredBottom)
+            };
+            asNode->setContentSize(coveredSize);
+            if (parent) {
+                m_cppData << m_varNames[asNode] << "->setContentSize({ "
+                    << floatFormat(coveredSize.width) << ","
+                    << floatFormat(coveredSize.height)
+                    << " });\n" << m_varNames[parent] << "->addChild("
+                    << m_varNames[asNode] << ");\n";
             }
             m_cppData << "\n";
-            return Ok<std::vector<CCNode*>>({ res.value() });
-        } break;
+            return Ok<std::vector<CCNode*>>({ asNode });
+        }
+        return Ok<>(res.value());
+    } else {
+        auto res = this->createNode(child, parent);
+        if (!res) return Err<>(res.error());
+        return Ok<std::vector<CCNode*>>({ res.value() });
+    }
+    return Err<>("Unknown error");
+}
 
-        case hash("l-column"): {
-            auto res = this->parseRecursive(child, parent);
-            if (!res) return res;
-            float pad = 0.f;
-            auto paddingText = child->Attribute("pad");
-            if (paddingText) {
-                try { pad = std::stof(paddingText); } catch(...) {}
-            }
-            auto pos = this->handleLayoutEdit(child, parent);
-            auto nodes = res.value();
-            float height = 0;
-            for (auto& node : nodes) {
-                height += node->getScaledContentSize().height + pad;
-            }
-            height -= pad;
-            float y = 0;
-            float alignOffset = calcAlignFromString(child->Attribute("align"), height);
-            for (auto& node : nodes) {
-                y += node->getScaledContentSize().height / 2;
-                auto aligned = y + alignOffset;
-                node->setPositionY((pos.y == g_none ? 0.f : pos.y) + aligned);
-                if (pos.y != g_none) {
-                    m_cppData << m_varNames[node] << "->setPositionY("
-                        << m_varNames[parent] + "_layoutY"
-                        << (aligned > 0 ? " + " + floatFormat(aligned) : (aligned < 0 ? " - " + floatFormat(-aligned) : ""))
-                        << ");\n";
-                } else if (aligned) {
-                    m_cppData << m_varNames[node] << "->setPositionY(" << floatFormat(aligned) << ");\n";
-                }
-                if (pos.x != g_none) {
-                    auto x = node->getPositionX();
-                    node->setPositionX(pos.x + x);
-                    m_cppData << m_varNames[node] << "->setPositionX(" << m_varNames[parent] + "_layoutX"
-                        << (x > 0 ? " + " + floatFormat(x) : (x < 0 ? " - " + floatFormat(-x) : "")) << ");\n";
-                }
-                y += node->getScaledContentSize().height / 2 + pad;
-            }
-            m_cppData << "\n";
-            return Ok<std::vector<CCNode*>>({ res.value() });
-        } break;
+Result<std::vector<CCNode*>> GDML::createCustom(tinyxml2::XMLElement* child, CCNode* node) {
+    auto name = std::string(child->Name());
+    if (name._Starts_with("define:")) {
+        m_cppData << "\n";
+        
+        auto type = name.substr(name.find(":") + 1);
+        if (m_models.count(type)) {
+            return Err<>("\"" + type + "\" already defined");
+        }
+        m_models[type] = child;
 
-        default: {
-            auto res = this->createNode(child, parent);
-            if (!res) return Err<>(res.error());
-            return Ok<std::vector<CCNode*>>({ res.value() });
-        } break;
+        return Ok<std::vector<CCNode*>>({});
+
+    } else if (name._Starts_with("create:")) {
+        
+        auto type = name.substr(name.find(":") + 1);
+        if (!m_models.count(type)) {
+            return Err<>("\"" + type + "\" not defined");
+        }
+        return this->parseRecursive(m_models[type], node);
+
+    } else {
+        return this->createLayout(child, node);
+    }
+    return Err<>("Unknown error");
+}
+
+Result<std::vector<CCNode*>> GDML::createVariable(tinyxml2::XMLElement* child, CCNode* node) {
+    auto name = std::string(child->Name());
+
+    auto setVar = [&](Variable::Type type) -> Result<std::vector<CCNode*>> {
+        auto varName = name.substr(name.find(":") + 1);
+        if (m_models.count(varName)) {
+            return Err<>("\"" + varName + "\" already defined");
+        }
+        try {
+            Variable var;
+            var.m_type = type;
+            auto c = child->FirstChild();
+            if (c) {
+                auto t = c->ToText();
+                if (!t) return Err<>("\"" + varName + "\": non-text child found");
+                switch (type) {
+                    case Variable::Int: var.m_value = std::stoi(t->Value()); break;
+                    case Variable::Float: var.m_value = std::stof(t->Value()); break;
+                    case Variable::String: var.m_value = std::string(t->Value()); break;
+                    default: return Err<>("\"" + varName + "\": invalid type");
+                }
+            } else {
+                switch (type) {
+                    case Variable::Int: var.m_value = 0; break;
+                    case Variable::Float: var.m_value = 0; break;
+                    case Variable::String: var.m_value = ""; break;
+                    default: return Err<>("\"" + varName + "\": invalid type");
+                }
+            }
+            m_variables[varName] = var;
+        } catch(...) {
+            return Err<>("\"" + varName + "\": default value does not match type");
+        }
+        return Ok<std::vector<CCNode*>>({});
+    };
+
+    if (name._Starts_with("int:")) {
+
+        return setVar(Variable::Int);
+
+    } else if (name._Starts_with("float:")) {
+
+        return setVar(Variable::Float);
+
+    } else if (name._Starts_with("string:")) {
+
+        return setVar(Variable::String);
+
+    } else {
+        return this->createCustom(child, node);
     }
     return Err<>("Unknown error");
 }
@@ -400,8 +601,8 @@ Result<std::vector<CCNode*>> GDML::parseRecursive(tinyxml2::XMLElement* elem, co
                     if (!res) return Err<>(res.error());
                 } break;
 
-                default: { 
-                    auto res = this->createLayout(child, node);
+                default: {
+                    auto res = this->createVariable(child, node);
                     if (!res) return res;
                     vector_utils::push(nodes, res.value());
                 } break;
@@ -416,6 +617,8 @@ Result<> GDML::parse(tinyxml2::XMLDocument* doc) {
     
     Managed::get()->clear();
     m_varNames.clear();
+    m_models.clear();
+    m_variables.clear();
 
     auto gdml = doc->FirstChildElement("gdml");
     if (!gdml) {
