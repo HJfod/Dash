@@ -1,2 +1,11 @@
 <gdml>
+    <0 var="firstChild">
+        <ssprite src="GJ_square01.png" z="500" x="ww/2" y="wh/2" size="310:210">
+            <l-column x="pw/2" y="ph/2" pad="10">
+                <label>massive</label>
+                <label x="-50">damn</label>
+                <label>titties</label>
+            </l-column>
+        </ssprite>
+    </0>
 </gdml>

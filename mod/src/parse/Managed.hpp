@@ -18,6 +18,7 @@ struct Edit {
     ccColor3B color;
     GLubyte opacity;
     std::string text;
+    int zOrder;
 };
 
 class GDML_DLL Managed {

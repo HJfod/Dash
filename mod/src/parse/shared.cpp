@@ -58,3 +58,30 @@ Result<CCRect> parseRect(std::string const& str) {
     }
 }
 
+std::string rectToCppString(CCRect const& rect) {
+    return "CCRect { " +
+        std::to_string(rect.origin.x) + ", " +
+        std::to_string(rect.origin.y) + ", " +
+        std::to_string(rect.size.width) + ", " +
+        std::to_string(rect.size.height) + " }";
+}
+
+std::string ccColor3BToCppString(ccColor3B const& color) {
+    return "{ " +
+        std::to_string(color.r) + ", " +
+        std::to_string(color.g) + ", " +
+        std::to_string(color.b) + " }";
+}
+
+std::string floatFormat(std::string f) {
+    if (string_utils::contains(f, ".")) {
+        while (f._Starts_with("0")) f = f.substr(1);
+        while (string_utils::endsWith(f, "0")) f.pop_back();
+        return f + "f";
+    }
+    return f + ".f";
+}
+
+std::string floatFormat(float f) {
+    return floatFormat(std::to_string(f));
+}

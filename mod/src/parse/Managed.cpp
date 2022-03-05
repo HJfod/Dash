@@ -13,6 +13,7 @@ void Managed::touch(CCNode* node, bool recursive) {
     edit.contentSize = node->getContentSize();
     edit.rotation = node->getRotation();
     edit.scale = node->getScale();
+    edit.zOrder = node->getZOrder();
     
     auto rgba = dynamic_cast<CCRGBAProtocol*>(node);
     if (rgba) {
@@ -46,6 +47,7 @@ void Managed::clear() {
         node->setContentSize(edit.contentSize);
         node->setRotation(edit.rotation);
         node->setScale(edit.scale);
+        node->setZOrder(edit.zOrder);
 
         auto rgba = dynamic_cast<CCRGBAProtocol*>(node);
         if (rgba) {
