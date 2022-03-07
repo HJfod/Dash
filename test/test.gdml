@@ -1,3 +1,4 @@
+<!DOCTYPE gdml>
 <gdml>
     <scene>
         <define:MyNode>
@@ -13,7 +14,7 @@
         <sprite src="GJ_gradientBG.png" x="-5" y="-5" color="0,102,255" scale-x="(ww + 10) / tw" scale-y="(wh + 10) / th" anchor="0,0" />
 
         <ssprite src="square02b_001.png" x="ww/2" y="wh/2" size="310,{HeightVar}" color="0,0,0" opacity="100">
-            <label>{{MyStringVar}}</label>
+            <label>{MyStringVar}</label>
             <layout:column x="pw/2" y="ph/2" pad="10">
                 <create:MyNode />
                 <create:MyNode />

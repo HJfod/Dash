@@ -1,6 +1,6 @@
 #include "shared.hpp"
 
-Result<ccColor3B> parseColor(std::string str) {
+Result<ccColor3B> gdml::parseColor(std::string str) {
     if (string_utils::contains(str, ",")) {
         auto colors = string_utils::split(str, ",");
         if (colors.size() == 3) {
@@ -43,7 +43,7 @@ Result<ccColor3B> parseColor(std::string str) {
     }
 }
 
-Result<CCRect> parseRect(std::string const& str) {
+Result<CCRect> gdml::parseRect(std::string const& str) {
     auto r = string_utils::split(str, ",");
     if (r.size() != 4) return Err<>("Rect does not appear to be valid");
     try {
@@ -58,7 +58,7 @@ Result<CCRect> parseRect(std::string const& str) {
     }
 }
 
-std::string rectToCppString(CCRect const& rect) {
+std::string gdml::rectToCppString(CCRect const& rect) {
     return "CCRect { " +
         std::to_string(rect.origin.x) + ", " +
         std::to_string(rect.origin.y) + ", " +
@@ -66,14 +66,14 @@ std::string rectToCppString(CCRect const& rect) {
         std::to_string(rect.size.height) + " }";
 }
 
-std::string ccColor3BToCppString(ccColor3B const& color) {
+std::string gdml::ccColor3BToCppString(ccColor3B const& color) {
     return "{ " +
         std::to_string(color.r) + ", " +
         std::to_string(color.g) + ", " +
         std::to_string(color.b) + " }";
 }
 
-std::string floatFormat(std::string f) {
+std::string gdml::floatFormat(std::string f) {
     if (string_utils::contains(f, ".")) {
         while (f._Starts_with("0")) f = f.substr(1);
         while (string_utils::endsWith(f, "0")) f.pop_back();
@@ -85,6 +85,6 @@ std::string floatFormat(std::string f) {
     return ".0f";
 }
 
-std::string floatFormat(float f) {
+std::string gdml::floatFormat(float f) {
     return floatFormat(std::to_string(f));
 }

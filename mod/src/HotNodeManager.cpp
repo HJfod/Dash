@@ -1,12 +1,14 @@
-#include "Managed.hpp"
+#include "HotNodeManager.hpp"
 #include <WackyGeodeMacros.hpp>
 
-Managed* Managed::get() {
-    static auto inst = new Managed;
+using namespace gdml;
+
+HotNodeManager* HotNodeManager::get() {
+    static auto inst = new HotNodeManager();
     return inst;
 }
 
-void Managed::touch(CCNode* node, bool recursive) {
+void HotNodeManager::touch(CCNode* node, bool recursive) {
     Edit edit;
 
     edit.pos = node->getPosition();
@@ -43,11 +45,16 @@ void Managed::touch(CCNode* node, bool recursive) {
     }
 }
 
-void Managed::add(CCNode* node) {
+void HotNodeManager::add(CCNode* node) {
     m_nodes.push_back(node);
 }
 
-void Managed::clear() {
+void HotNodeManager::push(CCScene* scene) {
+    m_nodes.push_back(scene);
+    m_pushedScenes++;
+}
+
+void HotNodeManager::clear() {
     Log::get() << "Clearing old edits";
     for (auto& [node, edit] : m_edits) {
         node->setPosition(edit.pos);
@@ -86,8 +93,4 @@ void Managed::clear() {
     m_edits.clear();
     m_nodes.clear();
     m_pushedScenes = 0;
-}
-
-void Managed::scene() {
-    m_pushedScenes++;
 }
