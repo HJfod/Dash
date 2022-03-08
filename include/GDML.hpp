@@ -3,12 +3,10 @@
 #include "shared.hpp"
 #include <sstream>
 #include <any>
+#include <fmt/include/fmt/format.h>
+#include <fmt/include/fmt/args.h>
 
 namespace gdml {
-    struct Variable {
-        std::string m_value = "";
-    };
-
     class GDML {
     public:
         struct CreateData {
@@ -34,15 +32,9 @@ namespace gdml {
     protected:
         std::unordered_map<std::string, SEL_MenuHandler> m_callbacks;
         std::unordered_map<std::string, NodeCreateFunc> m_nodes;
-        std::unordered_map<std::string, tinyxml2::XMLElement*> m_models;
-        std::unordered_map<std::string, std::vector<Variable>> m_variableStack;
+        std::unordered_map<std::string, fmt::basic_format_arg<fmt::format_context>> m_variables;
 
         Result<ParsedNodes> parseRecursive(tinyxml2::XMLElement* child, CCNode* parent);
-        Result<> parseVariable(
-            tinyxml2::XMLElement* child,
-            std::string const& name,
-            std::string const& subtype
-        );
         Result<> parseEdit(tinyxml2::XMLElement* child, CCNode* parent);
 
         void replaceVariables(std::string& text);
@@ -66,12 +58,6 @@ namespace gdml {
         SEL_MenuHandler getCallback(std::string const& id) const;
         Result<> registerNode(std::string const& tag, NodeCreateFunc func, bool override = false);
         void clearCallbacks();
-
-        bool pushVariable(std::string const& name, Variable const& value);
-        bool popVariable(std::string const& name);
-        bool setVariable(std::string const& name, Variable const& value);
-        Variable getVariable(std::string const& name) const;
-        void clearVariables();
 
         static const char* parseErrorAsString(tinyxml2::XMLError error);
 

@@ -1,6 +1,4 @@
 #include <GDML.hpp>
-#include <fmt/include/fmt/format.h>
-#include <fmt/include/fmt/args.h>
 
 using namespace std::string_literals;
 using namespace gdml;
@@ -26,9 +24,8 @@ Result<> GDML::registerAliasForNode(std::string const& tag, std::string const& o
 
 void GDML::replaceVariables(std::string& text) {
     fmt::dynamic_format_arg_store<fmt::format_context> args;
-    for (auto& [name, val] : m_variableStack) {
-        if (!val.size()) continue;
-        fmt::arg(name.c_str(), val.back().m_value);
+    for (auto& [name, val] : m_variables) {
+        args.push_back(fmt::arg(name.c_str(), val));
     }
     text = fmt::vformat(text, args);
 }
@@ -59,29 +56,11 @@ std::string GDML::getAttribute(
     return this->process(raw);
 }
 
-Result<> GDML::parseVariable(
-    tinyxml2::XMLElement* child,
-    std::string const& name,
-    std::string const& subtype
-) {
-    if (name == "set" && !m_variableStack.count(subtype)) {
-        return Err<>("Variable \"" + subtype + "\" not defined");
-    }
-    if (name == "var" && m_variableStack.count(subtype)) {
-        return Err<>("Variable \"" + subtype + "\" already defined");
-    }
-    this->pushVariable(subtype, { this->getTextValue(child) });
-    return Ok<>();
-}
-
 Result<> GDML::parseEdit(tinyxml2::XMLElement* child, CCNode* parent) {
 }
 
 Result<GDML::ParsedNodes> GDML::parseRecursive(tinyxml2::XMLElement* elem, CCNode* parent) {
     ParsedNodes result;
-    std::vector<std::string> scopedVars;
-    std::vector<std::string> scopedModels;
-
     for (auto child = elem->FirstChildElement(); child; child = child->NextSiblingElement()) {
         std::string name = child->Name();
         std::string subtype = "";
@@ -96,46 +75,8 @@ Result<GDML::ParsedNodes> GDML::parseRecursive(tinyxml2::XMLElement* elem, CCNod
             }
             result.push_back(res.value());
         } else {
-            switch (hash(name.c_str())) {
-                case hash("define"): {
-                    if (m_models.count(subtype)) {
-                        return Err<>("Model \"" + subtype + "\" already defined");
-                    }
-                    m_models[subtype] = elem;
-                    scopedModels.push_back(subtype);
-                } break;
-
-                case hash("create"): {
-                    if (!m_models.count(subtype)) {
-                        return Err<>("Model \"" + subtype + "\" not defined");
-                    }
-                    for (auto attr = child->FirstAttribute(); attr; attr = attr->Next()) {
-                        this->pushVariable(attr->Name(), { attr->Value() });
-                    }
-                    auto res = this->parseRecursive(m_models[subtype], parent);
-                    if (!res) return res;
-                    for (auto attr = child->FirstAttribute(); attr; attr = attr->Next()) {
-                        this->popVariable(attr->Name());
-                    }
-                    vector_utils::push(result, res.value());
-                } break;
-
-                case hash("set"): case hash("var"): {
-                    auto res = this->parseVariable(child, name, subtype);
-                    if (!res) return Err<>(res.error());
-                    scopedVars.push_back(subtype);
-                } break;
-
-                default: return Err<>("Unknown tag <" + name + ">");
-            }
+            return Err<>("Unknown tag <" + name + ">");
         }
-    }
-
-    for (auto& model : scopedModels) {
-        m_models.erase(model);
-    }
-    for (auto& var : scopedVars) {
-        this->popVariable(var);
     }
     return Ok<ParsedNodes>(result);
 }
@@ -163,45 +104,6 @@ Result<> GDML::registerNode(std::string const& tag, NodeCreateFunc func, bool ov
     }
     m_nodes[tag] = func;
     return Ok<>();
-}
-
-bool GDML::pushVariable(std::string const& name, Variable const& value) {
-    m_variableStack[name].push_back(value);
-    return true;
-}
-
-bool GDML::popVariable(std::string const& name) {
-    if (m_variableStack[name].size()) {
-        m_variableStack[name].pop_back();
-    }
-    if (!m_variableStack[name].size()) {
-        m_variableStack.erase(name);
-    }
-    return true;
-}
-
-bool GDML::setVariable(std::string const& name, Variable const& value) {
-    if (
-        !m_variableStack.count(name) ||
-        !m_variableStack.at(name).size()
-    ) {
-        this->pushVariable(name, value);
-    } else {
-        m_variableStack[name].back() = value;
-    }
-    return true;
-}
-
-Variable GDML::getVariable(std::string const& name) const {
-    if (
-        !m_variableStack.count(name) &&
-        !m_variableStack.at(name).size()
-    ) return Variable();
-    return m_variableStack.at(name).back();
-}
-
-void GDML::clearVariables() {
-    m_variableStack.clear();
 }
 
 Result<GDML::ParsedNodes> GDML::parse(tinyxml2::XMLDocument* doc, ParseOptions const& options) {

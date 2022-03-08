@@ -19,12 +19,12 @@ Result<float> GDML::processMath(CCNode* node, std::string const& text) {
     table.add_constant("sh", node->getScaledContentSize().height);
     table.add_constant("ww", winSize.width);
     table.add_constant("wh", winSize.height);
-    for (auto& [var, val] : m_variableStack) {
-        if (val.size()) {
-            try {
-                table.add_constant(var, std::stof(val.back().m_value));
-            } catch(...) {}
-        }
+    for (auto& [var, val] : m_variables) {
+        try {
+            if (val.is_arithmetic()) {
+                table.add_constant(var, std::stof(fmt::vformat("{" + var + "}", fmt::make_format_args(val))));
+            }
+        } catch(...) {}
     }
     if (node->getParent()) {
         table.add_constant("px", node->getParent()->getPositionX());
