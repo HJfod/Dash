@@ -4,22 +4,44 @@ using namespace std::string_literals;
 using namespace gdml;
 
 GDML::GDML() {
-    this->registerNode("CCLabelBMFont", [](CreateData const& data) -> Result<CCNode*> {
-        
+    this->registerNode("CCLabelBMFont", [&](CreateData const& data) -> Result<CCNode*> {
+        auto text = this->getTextValue(data.m_element);
+        auto font = this->getAttribute(data.m_element, "font", "bigFont.fnt");
+        auto label = CCLabelBMFont::create(text.c_str(), font.c_str());
+        return Ok<>(label);
     });
+    this->registerAliasForNode("label", "CCLabelBMFont");
+
+    this->registerNode("CCNode", [&](CreateData const& data) -> Result<CCNode*> {
+        return Ok<>(CCNode::create());
+    });
+    this->registerAliasForNode("node", "CCNode");
+
+    this->registerNode("CCLayer", [&](CreateData const& data) -> Result<CCNode*> {
+        return Ok<>(CCLayer::create());
+    });
+    this->registerAliasForNode("layer", "CCLayer");
+
+    this->registerNode("CCSprite", [&](CreateData const& data) -> Result<CCNode*> {
+        if (this->hasAttribute(data.m_element, "src")) {
+            auto src = this->getAttribute(data.m_element, "src");
+            auto spr = CCSprite::create(src.c_str());
+            if (spr) return Ok<>(spr);
+            return Err<>("Invalid source file");
+        }
+    });
+    this->registerAliasForNode("sprite", "CCSprite");
 }
 
-GDML* GDML::get() {
-    static auto inst = new GDML;
-    return inst;
-}
-
-Result<> GDML::registerAliasForNode(std::string const& tag, std::string const& other) {
-    if (m_nodes.count(tag)) {
-        m_nodes[other] = m_nodes[tag];
-        return Ok<>();
+Result<> GDML::registerAliasForNode(std::string const& newTag, std::string const& from) {
+    if (m_nodes.count(from)) {
+        if (!m_nodes.count(newTag)) {
+            m_nodes[newTag] = m_nodes[from];
+            return Ok<>();
+        }
+        return Err<>("Tag <" + newTag + "> already defined");
     }
-    return Err<>("Tag <" + tag + "> not found");
+    return Err<>("Tag <" + from + "> not found");
 }
 
 void GDML::replaceVariables(std::string& text) {
@@ -36,9 +58,9 @@ std::string GDML::process(std::string const& text) {
     return s;
 }
 
-std::string GDML::getTextValue(tinyxml2::XMLElement* child) {
+std::string GDML::getTextValue(tinyxml2::XMLElement* child, std::string const& def) {
     auto text = child->GetText();
-    if (!text) return "";
+    if (!text) return def;
     return this->process(text);
 }
 
@@ -106,7 +128,7 @@ Result<> GDML::registerNode(std::string const& tag, NodeCreateFunc func, bool ov
     return Ok<>();
 }
 
-Result<GDML::ParsedNodes> GDML::parse(tinyxml2::XMLDocument* doc, ParseOptions const& options) {
+Result<GDML::ParsedNodes> GDML::parseDoc(tinyxml2::XMLDocument* doc, ParseOptions const& options) {
     auto gdml = doc->FirstChildElement("gdml");
     if (gdml) {
         auto res = this->parseRecursive(gdml, options.m_parent);
@@ -114,13 +136,13 @@ Result<GDML::ParsedNodes> GDML::parse(tinyxml2::XMLDocument* doc, ParseOptions c
     }
 }
 
-Result<GDML::ParsedNodes> GDML::parse(std::string const& data, ParseOptions const& options) {
+Result<GDML::ParsedNodes> GDML::parseString(std::string const& data, ParseOptions const& options) {
     tinyxml2::XMLDocument doc;
     auto r = doc.Parse(data.c_str(), data.size());
     if (r != tinyxml2::XML_SUCCESS) {
         return Err<>("Parse error: "s + parseErrorAsString(r) + " (" + std::to_string(r) + ")");
     }
-    return this->parse(&doc, options);
+    return this->parseDoc(&doc, options);
 }
 
 Result<GDML::ParsedNodes> GDML::parseFile(ghc::filesystem::path const& path, ParseOptions const& options) {
@@ -129,7 +151,16 @@ Result<GDML::ParsedNodes> GDML::parseFile(ghc::filesystem::path const& path, Par
         return Err<>(read.error());
     }
     if (!read.value().size()) return Ok<>();
-    return this->parse(read.value());
+    return this->parseString(read.value());
+}
+
+Result<GDML::ParsedNodes> GDML::parse(std::string const& data, ParseOptions const& options) {
+    return GDML::get()->parseString(data, options);
+}
+
+CCNode* GDML::getNodeByName(std::string const& name) const {
+    if (!m_nodeNames.count(name)) return nullptr;
+    return m_nodeNames.at(name);
 }
 
 const char* GDML::parseErrorAsString(tinyxml2::XMLError error) {
@@ -156,4 +187,8 @@ const char* GDML::parseErrorAsString(tinyxml2::XMLError error) {
         case tinyxml2::XML_NO_TEXT_NODE: return "XML_NO_TEXT_NODE";
     }
     return "Unknown";
+}
+
+Result<GDML::ParsedNodes> operator"" _gdml(const char* str, size_t) {
+    return GDML::parse(str);
 }
