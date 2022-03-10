@@ -6,9 +6,11 @@ using namespace gdml;
 class $modify(MenuLayer) {
     void onMoreGames(CCObject*) {
         R"(
-            <scene>
-                <TestLayer />
-            </scene>
+            <goto>
+                <scene>
+                    <TestLayer />
+                </scene>
+            </goto>
         )"_gdml;
     }
 };

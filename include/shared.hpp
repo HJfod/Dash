@@ -6,10 +6,10 @@
 USE_GEODE_NAMESPACE();
 
 namespace gdml {
-    Result<ccColor3B> parseColor(std::string str);
-    Result<CCRect> parseRect(std::string const& str);
-    std::string rectToCppString(CCRect const& rect);
-    std::string ccColor3BToCppString(ccColor3B const& color);
-    std::string floatFormat(std::string f);
-    std::string floatFormat(float f);
+    Result<ccColor3B> GDML_DLL parseColor(std::string str);
+    Result<CCRect> GDML_DLL parseRect(std::string const& str);
+    std::string GDML_DLL rectToCppString(CCRect const& rect);
+    std::string GDML_DLL ccColor3BToCppString(ccColor3B const& color);
+    std::string GDML_DLL floatFormat(std::string f);
+    std::string GDML_DLL floatFormat(float f);
 }

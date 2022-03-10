@@ -3,7 +3,7 @@
 #include "shared.hpp"
 
 namespace gdml {
-    class Layout : public CCNode {
+    class GDML_DLL Layout : public CCNode {
     public:
         enum Align {
             Start,
@@ -20,13 +20,13 @@ namespace gdml {
         virtual void arrange() = 0;
     };
 
-    class RowLayout : public Layout {
+    class GDML_DLL RowLayout : public Layout {
     public:
         virtual void arrange() override;
         static RowLayout* create();
     };
 
-    class ColumnLayout : public Layout {
+    class GDML_DLL ColumnLayout : public Layout {
     public:
         virtual void arrange() override;
         static ColumnLayout* create();
