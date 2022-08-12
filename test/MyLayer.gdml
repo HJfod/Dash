@@ -1,0 +1,10 @@
+
+import "MyLayer.hpp";
+
+impl MyLayer::init(title: string const&) -> bool {
+    if !CCLayer::init() {
+        return false;
+    }
+    
+    return true;
+}

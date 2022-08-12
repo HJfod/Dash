@@ -1,0 +1,41 @@
+
+import "cocos2d.h";
+
+template CCNode {
+
+    pos: CCPoint {
+        get()  => this->getPosition();
+        set(v) => this->setPosition(v);
+    };
+    x: f32 {
+        get()  => this->getPositionX();
+        set(v) => this->setPositionX(v);
+    };
+    y: f32 {
+        get()  => this->getPositionY();
+        set(v) => this->setPositionY(v);
+    };
+
+    size: CCSize {
+        get()  => this->getContentSize();
+        set(v) => this->setContentSize(v);
+    };
+    width: f32 {
+        get()  => template.size.width;
+        set(v) => template.size.width = v;
+    };
+    height: f32 {
+        get()  => template.size.height;
+        set(v) => template.size.height = v;
+    };
+
+    constructor() -> CCNode* {
+        CCNode::create()
+    }
+
+    append(child: CCNode*) {
+        this->addChild(child);
+    }
+
+}
+

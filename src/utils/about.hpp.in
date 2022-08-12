@@ -1,0 +1,7 @@
+#pragma once
+
+static constexpr const char* PROJECT_BINARY_NAME = "@BINARY_NAME@";
+static constexpr const char* PROJECT_VERSION_STR = "@PROJECT_VERSION@";
+static constexpr int PROJECT_VERSION_MAJOR = @PROJECT_VERSION_MAJOR@;
+static constexpr int PROJECT_VERSION_MINOR = @PROJECT_VERSION_MINOR@;
+static constexpr int PROJECT_VERSION_PATCH = @PROJECT_VERSION_PATCH@;

@@ -1,0 +1,8 @@
+{
+    "geode": "v0.2.0",
+    "version": "v1.0.0",
+    "id": "hjfod.gdml-test",
+    "name": "GDML Test",
+    "developer": "HJfod",
+    "binary": "GDMLTestMod"
+}
