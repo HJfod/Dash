@@ -1,3 +1,4 @@
 src/utils/about.hpp
 build/
 *.gdml.cpp
+.vscode/

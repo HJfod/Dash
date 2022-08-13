@@ -9,7 +9,10 @@ set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "")
 
 add_dependencies(${PROJECT_NAME} GDMLv4)
 
-include(../GDML.cmake)
+# this works because the path is only used in a 
+# generator expression in GDML.cmake :3
+set(GDML_CLI $<TARGET_FILE:GDMLv4>)
+include(../cmake/GDML.cmake)
 
 process_gdml_files(${PROJECT_NAME}
     MyLayer.gdml

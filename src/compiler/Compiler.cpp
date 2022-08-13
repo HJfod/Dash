@@ -35,19 +35,6 @@ void Compiler::loadBuiltinTypes() {
     makeType("size_t");
 }
 
-Type* Compiler::makeType(
-    std::string const& name,
-    std::string const& cppEquivalent
-) {
-    auto type = new Type(name, cppEquivalent);
-    m_types.insert({ name, type });
-    return type;
-}
-
-Type* Compiler::makeType(std::string const& name) {
-    return makeType(name, name);
-}
-
 std::vector<std::string> const& Compiler::getScope() const {
     return m_scope;
 }
