@@ -18,7 +18,14 @@ process_gdml_files(${PROJECT_NAME}
     MyLayer.gdml
 )
 
-add_subdirectory(K:/GeodeSDK/geode K:/GeodeSDK/geode/build)
+if (NOT DEFINED ENV{GEODE_SDK})
+    message(FATAL_ERROR "Unable to find Geode SDK! Please define GEODE_SDK environment variable to point to Geode")
+else()
+    message(STATUS "Found Geode: $ENV{GEODE_SDK}")
+endif()
+
+set(GEODE_LINK_NIGHTLY On)
+add_subdirectory($ENV{GEODE_SDK} $ENV{GEODE_SDK}/build)
 
 target_link_libraries(${PROJECT_NAME} geode-sdk)
 create_geode_file(${PROJECT_NAME})

@@ -11,7 +11,7 @@ namespace gdml {
 
     class Parser {
     protected:
-        GDML& m_shared;
+        Instance& m_instance;
         SourceFile const* m_source;
         size_t m_index = 0;
         Tokens m_tokens;
@@ -37,11 +37,9 @@ namespace gdml {
         ExprResult<ast::Stmt> parseStatement(bool topLevel = false) noexcept;
     
     public:
-        Parser(GDML& shared, Tokens const& tokens) noexcept;
+        Parser(Instance& instance, Tokens const& tokens) noexcept;
 
         ParseResult parse() noexcept;
-
-        static ParseResult parseWhole(GDML& compiler, Tokens const& tokens) noexcept;
     };
 
 }

@@ -2,6 +2,7 @@
 #include "GDML.hpp"
 #include <fstream>
 #include <parser/AST.hpp>
+#include "Instance.hpp"
 
 using namespace gdml;
 using namespace gdml::io;
@@ -11,10 +12,10 @@ std::string Type::getCodegenName() const {
 }
 
 Error Compiler::compile() {
-    auto tres = m_ast->compile(*this);
+    auto tres = m_ast->compile(m_instance);
     if (!tres) {
         auto err = tres.unwrapErr();
-        m_shared.logError(err);
+        m_instance.getShared().logError(err);
         return err.code;
     }
     return Error::OK;
@@ -52,7 +53,7 @@ void Compiler::popScope(std::string const& name) {
             stack += s + "::";
         }
         stack.erase(stack.end() - 2, stack.end());
-        m_shared.logError({
+        m_instance.getShared().logError({
             Error::InternalError,
             "Attempted to pop \"" + name + "\" off the top of "
             "the scope stack, but it wasn't there. This is "
@@ -61,7 +62,7 @@ void Compiler::popScope(std::string const& name) {
             "Current scope: " + stack,
             Position { 0, 0 },
             Position { 0, 0 },
-            m_shared.getInputFile()
+            m_instance.getSource()
         });
     }
 }
@@ -88,10 +89,26 @@ Type* Compiler::getType(std::string const& name) const {
 }
 
 void Compiler::codegen(std::ostream& stream) const noexcept {
-    m_ast->codegen(m_shared, stream);
+    m_ast->codegen(m_instance, stream);
 }
 
-Compiler::Compiler(GDML& shared, ast::AST* ast)
- : m_shared(shared), m_ast(ast) {
+Compiler::Compiler(Instance& shared, ast::AST* ast)
+ : m_instance(shared), m_ast(ast) {
     loadBuiltinTypes();
+}
+
+Instance& Compiler::getInstance() const {
+    return m_instance;
+}
+
+void Compiler::pushIndent(size_t i) {
+    m_indentation += i;
+}
+
+void Compiler::popIndent(size_t i) {
+    m_indentation -= i;
+}
+
+size_t Compiler::getIndent() const {
+    return m_indentation;
 }

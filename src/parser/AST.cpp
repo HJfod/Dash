@@ -1,6 +1,7 @@
 #include "AST.hpp"
 #include <compiler/GDML.hpp>
 #include <compiler/Compiler.hpp>
+#include <compiler/Instance.hpp>
 
 using namespace gdml;
 using namespace gdml::ast;
@@ -9,34 +10,45 @@ using namespace gdml::ast;
     return LineError { Error::TypeError,\
         msg, hint, note, start, end, source }
 
-void PointerExpr::codegen(GDML& shared, std::ostream& stream) const noexcept {
-    to->codegen(shared, stream);
+
+void BinaryExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    LHS->codegen(instance, stream);
+    if (instance.getShared().getFlag(Flags::PrettifyOutput)) stream << " ";
+    stream << tokenTypeToString(op);
+    if (instance.getShared().getFlag(Flags::PrettifyOutput)) stream << " ";
+    RHS->codegen(instance, stream);
+}
+
+
+void PointerExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    to->codegen(instance, stream);
     if (isReference) {
         stream << "&";
     } else {
         stream << "*";
     }
     if (qualifiers.isConst) {
+        if (instance.getShared().getFlag(Flags::PrettifyOutput)) stream << " ";
         stream << "const";
     }
 }
 
-TypeCheckResult PointerExpr::compile(Compiler& compiler) const noexcept {
+TypeCheckResult PointerExpr::compile(Instance& instance) const noexcept {
     GDML_TYPECHECK_CHILD(to);
     return Ok();
 }
 
 
-TypeCheckResult ScopeExpr::compile(Compiler& compiler) const noexcept {
-    compiler.pushScope(name);
+TypeCheckResult ScopeExpr::compile(Instance& instance) const noexcept {
+    instance.getCompiler().pushScope(name);
     GDML_TYPECHECK_CHILD(item);
-    compiler.popScope(name);
+    instance.getCompiler().popScope(name);
     return Ok();
 }
 
 
-TypeCheckResult TypeNameExpr::compile(Compiler& compiler) const noexcept {
-    if (!compiler.typeExists(name->fullName())) {
+TypeCheckResult TypeNameExpr::compile(Instance& instance) const noexcept {
+    if (!instance.getCompiler().typeExists(name->fullName())) {
         THROW_TYPE_ERR(
             "Unknown type \"" + name->fullName() + "\"",
             "Not all C++ types are supported yet, sorry!",
@@ -46,15 +58,15 @@ TypeCheckResult TypeNameExpr::compile(Compiler& compiler) const noexcept {
     return Ok();
 }
 
-void TypeNameExpr::codegen(GDML& compiler, std::ostream& stream) const noexcept {
-    stream << compiler.getCompiler()->getType(name->fullName())->getCodegenName();
+void TypeNameExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    stream << instance.getCompiler().getType(name->fullName())->getCodegenName();
     if (qualifiers.isConst) {
         stream << " const";
     }
 }
 
 
-TypeCheckResult FunctionDeclStmt::compile(Compiler& compiler) const noexcept {
+TypeCheckResult FunctionDeclStmt::compile(Instance& instance) const noexcept {
     GDML_TYPECHECK_CHILD(type);
     GDML_TYPECHECK_CHILD(name);
     GDML_TYPECHECK_CHILD_O(body);
@@ -62,25 +74,25 @@ TypeCheckResult FunctionDeclStmt::compile(Compiler& compiler) const noexcept {
     return Ok();
 }
 
-void FunctionDeclStmt::codegen(GDML& com, std::ostream& stream) const noexcept {
+void FunctionDeclStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
     // FunctionTypeExpr::codegen returns a function pointer
     // type declaration, so can't use that
     
     // default static for file functions
     if (
-        com.getRule(LanguageRule::DefaultStaticFunctions) &&
+        instance.getShared().getRule(LanguageRule::DefaultStaticFunctions) &&
         !name->isScoped()
     ) {
         stream << "static ";
     }
 
     if (type->returnType.has_value()) {
-        type->returnType.value()->codegen(com, stream);
+        type->returnType.value()->codegen(instance, stream);
         stream << " ";
     } else {
         stream << "auto ";
     }
-    name->codegen(com, stream);
+    name->codegen(instance, stream);
     stream << "(";
     bool firstArg = true;
     for (auto& param : type->parameters) {
@@ -88,18 +100,18 @@ void FunctionDeclStmt::codegen(GDML& com, std::ostream& stream) const noexcept {
             stream << ",";
         }
         firstArg = false;
-        param->codegen(com, stream);
+        param->codegen(instance, stream);
     }
     stream << ")";
     if (body.has_value()) {
         stream << "{";
-        body.value()->codegen(com, stream);
+        body.value()->codegen(instance, stream);
         stream << "}";
     }
 }
 
 
-void ImportStmt::codegen(GDML& compiler, std::ostream& stream) const noexcept {
+void ImportStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
     if (path.extension() != ".gdml") {
         if (!isRelative) {
             stream << "#include <" << path.string() << ">\n";
@@ -109,8 +121,32 @@ void ImportStmt::codegen(GDML& compiler, std::ostream& stream) const noexcept {
         }
         else {
             stream << "#include \""
-                << compiler.getInputFile()->path.parent_path().string()
+                << instance.getSource()->path.parent_path().string()
                 << "/" << path.string() << "\"\n";
         }
+    }
+}
+
+void IfStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    if (condition.has_value()) {
+        stream << "if (";
+        condition.value()->codegen(instance, stream);
+        stream << ") ";
+    }
+    stream << "{";
+    if (instance.getShared().getFlag(Flags::PrettifyOutput)) stream << "\n";
+    branch->codegen(instance, stream);
+    stream << "}";
+    if (elseBranch.has_value()) {
+        stream << " else ";
+        elseBranch.value()->codegen(instance, stream);
+    }
+}
+
+void BlockStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    for (auto const& stmt : statements) {
+        stmt->codegen(instance, stream);
+        stream << ";";
+        if (instance.getShared().getFlag(Flags::PrettifyOutput)) stream << "\n";
     }
 }

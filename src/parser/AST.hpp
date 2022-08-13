@@ -48,7 +48,7 @@ namespace gdml::ast {
             debug::indent(i + debug::IND_LVL) + "(" #child ": None)\n")
         
         #define GDML_TYPECHECK_CHILD(child) \
-            {auto tch__ = child->compile(compiler);if (!tch__) return tch__;}
+            {auto tch__ = child->compile(instance);if (!tch__) return tch__;}
         
         #define GDML_TYPECHECK_CHILD_O(child) \
             if (child.has_value()) { GDML_TYPECHECK_CHILD(child.value()); }
@@ -81,8 +81,8 @@ namespace gdml::ast {
 
         virtual ~Stmt() = default;
         virtual std::string debugPrintAST(size_t i) const = 0;
-        virtual void codegen(GDML&, std::ostream& stream) const noexcept = 0;
-        virtual TypeCheckResult compile(Compiler&) const noexcept {
+        virtual void codegen(Instance&, std::ostream& stream) const noexcept = 0;
+        virtual TypeCheckResult compile(Instance&) const noexcept {
             return Ok();
         };
     };
@@ -145,7 +145,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP(value);
         }
 
-        void codegen(GDML&, std::ostream& stream) const noexcept override {
+        void codegen(Instance&, std::ostream& stream) const noexcept override {
             stream << (value ? "true" : "false");
         }
     };
@@ -170,7 +170,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP_NUMT(type);
         }
 
-        void codegen(GDML&, std::ostream& stream) const noexcept override {
+        void codegen(Instance&, std::ostream& stream) const noexcept override {
             stream
                 << "static_cast<"
                 << types::numberTypeToCppType(type)
@@ -198,7 +198,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP_NUMT(type);
         }
 
-        void codegen(GDML&, std::ostream& stream) const noexcept override {
+        void codegen(Instance&, std::ostream& stream) const noexcept override {
             stream
                 << "static_cast<"
                 << types::numberTypeToCppType(type)
@@ -226,7 +226,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP_NUMT(type);
         }
 
-        void codegen(GDML&, std::ostream& stream) const noexcept override {
+        void codegen(Instance&, std::ostream& stream) const noexcept override {
             auto str = std::to_string(value);
             // make sure to add .0 at the end if the 
             // number doesn't have a decimal point in 
@@ -258,7 +258,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP_S(value);
         }
 
-        void codegen(GDML&, std::ostream& stream) const noexcept override {
+        void codegen(Instance&, std::ostream& stream) const noexcept override {
             stream << "\"" << value << "\"";
         }
     };
@@ -299,12 +299,12 @@ namespace gdml::ast {
             return str;
         }
 
-        TypeCheckResult compile(Compiler& compiler) const noexcept override {
+        TypeCheckResult compile(Instance& instance) const noexcept override {
             GDML_TYPECHECK_CHILDREN(components);
             return Ok();
         }
     
-        void codegen(GDML& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& com, std::ostream& stream) const noexcept override {
             for (size_t ix = 0; ix < strings.size() + components.size(); ix++) {
                 if (ix) {
                     stream << " + ";
@@ -330,7 +330,7 @@ namespace gdml::ast {
             return GDML_DEBUG_FMT(NoneLiteralExpr);
         }
 
-        void codegen(GDML&, std::ostream& stream) const noexcept override {
+        void codegen(Instance&, std::ostream& stream) const noexcept override {
             stream << "std::nullopt";
         }
     };
@@ -346,7 +346,7 @@ namespace gdml::ast {
             return GDML_DEBUG_FMT(NullLiteralExpr);
         }
 
-        void codegen(GDML&, std::ostream& stream) const noexcept override {
+        void codegen(Instance&, std::ostream& stream) const noexcept override {
             stream << "nullptr";
         }
     };
@@ -376,13 +376,13 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD_O(value);
         }
 
-        TypeCheckResult compile(Compiler& compiler) const noexcept override {
+        TypeCheckResult compile(Instance& instance) const noexcept override {
             GDML_TYPECHECK_CHILD_O(type);
             GDML_TYPECHECK_CHILD_O(value);
             return Ok();
         }
     
-        void codegen(GDML& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& com, std::ostream& stream) const noexcept override {
             if (type.has_value()) {
                 type.value()->codegen(com, stream);
                 stream << " ";
@@ -421,7 +421,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP_S(name);
         }
 
-        void codegen(GDML&, std::ostream& stream) const noexcept override {
+        void codegen(Instance&, std::ostream& stream) const noexcept override {
             stream << name;
         }
     };
@@ -453,9 +453,9 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD(item);
         }
 
-        TypeCheckResult compile(Compiler& compiler) const noexcept override;
+        TypeCheckResult compile(Instance& instance) const noexcept override;
     
-        void codegen(GDML& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& com, std::ostream& stream) const noexcept override {
             stream << name << "::";
             item->codegen(com, stream);
         }
@@ -481,7 +481,7 @@ namespace gdml::ast {
         ) : ValueExpr(src, start, end),
             op(op), value(value), type(type) {}
 
-        TypeCheckResult compile(Compiler& compiler) const noexcept override {
+        TypeCheckResult compile(Instance& instance) const noexcept override {
             GDML_TYPECHECK_CHILD(value);
             return Ok();
         }
@@ -494,7 +494,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD(value);
         }
 
-        void codegen(GDML& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& com, std::ostream& stream) const noexcept override {
             if (type == Prefix) {
                 stream << tokenTypeToString(op);
             }
@@ -528,17 +528,13 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD(RHS);
         }
         
-        TypeCheckResult compile(Compiler& compiler) const noexcept override {
+        TypeCheckResult compile(Instance& instance) const noexcept override {
             GDML_TYPECHECK_CHILD(LHS);
             GDML_TYPECHECK_CHILD(RHS);
             return Ok();
         }
     
-        void codegen(GDML& com, std::ostream& stream) const noexcept override {
-            LHS->codegen(com, stream);
-            stream << tokenTypeToString(op);
-            RHS->codegen(com, stream);
-        }
+        void codegen(Instance& com, std::ostream& stream) const noexcept override;
     };
 
     struct TernaryExpr : ValueExpr {
@@ -564,17 +560,17 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD(falsy);
         }
 
-        TypeCheckResult compile(Compiler& compiler) const noexcept override {
+        TypeCheckResult compile(Instance& instance) const noexcept override {
             GDML_TYPECHECK_CHILD(condition);
             GDML_TYPECHECK_CHILD(truthy);
             GDML_TYPECHECK_CHILD(falsy);
             return Ok();
         }
     
-        void codegen(GDML& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& com, std::ostream& stream) const noexcept override {
             // add brackets and shit to make sure meaning 
             // doesn't change (C++ presedence might differ 
-            // from GDML)
+            // from Instance)
             stream << "((";
             condition->codegen(com, stream);
             stream << ") ? (";
@@ -607,20 +603,20 @@ namespace gdml::ast {
             return str;
         }
 
-        TypeCheckResult compile(Compiler& compiler) const noexcept override {
+        TypeCheckResult compile(Instance& instance) const noexcept override {
             GDML_TYPECHECK_CHILD(target);
             GDML_TYPECHECK_CHILDREN(args);
             return Ok();
         }
     
-        void codegen(GDML& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& com, std::ostream& stream) const noexcept override {
             stream << "(";
             target->codegen(com, stream);
             stream << ")(";
             bool firstArg = true;
             for (auto const& arg : args) {
                 if (!firstArg) {
-                    stream << ",";
+                    stream << ", ";
                 }
                 firstArg = false;
                 arg->codegen(com, stream);
@@ -650,13 +646,13 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD(intoType);
         }
 
-        TypeCheckResult compile(Compiler& compiler) const noexcept override {
+        TypeCheckResult compile(Instance& instance) const noexcept override {
             GDML_TYPECHECK_CHILD(target);
             GDML_TYPECHECK_CHILD(intoType);
             return Ok();
         }
     
-        void codegen(GDML&, std::ostream& stream) const noexcept override {
+        void codegen(Instance&, std::ostream& stream) const noexcept override {
             // todo: idk
         }
     };
@@ -681,8 +677,8 @@ namespace gdml::ast {
                 debugPrintASTTypeProps(i);
         }
     
-        void codegen(GDML&, std::ostream& stream) const noexcept override;
-        TypeCheckResult compile(Compiler&) const noexcept override;
+        void codegen(Instance&, std::ostream& stream) const noexcept override;
+        TypeCheckResult compile(Instance&) const noexcept override;
     };
 
     struct PointerExpr : TypeExpr {
@@ -707,8 +703,8 @@ namespace gdml::ast {
                 debugPrintASTTypeProps(i);
         }
         
-        void codegen(GDML&, std::ostream& stream) const noexcept override;
-        TypeCheckResult compile(Compiler&) const noexcept override;
+        void codegen(Instance&, std::ostream& stream) const noexcept override;
+        TypeCheckResult compile(Instance&) const noexcept override;
     };
 
     struct TypeOfExpr : TypeExpr {
@@ -727,12 +723,12 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD(value);
         }
 
-        TypeCheckResult compile(Compiler& compiler) const noexcept override {
+        TypeCheckResult compile(Instance& instance) const noexcept override {
             GDML_TYPECHECK_CHILD(value);
             return Ok();
         }
 
-        void codegen(GDML& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& com, std::ostream& stream) const noexcept override {
             stream << "typeof(";
             value->codegen(com, stream);
             stream << ")";
@@ -764,13 +760,13 @@ namespace gdml::ast {
             return pstring;
         }
 
-        TypeCheckResult compile(Compiler& compiler) const noexcept override {
+        TypeCheckResult compile(Instance& instance) const noexcept override {
             GDML_TYPECHECK_CHILDREN(parameters);
             GDML_TYPECHECK_CHILD_O(returnType);
             return Ok();
         }
 
-        void codegen(GDML& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& com, std::ostream& stream) const noexcept override {
             if (returnType.has_value()) {
                 returnType.value()->codegen(com, stream);
             } else {
@@ -780,7 +776,7 @@ namespace gdml::ast {
             bool firstArg = true;
             for (auto& param : parameters) {
                 if (!firstArg) {
-                    stream << ",";
+                    stream << ", ";
                 }
                 firstArg = false;
                 param->codegen(com, stream);
@@ -811,12 +807,12 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP(capacity);
         }
 
-        TypeCheckResult compile(Compiler& compiler) const noexcept override {
+        TypeCheckResult compile(Instance& instance) const noexcept override {
             GDML_TYPECHECK_CHILD(memberType);
             return Ok();
         }
 
-        void codegen(GDML& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& com, std::ostream& stream) const noexcept override {
             if (capacity) {
                 stream << "std::array<";
                 memberType->codegen(com, stream);
@@ -849,17 +845,12 @@ namespace gdml::ast {
             return str;
         }
 
-        TypeCheckResult compile(Compiler& compiler) const noexcept override {
+        TypeCheckResult compile(Instance& instance) const noexcept override {
             GDML_TYPECHECK_CHILDREN(statements);
             return Ok();
         }
 
-        void codegen(GDML& com, std::ostream& stream) const noexcept override {
-            for (auto const& stmt : statements) {
-                stmt->codegen(com, stream);
-                stream << ";";
-            }
-        }
+        void codegen(Instance& com, std::ostream& stream) const noexcept override;
     };
 
     struct IfStmt : Stmt {
@@ -888,26 +879,13 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD_O(elseBranch);
         }
 
-        TypeCheckResult compile(Compiler& compiler) const noexcept override {
+        TypeCheckResult compile(Instance& instance) const noexcept override {
             GDML_TYPECHECK_CHILD_O(condition);
             GDML_TYPECHECK_CHILD_O(elseBranch);
             return Ok();
         }
 
-        void codegen(GDML& com, std::ostream& stream) const noexcept override {
-            if (condition.has_value()) {
-                stream << "if(";
-                condition.value()->codegen(com, stream);
-                stream << ")";
-            }
-            stream << "{";
-            branch->codegen(com, stream);
-            stream << "}";
-            if (elseBranch.has_value()) {
-                stream << "else ";
-                elseBranch.value()->codegen(com, stream);
-            }
-        }
+        void codegen(Instance& com, std::ostream& stream) const noexcept override;
     };
 
     struct ReturnStmt : Stmt {
@@ -926,12 +904,12 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD(value);
         }
 
-        TypeCheckResult compile(Compiler& compiler) const noexcept override {
+        TypeCheckResult compile(Instance& instance) const noexcept override {
             GDML_TYPECHECK_CHILD(value);
             return Ok();
         }
 
-        void codegen(GDML& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& com, std::ostream& stream) const noexcept override {
             stream << "return ";
             value->codegen(com, stream);
         }
@@ -959,12 +937,12 @@ namespace gdml::ast {
             return str;
         }
 
-        TypeCheckResult compile(Compiler& compiler) const noexcept override {
+        TypeCheckResult compile(Instance& instance) const noexcept override {
             GDML_TYPECHECK_CHILDREN(members);
             return Ok();
         }
 
-        void codegen(GDML& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& com, std::ostream& stream) const noexcept override {
             stream << "class " << name << "{";
             for (auto const& member : members) {
                 member->codegen(com, stream);
@@ -1001,9 +979,9 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP(isImplementation);
         }
 
-        TypeCheckResult compile(Compiler&) const noexcept override;
+        TypeCheckResult compile(Instance&) const noexcept override;
 
-        void codegen(GDML& com, std::ostream& stream) const noexcept override;
+        void codegen(Instance& com, std::ostream& stream) const noexcept override;
     };
 
     // import / export
@@ -1028,7 +1006,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP(isRelative);
         }
 
-        void codegen(GDML& GDML, std::ostream& stream) const noexcept override;
+        void codegen(Instance& Instance, std::ostream& stream) const noexcept override;
     };
 
     // tree
@@ -1057,14 +1035,14 @@ namespace gdml::ast {
             return m_tree;
         }
 
-        inline void codegen(GDML& com, std::ostream& stream) const noexcept {
+        inline void codegen(Instance& com, std::ostream& stream) const noexcept {
             for (auto& stmt : m_tree) {
                 stmt->codegen(com, stream);
                 stream << ";";
             }
         }
 
-        inline TypeCheckResult compile(Compiler& com) const noexcept {
+        inline TypeCheckResult compile(Instance& com) const noexcept {
             for (auto& stmt : m_tree) {
                 auto res = stmt->compile(com);
                 if (!res) return res;

@@ -45,18 +45,25 @@ namespace gdml {
 
     class Compiler {
     protected:
-        GDML& m_shared;
+        Instance& m_instance;
         ast::AST* m_ast;
         std::unordered_map<std::string, Type*> m_types;
         std::vector<std::string> m_scope;
+        size_t m_indentation = 0;
     
         void loadBuiltinTypes();
 
         friend class GDML;
 
     public:
-        Compiler(GDML& shared, ast::AST* ast);
+        Compiler(Instance& instance, ast::AST* ast);
         Error compile();
+
+        void pushIndent(size_t i);
+        void popIndent(size_t i);
+        size_t getIndent() const;
+
+        Instance& getInstance() const;
 
         void pushScope(std::string const& name);
         void popScope(std::string const& name);

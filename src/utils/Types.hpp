@@ -30,7 +30,12 @@ namespace gdml {
     class Lexer;
     class Parser;
     class Compiler;
+    class Instance;
     class GDML;
+
+    namespace ast {
+        class AST;
+    }
 
     constexpr unsigned int hash(const char* str, int h = 0) {
         return !str[h] ? 5381 : (hash(str, h+1) * 33) ^ str[h];

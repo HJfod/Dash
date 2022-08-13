@@ -7,8 +7,6 @@
 #include "Token.hpp"
 
 namespace gdml {
-    class GDML;
-
     using LexingResult = LineResult<Tokens>;
     using NumberResult = GenericResult<std::string>;
     using LiteralResult = GenericResult<std::string>;
@@ -17,8 +15,7 @@ namespace gdml {
 
     class Lexer {
     protected:
-        GDML& m_shared;
-        SourceFile* m_source;
+        Instance& m_instance;
         size_t m_index = 0;
         Tokens* m_stream = nullptr;
 
@@ -41,11 +38,11 @@ namespace gdml {
         static TokenType getNumberType(std::string const& num);
     
     public:
-        Lexer(GDML& shared, SourceFile* source);
+        Lexer(Instance& instance);
         ~Lexer();
 
         LexingResult tokenize();
-        static LexingResult tokenizeWhole(GDML& compiler, SourceFile* source);
+
         /**
          * Note: This will return true for numbers, 
          * however a string beginning with a number 

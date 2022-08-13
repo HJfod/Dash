@@ -5,13 +5,14 @@
 #include <algorithm>
 #include <compiler/GDML.hpp>
 #include <array>
+#include <compiler/Instance.hpp>
 
 using namespace gdml;
 
 #define THROW_LEX_ERR(code, msg, hint, note) \
     return Err(LineError { Error::code, msg, \
     hint, note, positionFromIndex(startIndex),\
-    positionFromIndex(m_index), m_source\
+    positionFromIndex(m_index), m_instance.getSource()\
     })
 
 #define THROW_LEX_ERR_FG(err) \
@@ -21,7 +22,7 @@ using namespace gdml;
 
 #define ADD_TOKEN(type, tokdata) \
     m_stream->push_back(std::move(Token { positionFromIndex(startIndex), \
-    positionFromIndex(m_index), type, tokdata, m_source }))
+    positionFromIndex(m_index), type, tokdata, m_instance.getSource() }))
 
 bool Lexer::isValidIdentifierChar(char c) {
     // dealing with these ones in a string 
@@ -54,7 +55,7 @@ std::string Lexer::escapeCharacters(std::string const& line) {
                 case '\'':*it = '\''; break;
                 case '"': *it = '"'; break;
                 case '\\':*it = '\\'; break;
-                default: m_shared.logWarning({
+                default: m_instance.getShared().logWarning({
                     Error::InvalidEscape,
                     "Invalid escape sequence '\\" + std::string(1, *it) + "' at " +
                         std::to_string(std::distance(std::begin(res), it)),
@@ -62,7 +63,7 @@ std::string Lexer::escapeCharacters(std::string const& line) {
                     "Valid escape sequences: \\a, \\b, \\f, \\n, \\r, \\t, \\v, \\', \\\", \\\\",
                     positionFromIndex(m_index),
                     positionFromIndex(m_index),
-                    m_source
+                    m_instance.getSource()
                 });
             }
         }
@@ -85,8 +86,8 @@ TokenType Lexer::getNumberType(std::string const& num) {
 Position Lexer::positionFromIndex(size_t index) {
     Position pos { 0, 0 };
     for (size_t i = 0; i < index; i++) {
-        if (index >= m_source->data.size()) return pos;
-        if (m_source->data.at(i) == '\n') {
+        if (index >= m_instance.getSource()->data.size()) return pos;
+        if (m_instance.getSource()->data.at(i) == '\n') {
             pos.line++;
             pos.column = 0;
         } else {
@@ -100,10 +101,10 @@ Position Lexer::positionFromIndex(size_t index) {
 LiteralResult Lexer::getName() {
     std::string identifier {};
     while (
-        m_index < m_source->data.size() &&
-        isValidIdentifierChar(m_source->data.at(m_index))
+        m_index < m_instance.getSource()->data.size() &&
+        isValidIdentifierChar(m_instance.getSource()->data.at(m_index))
     ) {
-        identifier.push_back(m_source->data.at(m_index++));
+        identifier.push_back(m_instance.getSource()->data.at(m_index++));
     }
     return Ok(identifier);
 }
@@ -115,10 +116,10 @@ NumberResult Lexer::getNumber() {
     };
 
     // consume first character of number
-    std::string num { m_source->data.at(m_index++) };
+    std::string num { m_instance.getSource()->data.at(m_index++) };
     // check literal base identifier (0x, 0b, etc.)
     if (num.front() == '0') {
-        switch (m_source->data.at(m_index)) {
+        switch (m_instance.getSource()->data.at(m_index)) {
             // hexadecimal
             case 'x': {
                 // consume identifier
@@ -149,24 +150,24 @@ NumberResult Lexer::getNumber() {
 
     bool hasDot = false;
     while (
-        m_index < m_source->data.size() &&
-        verifier(m_source->data.at(m_index))
+        m_index < m_instance.getSource()->data.size() &&
+        verifier(m_instance.getSource()->data.at(m_index))
     ) {
-        auto next = m_index + 1 < m_source->data.size() ? m_source->data.at(m_index + 1) : 0;
-        if (m_source->data.at(m_index) == '.') {
+        auto next = m_index + 1 < m_instance.getSource()->data.size() ? m_instance.getSource()->data.at(m_index + 1) : 0;
+        if (m_instance.getSource()->data.at(m_index) == '.') {
             if (hasDot || next == '.') {
                 break;
             }
             hasDot = true;
         }
-        num.push_back(m_source->data.at(m_index++));
+        num.push_back(m_instance.getSource()->data.at(m_index++));
     }
     return Ok(num);
 }
 
 OperatorOption Lexer::getNumberSuffix() {
     for (auto& option : types::NUMTYPE_STRS) {
-        auto test = m_source->data.substr(m_index, strlen(option));
+        auto test = m_instance.getSource()->data.substr(m_index, strlen(option));
         if (test == option) {
             // consume suffix
             m_index += test.size();
@@ -179,9 +180,9 @@ OperatorOption Lexer::getNumberSuffix() {
 OperatorOption Lexer::getOperator() {
     static constexpr size_t MAX_OPERATOR_SIZE = 3;
     for (size_t i = MAX_OPERATOR_SIZE; i; i--) {
-        auto op = m_index + i < m_source->data.size() ?
-            m_source->data.substr(m_index, i) :
-            m_source->data.substr(m_index);
+        auto op = m_index + i < m_instance.getSource()->data.size() ?
+            m_instance.getSource()->data.substr(m_index, i) :
+            m_instance.getSource()->data.substr(m_index);
         auto tk = knownToken(op);
         if (tk != TokenType::Invalid) {
             m_index += i;
@@ -194,13 +195,13 @@ OperatorOption Lexer::getOperator() {
 LiteralResult Lexer::getStringLiteral() {
     std::string res {};
 
-    auto quoteType = m_source->data.at(m_index);
+    auto quoteType = m_instance.getSource()->data.at(m_index);
     // skip quote
     m_index++;
 
-    while (m_index < m_source->data.size()) {
-        auto c = m_source->data.at(m_index);
-        auto last = m_index ? m_source->data.at(m_index - 1) : 0;
+    while (m_index < m_instance.getSource()->data.size()) {
+        auto c = m_instance.getSource()->data.at(m_index);
+        auto last = m_index ? m_instance.getSource()->data.at(m_index - 1) : 0;
         if (c == quoteType && last != '\\') {
             break;
         }
@@ -232,9 +233,9 @@ LineResult<void> Lexer::getInterpolatedLiteral() {
 
     size_t braces = 0;
     size_t inComponent = 0;
-    while (m_index < m_source->data.size()) {
-        auto c = m_source->data.at(m_index);
-        auto last = m_index ? m_source->data.at(m_index - 1) : 0;
+    while (m_index < m_instance.getSource()->data.size()) {
+        auto c = m_instance.getSource()->data.at(m_index);
+        auto last = m_index ? m_instance.getSource()->data.at(m_index - 1) : 0;
         if (!inComponent && c == '"' && last != '\\') {
             break;
         }
@@ -307,9 +308,9 @@ LineResult<void> Lexer::getNextToken() {
         return Ok();
     }
 
-    auto c = m_source->data.at(m_index);
-    auto next = m_index + 1 < m_source->data.size() ? m_source->data.at(m_index + 1) : 0;
-    auto last = m_index ? m_source->data.at(m_index - 1) : 0;
+    auto c = m_instance.getSource()->data.at(m_index);
+    auto next = m_index + 1 < m_instance.getSource()->data.size() ? m_instance.getSource()->data.at(m_index + 1) : 0;
+    auto last = m_index ? m_instance.getSource()->data.at(m_index - 1) : 0;
 
     auto startIndex = m_index;
 
@@ -381,9 +382,9 @@ LineResult<void> Lexer::getNextToken() {
 void Lexer::skipToNextToken() {
     // skip non-tokens
     while (hasNextToken()) {
-        auto c = m_source->data.at(m_index);
-        auto next = m_index + 1 < m_source->data.size() ? m_source->data.at(m_index + 1) : 0;
-        auto last = m_index ? m_source->data.at(m_index - 1) : 0;
+        auto c = m_instance.getSource()->data.at(m_index);
+        auto next = m_index + 1 < m_instance.getSource()->data.size() ? m_instance.getSource()->data.at(m_index + 1) : 0;
+        auto last = m_index ? m_instance.getSource()->data.at(m_index - 1) : 0;
 
         // spaces
         if (std::isspace(static_cast<unsigned char>(c))) {
@@ -395,9 +396,9 @@ void Lexer::skipToNextToken() {
         if (c == '/' && next == '*') {
             m_index += 2;
             do { m_index++; } while (
-                m_index < m_source->data.size() && !(
-                    m_source->data.at(m_index - 1) == '*' &&
-                    m_source->data.at(m_index) == '/'
+                m_index < m_instance.getSource()->data.size() && !(
+                    m_instance.getSource()->data.at(m_index - 1) == '*' &&
+                    m_instance.getSource()->data.at(m_index) == '/'
                 )
             );
             continue;
@@ -409,8 +410,8 @@ void Lexer::skipToNextToken() {
             // wow i can't believe i found an use case for 
             // do-while
             do { m_index++; } while (
-                m_index < m_source->data.size() && 
-                m_source->data.at(m_index) != '\n'
+                m_index < m_instance.getSource()->data.size() && 
+                m_instance.getSource()->data.at(m_index) != '\n'
             );
             continue;
         }
@@ -428,7 +429,7 @@ void Lexer::skipToNextToken() {
 }
 
 bool Lexer::hasNextToken() const {
-    return m_index < m_source->data.size();
+    return m_index < m_instance.getSource()->data.size();
 }
 
 LineResult<void> Lexer::getRemainingTokens() {
@@ -439,9 +440,8 @@ LineResult<void> Lexer::getRemainingTokens() {
     return Ok();
 }
 
-Lexer::Lexer(GDML& shared, SourceFile* source)
-  : m_shared(shared),
-    m_source(source),
+Lexer::Lexer(Instance& shared)
+  : m_instance(shared),
     m_stream(new Tokens()) {}
 
 Lexer::~Lexer() {
@@ -451,7 +451,7 @@ Lexer::~Lexer() {
 }
 
 LexingResult Lexer::tokenize() {
-    if (!m_source->data.size()) {
+    if (!m_instance.getSource()->data.size()) {
         return Ok(Tokens());
     }
     auto p = getRemainingTokens();
@@ -459,6 +459,3 @@ LexingResult Lexer::tokenize() {
     return *m_stream;
 }
 
-LexingResult Lexer::tokenizeWhole(GDML& compiler, SourceFile* source) {
-    return Lexer(compiler, source).tokenize();
-}

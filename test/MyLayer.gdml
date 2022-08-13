@@ -6,5 +6,5 @@ impl MyLayer::init(title: string const&) -> bool {
         return false;
     }
     
-    return true;
+    true
 }

@@ -3,6 +3,7 @@
 #include <string>
 #include <utils/Types.hpp>
 #include <utils/IO.hpp>
+#include <mutex>
 
 namespace gdml {
     enum class LanguageRule {
@@ -53,14 +54,11 @@ namespace gdml {
     class GDML {
     protected:
         IO& m_io;
+        mutable std::mutex m_ioMutex;
         Flags m_flags;
-        SourceFile* m_src = nullptr;
-        SourceFile* m_dest = nullptr;
-        Lexer* m_lexer = nullptr;
-        Parser* m_parser = nullptr;
-        Compiler* m_compiler = nullptr;
         std::unordered_map<LanguageRule, bool> m_rules;
         bool m_encounteredErrors = false;
+        mutable std::mutex m_errorMutex;
 
         Error compileFile(SourceFile* input, SourceFile* output);
 
@@ -75,16 +73,14 @@ namespace gdml {
 
         Error compileFile(std::string const& input, std::string const& output);
 
-        SourceFile* getInputFile() const;
-        SourceFile* getOutputFile() const;
-        Lexer* getLexer() const;
-        Parser* getParser() const;
-        Compiler* getCompiler() const;
-
         void logMessage(LineError const& error);
         void logWarning(LineError const& error);
         void logError(LineError const& error);
+        void logDebug(std::string const& message);
 
-        IO& io();
+        std::mutex& rawIoLock();
+        IO& rawIO();
+
+        bool encounteredErrors() const;
     };
 }

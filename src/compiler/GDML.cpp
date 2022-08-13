@@ -1,35 +1,13 @@
 #include "GDML.hpp"
 #include <utils/Types.hpp>
 #include <fstream>
-#include "Compiler.hpp"
-#include <parser/Parser.hpp>
-#include <parser/Lexer.hpp>
+#include "Instance.hpp"
 
 using namespace gdml;
 using namespace gdml::io;
 
 #define GDML_LINE   "========================"
 #define GDML_W_LINE "------------------------"
-
-// i love raii
-template<class T>
-struct HoldPointer {
-    T*& m_pointer;
-
-    HoldPointer(T*& ptr, T* val) : m_pointer(ptr) {
-        ptr = val;
-    }
-    ~HoldPointer() {
-        m_pointer = nullptr;
-    }
-};
-
-// this is a macro and not a function because 
-// i couldn't get passing GDML& through variadic 
-// template args to work 
-#define MAKE_TOOL(var, type, ...) \
-    auto var = type(__VA_ARGS__);\
-    HoldPointer var##Holder(m_##var, &var);
 
 std::unordered_map<LanguageRule, bool> DEFAULT_RULES = {
     { LanguageRule::DefaultStaticFunctions, true },
@@ -39,99 +17,7 @@ GDML::GDML(Flags flags, IO& io)
  : m_flags(flags), m_io(io), m_rules(DEFAULT_RULES) {}
 
 Error GDML::compileFile(SourceFile* src, SourceFile* dest) {
-    if (m_flags & Flags::LogDebug) {
-        m_io << "[DEBUG] Working with source file: " << src->path << "\n";
-        m_io << "[DEBUG] Destination path: " << dest->path << "\n";
-    }
-
-    HoldPointer srcHolder(m_src, src);
-    HoldPointer dstHolder(m_dest, dest);
-    
-    // tokenixing
-
-    if (m_flags & Flags::LogDebug) m_io << "[DEBUG] Tokenizing...\n";
-
-    MAKE_TOOL(lexer, Lexer, *this, m_src);
-    auto res = m_lexer->tokenize();
-    if (!res) {
-        auto err = res.unwrapErr();
-        logError(err);
-        return err.code;
-    }
-    if (m_encounteredErrors) {
-        return Error::ScrollUpAndReadTheConsoleOutput;
-    }
-    auto tokens = res.unwrap();
-
-    if (m_flags & Flags::LogTokens) {
-        m_io << Color::Cyan << "======== TOKENS ========\n";
-        for (auto& token : tokens) {
-            auto type = tokenTypeToLongString(token.type);
-            auto loc = token.start.toString() + " - " + token.end.toString();
-            m_io
-                << type << std::string(19 - type.size(), ' ') << "| "
-                << loc << std::string(17 - loc.size(), ' ') << "| "
-                << token.data << "\n";
-        }
-        m_io << GDML_LINE "\n\n" << Color::White;
-    }
-
-    // parsing
-
-    if (m_flags & Flags::LogDebug) m_io << "[DEBUG] Parsing...\n";
-
-    MAKE_TOOL(parser, Parser, *this, tokens);
-    auto pres = m_parser->parse();
-    if (!pres) {
-        auto err = pres.unwrapErr();
-        logError(err);
-        return err.code;
-    }
-
-    // unique_ptr so our memory is squeaky clean :3
-    auto ast = std::unique_ptr<ast::AST>(pres.unwrap());
-    if (m_encounteredErrors) {
-        return Error::ScrollUpAndReadTheConsoleOutput;
-    }
-
-    if (m_flags & Flags::LogAST) {
-        m_io << Color::Pink << "========== AST =========\n";
-        for (auto& expr : ast->tree()) {
-            m_io << expr->debugPrintAST(0);
-        }
-        m_io << GDML_LINE "\n\n" << Color::White;
-    }
-
-    // compiling
-
-    if (m_flags & Flags::LogDebug) m_io << "[DEBUG] Compiling...\n";
-
-    MAKE_TOOL(compiler, Compiler, *this, ast.get());
-    auto cres = m_compiler->compile();
-    if (cres != Error::OK) {
-        return cres;
-    }
-    if (m_encounteredErrors) {
-        return Error::ScrollUpAndReadTheConsoleOutput;
-    }
-
-    // codegen
-
-    if (m_flags & Flags::LogDebug) m_io << "[DEBUG] Generating code...\n";
-
-    { // save generated file
-        std::ofstream file(m_dest->path, std::ios::out | std::ios::trunc);
-        if (!file.is_open()) {
-            return Error::CantSaveFile;
-        }
-        m_compiler->codegen(file);
-    }
-
-    if (m_flags & Flags::PrettifyOutput) {
-
-    }
-    
-    return Error::OK;
+    return Instance(*this, src, dest).execute();
 }
 
 Error GDML::compileFile(std::string const& input, std::string const& output) {
@@ -155,26 +41,6 @@ Error GDML::compileFile(std::string const& input, std::string const& output) {
 
 bool GDML::getFlag(Flags::Value flag) const {
     return m_flags & flag;
-}
-
-SourceFile* GDML::getInputFile() const {
-    return m_src;
-}
-
-SourceFile* GDML::getOutputFile() const {
-    return m_dest;
-}
-
-Lexer* GDML::getLexer() const {
-    return m_lexer;
-}
-
-Parser* GDML::getParser() const {
-    return m_parser;
-}
-
-Compiler* GDML::getCompiler() const {
-    return m_compiler;
 }
 
 void GDML::formatLines(LineError const& error) {
@@ -235,7 +101,11 @@ void GDML::formatLines(LineError const& error) {
 void GDML::logError(LineError const& error) {
     if (m_flags ^ Flags::LogErrors) return;
 
+    std::lock_guard lock(m_ioMutex);
+
+    m_errorMutex.lock();
     m_encounteredErrors = true;
+    m_errorMutex.unlock();
 
     m_io
         << Color::Gray << GDML_W_LINE "\n"
@@ -257,6 +127,8 @@ void GDML::logError(LineError const& error) {
 void GDML::logWarning(LineError const& error) {
     if (m_flags ^ Flags::LogWarnings) return;
 
+    std::lock_guard lock(m_ioMutex);
+
     m_io
         << Color::Gray << GDML_W_LINE "\n"
         << Color::Yellow
@@ -277,6 +149,8 @@ void GDML::logWarning(LineError const& error) {
 void GDML::logMessage(LineError const& error) {
     if (m_flags ^ Flags::LogMessages) return;
 
+    std::lock_guard lock(m_ioMutex);
+
     m_io
         << Color::Gray << GDML_W_LINE "\n"
         << Color::Yellow
@@ -294,8 +168,15 @@ void GDML::logMessage(LineError const& error) {
         << "\n\n" << Color::White;
 }
 
-IO& GDML::io() {
-    return m_io;
+void GDML::logDebug(std::string const& message) {
+    if (m_flags ^ Flags::LogDebug) return;
+    std::lock_guard lock(m_ioMutex);
+    m_io << "[DEBUG] " << message << "\n";
+}
+
+bool GDML::encounteredErrors() const {
+    std::lock_guard lock(m_errorMutex);
+    return m_encounteredErrors;
 }
 
 bool GDML::getRule(LanguageRule rule) const {
@@ -307,4 +188,12 @@ bool GDML::setRule(LanguageRule rule, bool value) {
     auto old = m_rules.at(rule);
     m_rules.at(rule) = value;
     return old;
+}
+
+std::mutex& GDML::rawIoLock() {
+    return m_ioMutex;
+}
+
+IO& GDML::rawIO() {
+    return m_io;
 }

@@ -947,10 +947,6 @@ ParseResult Parser::parse() noexcept {
     return ast;
 }
 
-ParseResult Parser::parseWhole(GDML& compiler, Tokens const& tokens) noexcept {
-    return Parser(compiler, tokens).parse();
-}
-
-Parser::Parser(GDML& shared, Tokens const& tokens) noexcept
- : m_shared(shared), m_tokens(tokens) {}
+Parser::Parser(Instance& inst, Tokens const& tokens) noexcept
+ : m_instance(inst), m_tokens(tokens) {}
 
