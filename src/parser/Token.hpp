@@ -2,7 +2,7 @@
 
 #include <string>
 #include <vector>
-#include <utils/types.hpp>
+#include <utils/Types.hpp>
 
 namespace gdml {
     enum class TokenType {
