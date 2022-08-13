@@ -26,9 +26,21 @@ namespace gdml {
         ) : Type(name, name) {}
 
         friend class Compiler;
+
+        virtual ~Type() = default;
     
     public:
         std::string getCodegenName() const;
+    };
+
+    class ClassType : public Type {
+    protected:
+        std::unordered_map<std::string, Type*> m_members;
+
+    public:
+        inline void addMember(std::string const& name, Type* type) {
+            m_members.insert({ name, type });
+        }
     };
 
     class Compiler {
@@ -50,13 +62,15 @@ namespace gdml {
         void popScope(std::string const& name);
         std::vector<std::string> const& getScope() const;
 
-        Type* makeType(
+        template<class T = Type, class... Args>
+        T* makeType(
             std::string const& name,
-            std::string const& cppEquivalent
-        );
-        Type* makeType(
-            std::string const& name
-        );
+            Args... args
+        ) {
+            auto type = new T(name, std::forward<Args>(args)...);
+            m_types.insert({ name, type });
+            return type;
+        }
 
         bool typeExists(std::string const& name) const;
         Type* getType(std::string const& name) const;
