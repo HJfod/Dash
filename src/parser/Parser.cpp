@@ -907,9 +907,16 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
             ValueExpr* res;
             PROPAGATE_ASSIGN(res, parseExpression());
 
-            // check that the statement was ended properly
-            // todo: implicit return
-            CHECK_SEMICOLON();
+            UPDATE_TOKEN();
+            // implicit return
+            if (!topLevel && token.type == TokenType::RightBrace) {
+                return m_ast->make<ReturnStmt>(
+                    res->source, res->start, res->end, res
+                );
+            } else {
+                // check that the statement was ended properly
+                CHECK_SEMICOLON();
+            }
 
             return res;
         }
