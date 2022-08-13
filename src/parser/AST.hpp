@@ -171,10 +171,11 @@ namespace gdml::ast {
         }
 
         void codegen(Instance&, std::ostream& stream) const noexcept override {
-            stream
-                << "static_cast<"
-                << types::numberTypeToCppType(type)
-                << ">(" << value << ")";
+            if (type == types::NumberType::I64) {
+                stream << value << "ll";
+            } else {
+                stream << value;
+            }
         }
     };
 
@@ -199,10 +200,11 @@ namespace gdml::ast {
         }
 
         void codegen(Instance&, std::ostream& stream) const noexcept override {
-            stream
-                << "static_cast<"
-                << types::numberTypeToCppType(type)
-                << ">(" << value << ")";
+            if (type == types::NumberType::U64) {
+                stream << value << "ull";
+            } else {
+                stream << value << "u";
+            }
         }
     };
 
@@ -244,22 +246,24 @@ namespace gdml::ast {
 
     struct StringLiteralExpr : LiteralExpr {
         types::String value;
+        types::String rawValue;
     
         StringLiteralExpr(
             SourceFile const* src,
             Position const& start,
             Position const& end,
-            types::String const& value
-        ) : LiteralExpr(src, start, end), value(value) {}
+            types::String const& value,
+            types::String const& rawValue
+        ) : LiteralExpr(src, start, end), value(value), rawValue(rawValue) {}
 
         std::string debugPrintAST(size_t i) const override {
             return
                 GDML_DEBUG_FMT(StringLiteralExpr) +
-                GDML_DEBUG_FMT_PROP_S(value);
+                GDML_DEBUG_FMT_PROP_S(rawValue);
         }
 
         void codegen(Instance&, std::ostream& stream) const noexcept override {
-            stream << "\"" << value << "\"";
+            stream << "\"" << rawValue << "\"";
         }
     };
 
@@ -270,6 +274,7 @@ namespace gdml::ast {
         // like svsvsvsvsv...
         // also first and last component are always a string
         std::vector<types::String> strings;
+        std::vector<types::String> rawStrings;
         std::vector<ValueExpr*> components;
 
         InterpolatedLiteralExpr(
@@ -277,9 +282,12 @@ namespace gdml::ast {
             Position const& start,
             Position const& end,
             std::vector<types::String> const& strs,
+            std::vector<types::String> const& rawstrs,
             std::vector<ValueExpr*> const& components
         ) : LiteralExpr(src, start, end), 
-            strings(strs), components(components) {}
+            strings(strs),
+            rawStrings(rawstrs),
+            components(components) {}
 
         std::string debugPrintAST(size_t i) const override {
             std::string str = GDML_DEBUG_FMT(InterpolatedLiteralExpr);
@@ -305,7 +313,7 @@ namespace gdml::ast {
         }
     
         void codegen(Instance& com, std::ostream& stream) const noexcept override {
-            for (size_t ix = 0; ix < strings.size() + components.size(); ix++) {
+            for (size_t ix = 0; ix < rawStrings.size() + components.size(); ix++) {
                 if (ix) {
                     stream << " + ";
                 }
@@ -313,7 +321,7 @@ namespace gdml::ast {
                     // todo: convert codegenned result to string or smth
                     components.at(ix / 2)->codegen(com, stream);
                 } else {
-                    stream << "\"" << strings.at(ix / 2) << "\"";
+                    stream << "\"" << rawStrings.at(ix / 2) << "\"";
                 }
             }
         }
@@ -567,18 +575,7 @@ namespace gdml::ast {
             return Ok();
         }
     
-        void codegen(Instance& com, std::ostream& stream) const noexcept override {
-            // add brackets and shit to make sure meaning 
-            // doesn't change (C++ presedence might differ 
-            // from Instance)
-            stream << "((";
-            condition->codegen(com, stream);
-            stream << ") ? (";
-            truthy->codegen(com, stream);
-            stream << ") : (";
-            falsy->codegen(com, stream);
-            stream << "))";
-        }
+        void codegen(Instance& com, std::ostream& stream) const noexcept override;
     };
 
     struct CallExpr : ValueExpr {
@@ -827,18 +824,18 @@ namespace gdml::ast {
 
     // control flow
 
-    struct BlockStmt : Stmt {
+    struct StmtList : Stmt {
         std::vector<Stmt*> statements;
 
-        BlockStmt(
+        StmtList(
             SourceFile const* src,
             Position const& start,
             Position const& end,
-            std::vector<Stmt*> stmnts
+            std::vector<Stmt*> const& stmnts
         ) : Stmt(src, start, end), statements(stmnts) {}
 
         std::string debugPrintAST(size_t i) const override {
-            std::string str = GDML_DEBUG_FMT(BlockStmt);
+            std::string str = GDML_DEBUG_FMT(StmtList);
             for (auto& expr : statements) {
                 str += GDML_DEBUG_FMT_CHILD(expr);
             }
@@ -850,13 +847,32 @@ namespace gdml::ast {
             return Ok();
         }
 
-        void codegen(Instance& com, std::ostream& stream) const noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
+    };
+
+    struct BlockStmt : Stmt {
+        StmtList* body;
+
+        BlockStmt(
+            SourceFile const* src,
+            Position const& start,
+            Position const& end,
+            StmtList* body
+        ) : Stmt(src, start, end), body(body) {}
+
+        std::string debugPrintAST(size_t i) const override {
+            return 
+                GDML_DEBUG_FMT(BlockStmt) +
+                GDML_DEBUG_FMT_CHILD(body);
+        }
+
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
     };
 
     struct IfStmt : Stmt {
         // if None, always truthy. used for else statements
         Option<ValueExpr*> condition;
-        BlockStmt* branch;
+        StmtList* branch;
         Option<IfStmt*> elseBranch;
 
         IfStmt(
@@ -864,7 +880,7 @@ namespace gdml::ast {
             Position const& start,
             Position const& end,
             Option<ValueExpr*> condition,
-            BlockStmt* branch,
+            StmtList* branch,
             Option<IfStmt*> elseBranch
         ) : Stmt(src, start, end),
             condition(condition),
@@ -955,7 +971,7 @@ namespace gdml::ast {
     struct FunctionDeclStmt : Stmt {
         FunctionTypeExpr* type;
         NameExpr* name;
-        Option<BlockStmt*> body;
+        Option<StmtList*> body;
         bool isImplementation;
 
         FunctionDeclStmt(
@@ -964,7 +980,7 @@ namespace gdml::ast {
             Position const& end,
             FunctionTypeExpr* t,
             NameExpr* n,
-            Option<BlockStmt*> body,
+            Option<StmtList*> body,
             bool impl
         ) : Stmt(src, start, end),
             type(t), name(n), body(body),
@@ -1035,12 +1051,7 @@ namespace gdml::ast {
             return m_tree;
         }
 
-        inline void codegen(Instance& com, std::ostream& stream) const noexcept {
-            for (auto& stmt : m_tree) {
-                stmt->codegen(com, stream);
-                stream << ";";
-            }
-        }
+        void codegen(Instance& com, std::ostream& stream) const noexcept;
 
         inline TypeCheckResult compile(Instance& com) const noexcept {
             for (auto& stmt : m_tree) {

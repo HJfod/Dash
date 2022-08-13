@@ -96,7 +96,8 @@ static const std::unordered_map<std::string, TokenType> TOKEN_STRINGS = {
     { "&=", TokenType::BitAndAssign },
     { "|=", TokenType::BitOrAssign },
     { "~=", TokenType::BitNotAssign },
-    { "^=", TokenType::BitXorAssign },
+    { "<<", TokenType::BitShiftLeft },
+    { ">>", TokenType::BitShiftRight },
 
     { "?", TokenType::Question },
     { ":", TokenType::Colon },
@@ -154,6 +155,9 @@ static const std::unordered_map<TokenType, int> OPERATOR_PRESEDENCE {
 
     { TokenType::Add, 100 },
     { TokenType::Sub, 100 },
+
+    { TokenType::BitShiftLeft, 95 },
+    { TokenType::BitShiftRight, 95 },
 
     { TokenType::LessThan, 90 },
     { TokenType::LessThanOrEqual, 90 },
@@ -227,6 +231,11 @@ std::string gdml::tokenTypeToLongString(TokenType type) {
     return std::to_string(static_cast<int>(type)) + " (" + tokenTypeToString(type) + ")";
 }
 
+size_t gdml::extractSymbolCount(TokenType type, char symbol) {
+    auto s = tokenTypeToString(type);
+    return std::count(s.begin(), s.end(), symbol);
+}
+
 bool gdml::isTernaryOperator(TokenType type) {
     return type == TokenType::Question;
 }
@@ -239,7 +248,7 @@ bool gdml::isBinaryOperator(TokenType type) {
     return
         IS_BETWEEN(Assign, Pow) ||
         IS_BETWEEN(And, GreaterThanOrEqual) ||
-        IS_BETWEEN(BitAnd, BitXorAssign) ||
+        IS_BETWEEN(BitAnd, BitShiftRight) ||
         type == TokenType::DoubleQuestion ||
         type == TokenType::QuestionAssign ||
         type == TokenType::Dot ||

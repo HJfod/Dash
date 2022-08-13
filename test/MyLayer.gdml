@@ -1,10 +1,18 @@
 
+import @"iostream";
 import "MyLayer.hpp";
+
+fun addTwo(a, b) => a + b;
 
 impl MyLayer::init(title: string const&) -> bool {
     if !CCLayer::init() {
-        return false;
+        false
     }
+
+    auto x = addTwo(2, 5);
+    x += 2;
+
+    std::cout << x << "\n";
     
     true
 }

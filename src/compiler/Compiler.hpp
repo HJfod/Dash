@@ -43,13 +43,26 @@ namespace gdml {
         }
     };
 
+    class Formatter {
+    protected:
+        Compiler& m_compiler;
+        size_t m_indentation = 0;
+    
+    public:
+        Formatter(Compiler& compiler);
+
+        void pushIndent();
+        void popIndent();
+        void newline(std::ostream& stream) const;
+    };
+
     class Compiler {
     protected:
         Instance& m_instance;
         ast::AST* m_ast;
         std::unordered_map<std::string, Type*> m_types;
         std::vector<std::string> m_scope;
-        size_t m_indentation = 0;
+        Formatter m_formatter;
     
         void loadBuiltinTypes();
 
@@ -59,11 +72,8 @@ namespace gdml {
         Compiler(Instance& instance, ast::AST* ast);
         Error compile();
 
-        void pushIndent(size_t i);
-        void popIndent(size_t i);
-        size_t getIndent() const;
-
         Instance& getInstance() const;
+        Formatter& getFormatter();
 
         void pushScope(std::string const& name);
         void popScope(std::string const& name);

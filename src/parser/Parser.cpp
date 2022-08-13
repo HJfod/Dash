@@ -49,11 +49,13 @@ ExprResult<InterpolatedLiteralExpr> Parser::parseInterpolated() noexcept {
     NEXT_TOKEN();
 
     std::vector<std::string> strings {};
+    std::vector<std::string> rawStrings {};
     std::vector<ValueExpr*> values {};
 
     while (token.type != TokenType::EndInterpolatedString) {
         if (token.type == TokenType::String) {
             strings.push_back(token.data);
+            rawStrings.push_back(token.rawData.value());
             NEXT_TOKEN();
         } else if (token.type == TokenType::BeginInterpolatedComponent) {
             m_index++;
@@ -86,7 +88,10 @@ ExprResult<InterpolatedLiteralExpr> Parser::parseInterpolated() noexcept {
     // consume ending token
     m_index++;
     
-    return m_ast->make<InterpolatedLiteralExpr>(m_source, startPos, token.end, strings, values);
+    return m_ast->make<InterpolatedLiteralExpr>(
+        m_source, startPos, token.end,
+        strings, rawStrings, values
+    );
 }
 
 ExprResult<NameExpr> Parser::parseName() noexcept {
@@ -187,22 +192,35 @@ ExprResult<TypeExpr> Parser::parseTypeExpression() noexcept {
     UPDATE_TOKEN();
     CHECK_CONST();
 
-    auto res = m_ast->make<TypeNameExpr>(
+    TypeExpr* res = m_ast->make<TypeNameExpr>(
         m_source, start, PREV_TOKEN().end,
         typeName.unwrap(), TypeQualifiers { isConst }
     );
 
     UPDATE_TOKEN();
 
-    if (token.type == TokenType::Mul || token.type == TokenType::BitAnd) {
+    size_t ptrs = 0;
+    size_t refs = 0;
+    while (
+        // let's just agree i am never to introduce a token 
+        // that contains both * and &
+        (ptrs = extractSymbolCount(token.type, '*')) ||
+        (refs = extractSymbolCount(token.type, '&'))
+    ) {
+        auto count = ptrs ? ptrs : refs;
         isConst = false;
-        auto isRef = token.type == TokenType::BitAnd;
-        NEXT_TOKEN();
-        CHECK_CONST();
-        return m_ast->make<PointerExpr>(
-            m_source, start, PREV_TOKEN().end,
-            res, isRef, TypeQualifiers { isConst }
-        );
+        for (size_t i = 0; i < count; i++) {
+            // const applies to outermost
+            if (i == count - 1) {
+                NEXT_TOKEN();
+                CHECK_CONST();
+                UPDATE_TOKEN();
+            }
+            res = m_ast->make<PointerExpr>(
+                m_source, start, PREV_TOKEN().end,
+                res, refs, TypeQualifiers { isConst }
+            );
+        }
     }
 
     return res;
@@ -422,7 +440,7 @@ ExprResult<ValueExpr> Parser::parseValue() noexcept {
         case TokenType::String: {
             m_index++;
             return m_ast->make<StringLiteralExpr>(
-                m_source, token.start, token.end, token.data
+                m_source, token.start, token.end, token.data, token.rawData.value()
             );
         } break;
 
@@ -624,9 +642,42 @@ ExprResult<FunctionDeclStmt> Parser::parseFunDeclaration() noexcept {
     auto end = PREV_TOKEN().end;
 
     // body
-    Option<BlockStmt*> body = None;
+    Option<StmtList*> body = None;
     if (token.type == TokenType::LeftBrace) {
         PROPAGATE_ASSIGN(body, parseBlock());
+    }
+    // short-form syntax `fun () => expr;`
+    else if (token.type == TokenType::FatArrow) {
+        auto bodyStart = next.start;
+
+        // consume arrow
+        m_index++;
+
+        ValueExpr* value;
+        PROPAGATE_ASSIGN(value, parseExpression());
+        
+        UPDATE_TOKEN();
+
+        body = m_ast->make<StmtList>(
+            m_source, bodyStart, PREV_TOKEN().end,
+            std::vector<Stmt*> {
+                m_ast->make<ReturnStmt>(
+                    m_source, bodyStart, PREV_TOKEN().end,
+                    value
+                )
+            }
+        );
+        // short-form syntax must end with semicolon
+        if (token.type != TokenType::SemiColon) {
+            THROW_SYNTAX_ERR(
+                token,
+                "Expected " + TOKEN_STR(SemiColon) + 
+                "after short-form function body, found " + 
+                TOKEN_STR_V(token.type),
+                "Add a " + TOKEN_STR(SemiColon) + " at the end",
+                ""
+            );
+        }
     }
     // if no body, semicolon required
     else if (token.type != TokenType::SemiColon) {
@@ -739,7 +790,7 @@ ExprResult<IfStmt> Parser::parseIfChain() noexcept {
     );
 }
 
-ExprResult<BlockStmt> Parser::parseBlock(bool topLevel) noexcept {
+ExprResult<StmtList> Parser::parseBlock(bool topLevel) noexcept {
     std::vector<Stmt*> statements;
 
     INIT_TOKEN();
@@ -748,7 +799,7 @@ ExprResult<BlockStmt> Parser::parseBlock(bool topLevel) noexcept {
     // if this is just '{}'
     if (next.type == TokenType::RightBrace) {
         m_index += 2;
-        return m_ast->make<BlockStmt>(
+        return m_ast->make<StmtList>(
             m_source, start, next.end, statements
         );
     }
@@ -785,7 +836,7 @@ ExprResult<BlockStmt> Parser::parseBlock(bool topLevel) noexcept {
     // consume closing brace
     m_index++;
 
-    return m_ast->make<BlockStmt>(
+    return m_ast->make<StmtList>(
         m_source, start, token.end, statements
     );
 }
@@ -876,8 +927,13 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
         } break;
 
         case TokenType::LeftBrace: {
+            StmtList* body;
+            PROPAGATE_ASSIGN(body, parseBlock(topLevel));
+
+            return m_ast->make<BlockStmt>(
+                m_source, body->start, body->end, body
+            );
             // no need to conclude blocks with semicolons
-            PROPAGATE_VALUE(parseBlock(topLevel));
         } break;
 
         case TokenType::If: {

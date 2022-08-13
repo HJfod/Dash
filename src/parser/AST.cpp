@@ -10,6 +10,16 @@ using namespace gdml::ast;
     return LineError { Error::TypeError,\
         msg, hint, note, start, end, source }
 
+#define PUSH_INDENT() \
+    instance.getCompiler().getFormatter().pushIndent(); \
+    instance.getCompiler().getFormatter().newline(stream)
+
+#define POP_INDENT() \
+    instance.getCompiler().getFormatter().popIndent(); \
+    instance.getCompiler().getFormatter().newline(stream)
+
+#define NEW_LINE() \
+    instance.getCompiler().getFormatter().newline(stream)
 
 void BinaryExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
     LHS->codegen(instance, stream);
@@ -17,6 +27,28 @@ void BinaryExpr::codegen(Instance& instance, std::ostream& stream) const noexcep
     stream << tokenTypeToString(op);
     if (instance.getShared().getFlag(Flags::PrettifyOutput)) stream << " ";
     RHS->codegen(instance, stream);
+}
+
+
+void TernaryExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    // add brackets and shit to make sure meaning 
+    // doesn't change (C++ presedence might differ 
+    // from Instance)
+    stream << "((";
+    condition->codegen(instance, stream);
+    stream << ")";
+
+    instance.getCompiler().getFormatter().newline(stream);
+
+    stream << " ? (";
+    truthy->codegen(instance, stream);
+    stream << ")";
+
+    instance.getCompiler().getFormatter().newline(stream);
+
+    stream << " : (";
+    falsy->codegen(instance, stream);
+    stream << "))";
 }
 
 
@@ -97,32 +129,44 @@ void FunctionDeclStmt::codegen(Instance& instance, std::ostream& stream) const n
     bool firstArg = true;
     for (auto& param : type->parameters) {
         if (!firstArg) {
-            stream << ",";
+            stream << ", ";
         }
         firstArg = false;
         param->codegen(instance, stream);
     }
     stream << ")";
     if (body.has_value()) {
-        stream << "{";
+        stream << " {";
+        PUSH_INDENT();
         body.value()->codegen(instance, stream);
+        POP_INDENT();
         stream << "}";
     }
 }
 
+void BlockStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    stream << "{";
+    PUSH_INDENT();
+    body->codegen(instance, stream);
+    POP_INDENT();
+    stream << "}";
+}
 
 void ImportStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
     if (path.extension() != ".gdml") {
         if (!isRelative) {
-            stream << "#include <" << path.string() << ">\n";
+            stream << "#include <" << path.string() << ">";
+            NEW_LINE();
         }
         else if (path.is_absolute()) {
-            stream << "#include \"" << path.string() << "\"\n";
+            stream << "#include \"" << path.string() << "\"";
+            NEW_LINE();
         }
         else {
             stream << "#include \""
                 << instance.getSource()->path.parent_path().string()
-                << "/" << path.string() << "\"\n";
+                << "/" << path.string() << "\"";
+            NEW_LINE();
         }
     }
 }
@@ -134,8 +178,9 @@ void IfStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
         stream << ") ";
     }
     stream << "{";
-    if (instance.getShared().getFlag(Flags::PrettifyOutput)) stream << "\n";
+    PUSH_INDENT();
     branch->codegen(instance, stream);
+    POP_INDENT();
     stream << "}";
     if (elseBranch.has_value()) {
         stream << " else ";
@@ -143,10 +188,31 @@ void IfStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
     }
 }
 
-void BlockStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
+void StmtList::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    bool first = true;
     for (auto const& stmt : statements) {
+        if (!first) {
+            NEW_LINE();
+            NEW_LINE();
+        }
+        first = false;
+
         stmt->codegen(instance, stream);
         stream << ";";
-        if (instance.getShared().getFlag(Flags::PrettifyOutput)) stream << "\n";
     }
+}
+
+void AST::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    bool first = true;
+    for (auto& stmt : m_tree) {
+        if (!first) {
+            NEW_LINE();
+            NEW_LINE();
+        }
+        first = false;
+
+        stmt->codegen(instance, stream);
+        stream << ";";
+    }
+    NEW_LINE();
 }

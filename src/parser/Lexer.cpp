@@ -22,7 +22,11 @@ using namespace gdml;
 
 #define ADD_TOKEN(type, tokdata) \
     m_stream->push_back(std::move(Token { positionFromIndex(startIndex), \
-    positionFromIndex(m_index), type, tokdata, m_instance.getSource() }))
+    positionFromIndex(m_index), type, tokdata, tokdata, m_instance.getSource() }))
+
+#define ADD_TOKEN_RAW(type, tokdata, rawdata) \
+    m_stream->push_back(std::move(Token { positionFromIndex(startIndex), \
+    positionFromIndex(m_index), type, tokdata, rawdata, m_instance.getSource() }))
 
 bool Lexer::isValidIdentifierChar(char c) {
     // dealing with these ones in a string 
@@ -219,7 +223,7 @@ LiteralResult Lexer::getStringLiteral() {
 
     // skip ending quote
     m_index++;
-    return Ok(escapeCharacters(res));
+    return res;
 }
 
 LineResult<void> Lexer::getInterpolatedLiteral() {
@@ -250,7 +254,7 @@ LineResult<void> Lexer::getInterpolatedLiteral() {
             } else {
                 braces++;
                 if (braces == 1) {
-                    ADD_TOKEN(TokenType::String, escapeCharacters(res));
+                    ADD_TOKEN_RAW(TokenType::String, escapeCharacters(res), res);
                     ADD_TOKEN(TokenType::BeginInterpolatedComponent, "");
                     res.clear();
                     inComponent = m_index;
@@ -295,7 +299,7 @@ LineResult<void> Lexer::getInterpolatedLiteral() {
         );
     }
     
-    ADD_TOKEN(TokenType::String, escapeCharacters(res));
+    ADD_TOKEN_RAW(TokenType::String, escapeCharacters(res), res);
     ADD_TOKEN(TokenType::EndInterpolatedString, "");
 
     return Ok();
@@ -360,7 +364,7 @@ LineResult<void> Lexer::getNextToken() {
             auto err = str.unwrapErr();
             THROW_LEX_ERR_FG(err);
         }
-        ADD_TOKEN(TokenType::String, str.unwrap());
+        ADD_TOKEN_RAW(TokenType::String, escapeCharacters(str.unwrap()), str.unwrap());
         return Ok();
     }
 

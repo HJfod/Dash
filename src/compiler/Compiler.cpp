@@ -93,7 +93,7 @@ void Compiler::codegen(std::ostream& stream) const noexcept {
 }
 
 Compiler::Compiler(Instance& shared, ast::AST* ast)
- : m_instance(shared), m_ast(ast) {
+ : m_instance(shared), m_ast(ast), m_formatter(*this) {
     loadBuiltinTypes();
 }
 
@@ -101,14 +101,22 @@ Instance& Compiler::getInstance() const {
     return m_instance;
 }
 
-void Compiler::pushIndent(size_t i) {
-    m_indentation += i;
+Formatter::Formatter(Compiler& compiler) : m_compiler(compiler) {}
+
+Formatter& Compiler::getFormatter() {
+    return m_formatter;
 }
 
-void Compiler::popIndent(size_t i) {
-    m_indentation -= i;
+void Formatter::pushIndent() {
+    m_indentation += 4;
 }
 
-size_t Compiler::getIndent() const {
-    return m_indentation;
+void Formatter::popIndent() {
+    m_indentation -= 4;
+}
+
+void Formatter::newline(std::ostream& stream) const {
+    if (m_compiler.getInstance().getShared().getFlag(Flags::PrettifyOutput)) {
+        stream << "\n" << std::string(m_indentation, ' ');
+    }
 }

@@ -33,7 +33,7 @@ namespace gdml {
 
         ExprResult<ast::FunctionDeclStmt> parseFunDeclaration() noexcept;
         ExprResult<ast::IfStmt> parseIfChain() noexcept;
-        ExprResult<ast::BlockStmt> parseBlock(bool topLevel = false) noexcept;
+        ExprResult<ast::StmtList> parseBlock(bool topLevel = false) noexcept;
         ExprResult<ast::Stmt> parseStatement(bool topLevel = false) noexcept;
     
     public:
@@ -41,5 +41,4 @@ namespace gdml {
 
         ParseResult parse() noexcept;
     };
-
 }
