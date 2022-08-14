@@ -23,7 +23,9 @@ namespace gdml {
     public:
         types::DataType getType() const;
 
-        Value* instantiate();
+        virtual Value* instantiate(TypeQualifiers const& qualifiers);
+
+        virtual ~Type() = default;
     };
 
     class ArrayType : public Type {
@@ -56,14 +58,41 @@ namespace gdml {
         std::unordered_map<std::string, Type*> const& getMembers() const;
     };
 
-    struct Value {
+    struct QualifiedType {
         Type* type;
         TypeQualifiers qualifiers;
+        bool isModifiable;
+    };
 
-        Value(Type* t)
-         : type(t), qualifiers({ false }) {}
-        Value(Type* t, TypeQualifiers const& q)
-         : type(t), qualifiers(q) {}
+    class Value {
+    protected:
+        QualifiedType m_type;
+
+    public:
+        Value(QualifiedType const& type);
+
+        virtual ~Value() = default;
+    };
+
+    template<class T>
+    class BuiltInValue : public Value {
+    protected:
+        T m_value;
+    
+    public:
+        BuiltInValue(
+            T const& value,
+            TypeQualifiers const& type,
+            bool isModifiable
+        ) : Value({ type, isModifiable }),
+            m_value(value) {}
+
+        T getValue() const {
+            return m_value;
+        }
+        void setValue(T const& value) {
+            m_value = value;
+        }
     };
 
     class Formatter {

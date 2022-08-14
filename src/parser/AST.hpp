@@ -84,7 +84,7 @@ namespace gdml::ast {
     };
 
     struct Expr : Stmt {
-        RealType evalType = nullptr;
+        QualifiedType evalType;
 
         Expr(
             SourceFile const* src,
