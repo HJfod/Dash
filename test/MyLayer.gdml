@@ -1,5 +1,4 @@
 
-import @"iostream";
 import "MyLayer.hpp";
 
 fun addTwo(a, b) => a + b;

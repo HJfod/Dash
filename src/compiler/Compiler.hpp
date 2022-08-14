@@ -9,38 +9,61 @@ namespace gdml {
     namespace ast {
         class AST;
     }
+
+    class Value;
     
     class Type {
     protected:
-        std::string m_name;
-        std::string m_cppEquivalent;
-
-        inline Type(
-            std::string const& name,
-            std::string const& cppEquivalent
-        ) : m_name(name),
-            m_cppEquivalent(cppEquivalent) {}
-
-        inline Type(
-            std::string const& name
-        ) : Type(name, name) {}
+        const types::DataType m_type;
+    
+        Type(const types::DataType type);
 
         friend class Compiler;
 
-        virtual ~Type() = default;
-    
     public:
-        std::string getCodegenName() const;
+        types::DataType getType() const;
+
+        Value* instantiate();
+    };
+
+    class ArrayType : public Type {
+    protected:
+        Type* m_inner;
+
+        ArrayType(Type* inner);
+
+        friend class Compiler;
+
+    public:
+        Type* getInnerType();
     };
 
     class ClassType : public Type {
     protected:
+        std::string m_name;
         std::unordered_map<std::string, Type*> m_members;
+
+        ClassType();
+
+        friend class Compiler;
 
     public:
         inline void addMember(std::string const& name, Type* type) {
             m_members.insert({ name, type });
         }
+
+        std::string const& getName() const;
+        std::unordered_map<std::string, Type*> const& getMembers() const;
+    };
+
+    struct Value {
+        Type* type;
+        TypeQualifiers qualifiers;
+
+        Value(Type* t)
+         : type(t), qualifiers({ false }) {}
+        Value(Type* t, TypeQualifiers const& q)
+         : type(t), qualifiers(q) {}
     };
 
     class Formatter {

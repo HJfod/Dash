@@ -23,17 +23,13 @@ Error Compiler::compile() {
 
 void Compiler::loadBuiltinTypes() {
     size_t i = 0;
-    for (auto& type : types::NUMTYPES) {
+    for (auto& type : types::DATATYPES) {
         makeType(
-            types::NUMTYPE_STRS[i],
-            types::numberTypeToCppType(type)
+            types::DATATYPE_STRS[i],
+            types::dataTypeToCppType(type)
         );
         i++;
     }
-    makeType("string", "gd::string");
-    makeType("void");
-    makeType("bool");
-    makeType("size_t");
 }
 
 std::vector<std::string> const& Compiler::getScope() const {

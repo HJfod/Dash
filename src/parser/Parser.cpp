@@ -375,10 +375,10 @@ ExprResult<ValueExpr> Parser::parseValue() noexcept {
             try {
                 // consume number
                 m_index++;
-                types::NumberType numType = types::NumberType::I32;
+                types::DataType numType = types::DataType::I32;
                 auto end = token.end;
                 if (next.type == TokenType::NumeralSuffix) {
-                    numType = types::numberTypeFromString(next.data);
+                    numType = types::dataTypeFromString(next.data);
                     end = next.end;
                     // consume suffix
                     m_index++;
@@ -409,14 +409,14 @@ ExprResult<ValueExpr> Parser::parseValue() noexcept {
                 CHECK_BASE("0x", 16);
                 
                 auto end = token.end;
-                types::NumberType numType = types::NumberType::I32;
+                types::DataType numType = types::DataType::I32;
                 if (next.type == TokenType::NumeralSuffix) {
-                    numType = types::numberTypeFromString(next.data);
+                    numType = types::dataTypeFromString(next.data);
                     end = next.end;
                     // consume suffix
                     m_index++;
                 }
-                if (numberTypeIsUnsigned(numType)) {
+                if (dataTypeIsUnsigned(numType)) {
                     return m_ast->make<UIntLiteralExpr>(
                         m_source, token.start, end,
                         std::stoull(token.data, nullptr, base), numType

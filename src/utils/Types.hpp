@@ -42,32 +42,55 @@ namespace gdml {
     }
 
     namespace types {
-        enum class NumberType {
+        enum class DataType {
+            Void,
             I8, I16, I32, I64,
             U8, U16, U32, U64,
             F32, F64,
-        };
-        
-        static std::array<NumberType, 10> NUMTYPES {
-            NumberType::I8, NumberType::I16,
-            NumberType::I32, NumberType::I64,
-            NumberType::U8, NumberType::U16,
-            NumberType::U32, NumberType::U64,
-            NumberType::F32, NumberType::F64,
+            Bool,
+            Char, String,
+            Array,
+            Class,
         };
 
-        static std::array<const char*, 10> NUMTYPE_STRS {
+        constexpr size_t DATATYPE_COUNT = 16;
+        
+        constexpr std::array<DataType, DATATYPE_COUNT> DATATYPES {
+            DataType::Void,
+            DataType::I8, DataType::I16,
+            DataType::I32, DataType::I64,
+            DataType::U8, DataType::U16,
+            DataType::U32, DataType::U64,
+            DataType::F32, DataType::F64,
+            DataType::Bool,
+            DataType::Char, DataType::String,
+            DataType::Array,
+            DataType::Class,
+        };
+
+        constexpr std::array<const char*, DATATYPE_COUNT> DATATYPE_STRS {
+            "void",
             "i8", "i16", "i32", "i64",
             "u8", "u16", "u32", "u64",
-            "f32", "f64"
+            "f32", "f64",
+            "bool",
+            "char", "string",
+            "@@array@@",
+            "@@class@@"
         };
 
-        std::string numberTypeToString(NumberType type);
-        std::string numberTypeToCppType(NumberType type);
-        NumberType numberTypeFromString(std::string const& str);
-        bool numberTypeIsUnsigned(NumberType type);
-
     #ifdef GDML_IS_32_BIT
+
+        constexpr std::array<const char*, DATATYPE_COUNT> DATATYPE_CPP {
+            "void",
+            "char", "short", "int", "long long",
+            "unsigned char", "unsigned short", "unsigned int", "unsigned long long",
+            "float", "double",
+            "bool",
+            "char", "gd::string",
+            "@@array@@",
+            "@@class@@"
+        };
 
         using I8  = char;
         using I16 = short;
@@ -86,10 +109,15 @@ namespace gdml {
         #error "No types defined for 64-bit"
     #endif
         
+        using Void = void;
         using Bool = bool;
-
+        using Char = char;
         using String = std::string;
 
+        std::string dataTypeToString(DataType type);
+        std::string dataTypeToCppType(DataType type);
+        DataType dataTypeFromString(std::string const& str);
+        bool dataTypeIsUnsigned(DataType type);
     }
 
     template<class T>
@@ -143,4 +171,8 @@ namespace gdml {
 
     std::ostream& operator<<(std::ostream& stream, Error error);
     std::ostream& operator<<(std::ostream& stream, Position const& pos);
+
+    struct TypeQualifiers {
+        bool isConst;
+    };
 }

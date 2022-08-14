@@ -83,7 +83,7 @@ TokenType Lexer::getNameType(std::string const& name) {
     return tk;
 }
 
-TokenType Lexer::getNumberType(std::string const& num) {
+TokenType Lexer::getDataType(std::string const& num) {
     return num.find('.') == std::string::npos ? TokenType::Int : TokenType::Float;
 }
 
@@ -170,7 +170,7 @@ NumberResult Lexer::getNumber() {
 }
 
 OperatorOption Lexer::getNumberSuffix() {
-    for (auto& option : types::NUMTYPE_STRS) {
+    for (auto& option : types::DATATYPE_STRS) {
         auto test = m_instance.getSource()->data.substr(m_index, strlen(option));
         if (test == option) {
             // consume suffix
@@ -332,7 +332,7 @@ LineResult<void> Lexer::getNextToken() {
             auto err = str.unwrapErr();
             THROW_LEX_ERR_FG(err);
         }
-        ADD_TOKEN(getNumberType(str.unwrap()), str.unwrap());
+        ADD_TOKEN(getDataType(str.unwrap()), str.unwrap());
         auto suffix = getNumberSuffix();
         if (suffix.has_value()) {
             ADD_TOKEN(

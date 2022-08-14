@@ -35,7 +35,7 @@ namespace gdml {
         std::string escapeCharacters(std::string const& data);
         Position positionFromIndex(size_t index);
         static TokenType getNameType(std::string const& name);
-        static TokenType getNumberType(std::string const& num);
+        static TokenType getDataType(std::string const& num);
     
     public:
         Lexer(Instance& instance);

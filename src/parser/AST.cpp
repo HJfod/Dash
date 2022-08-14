@@ -21,6 +21,31 @@ using namespace gdml::ast;
 #define NEW_LINE() \
     instance.getCompiler().getFormatter().newline(stream)
 
+TypeCheckResult BoolLiteralExpr::compile(Instance& instance) noexcept {
+    evalType = instance.getCompiler().getType("bool");
+    return Ok();
+}
+
+TypeCheckResult IntLiteralExpr::compile(Instance& instance) noexcept {
+    evalType = instance.getCompiler().getType(types::dataTypeToString(type));
+    return Ok();
+}
+
+TypeCheckResult UIntLiteralExpr::compile(Instance& instance) noexcept {
+    evalType = instance.getCompiler().getType(types::dataTypeToString(type));
+    return Ok();
+}
+
+TypeCheckResult FloatLiteralExpr::compile(Instance& instance) noexcept {
+    evalType = instance.getCompiler().getType(types::dataTypeToString(type));
+    return Ok();
+}
+
+TypeCheckResult StringLiteralExpr::compile(Instance& instance) noexcept {
+    evalType = instance.getCompiler().getType("string");
+    return Ok();
+}
+
 void BinaryExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
     LHS->codegen(instance, stream);
     if (instance.getShared().getFlag(Flags::PrettifyOutput)) stream << " ";
@@ -65,13 +90,13 @@ void PointerExpr::codegen(Instance& instance, std::ostream& stream) const noexce
     }
 }
 
-TypeCheckResult PointerExpr::compile(Instance& instance) const noexcept {
+TypeCheckResult PointerExpr::compile(Instance& instance) noexcept {
     GDML_TYPECHECK_CHILD(to);
     return Ok();
 }
 
 
-TypeCheckResult ScopeExpr::compile(Instance& instance) const noexcept {
+TypeCheckResult ScopeExpr::compile(Instance& instance) noexcept {
     instance.getCompiler().pushScope(name);
     GDML_TYPECHECK_CHILD(item);
     instance.getCompiler().popScope(name);
@@ -79,7 +104,7 @@ TypeCheckResult ScopeExpr::compile(Instance& instance) const noexcept {
 }
 
 
-TypeCheckResult TypeNameExpr::compile(Instance& instance) const noexcept {
+TypeCheckResult TypeNameExpr::compile(Instance& instance) noexcept {
     if (!instance.getCompiler().typeExists(name->fullName())) {
         THROW_TYPE_ERR(
             "Unknown type \"" + name->fullName() + "\"",
@@ -98,7 +123,7 @@ void TypeNameExpr::codegen(Instance& instance, std::ostream& stream) const noexc
 }
 
 
-TypeCheckResult FunctionDeclStmt::compile(Instance& instance) const noexcept {
+TypeCheckResult FunctionDeclStmt::compile(Instance& instance) noexcept {
     GDML_TYPECHECK_CHILD(type);
     GDML_TYPECHECK_CHILD(name);
     GDML_TYPECHECK_CHILD_O(body);
