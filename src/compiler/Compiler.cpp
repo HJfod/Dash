@@ -7,8 +7,37 @@
 using namespace gdml;
 using namespace gdml::io;
 
-std::string Type::getCodegenName() const {
-    return m_cppEquivalent;
+Type::Type(Compiler& compiler, const types::DataType type)
+ : m_compiler(compiler), m_type(type) {}
+
+const types::DataType Type::getType() const {
+    return m_type;
+}
+
+Value* Type::instantiate(TypeQualifiers const& qualifiers) {
+    #define INSTANTIATE_TYPE(t) \
+        case types::DataType::t: return new BuiltInValue<types::t>(types::t(), qualifiers)
+
+    switch (m_type) {
+        default: return nullptr;
+        INSTANTIATE_TYPE(Bool);
+        INSTANTIATE_TYPE(I8);
+        INSTANTIATE_TYPE(I16);
+        INSTANTIATE_TYPE(I32);
+        INSTANTIATE_TYPE(I64);
+        INSTANTIATE_TYPE(U8);
+        INSTANTIATE_TYPE(U16);
+        INSTANTIATE_TYPE(U32);
+        INSTANTIATE_TYPE(U64);
+        INSTANTIATE_TYPE(F32);
+        INSTANTIATE_TYPE(F64);
+        INSTANTIATE_TYPE(Char);
+        INSTANTIATE_TYPE(String);
+    }
+}
+
+std::string Type::codegen() const {
+    return types::dataTypeToCppType(m_type);
 }
 
 Error Compiler::compile() {

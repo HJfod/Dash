@@ -14,16 +14,18 @@ namespace gdml {
     
     class Type {
     protected:
+        Compiler& m_compiler;
         const types::DataType m_type;
     
-        Type(const types::DataType type);
+        Type(Compiler& compiler, const types::DataType type);
 
         friend class Compiler;
 
     public:
-        types::DataType getType() const;
+        const types::DataType getType() const;
 
         virtual Value* instantiate(TypeQualifiers const& qualifiers);
+        virtual std::string codegen() const;
 
         virtual ~Type() = default;
     };
@@ -31,13 +33,16 @@ namespace gdml {
     class ArrayType : public Type {
     protected:
         Type* m_inner;
+        size_t m_size; // 0 for vector
 
-        ArrayType(Type* inner);
+        ArrayType(Type* inner, size_t size);
 
         friend class Compiler;
 
     public:
         Type* getInnerType();
+
+        std::string codegen() const override;
     };
 
     class ClassType : public Type {
@@ -56,12 +61,13 @@ namespace gdml {
 
         std::string const& getName() const;
         std::unordered_map<std::string, Type*> const& getMembers() const;
+
+        std::string codegen() const override;
     };
 
     struct QualifiedType {
         Type* type;
         TypeQualifiers qualifiers;
-        bool isModifiable;
     };
 
     class Value {
@@ -71,6 +77,7 @@ namespace gdml {
     public:
         Value(QualifiedType const& type);
 
+        virtual Value* copy() = 0;
         virtual ~Value() = default;
     };
 
@@ -82,11 +89,13 @@ namespace gdml {
     public:
         BuiltInValue(
             T const& value,
-            TypeQualifiers const& type,
-            bool isModifiable
-        ) : Value({ type, isModifiable }),
+            TypeQualifiers const& type
+        ) : Value({ type }),
             m_value(value) {}
 
+        Value* copy() override {
+            
+        }
         T getValue() const {
             return m_value;
         }
@@ -113,6 +122,7 @@ namespace gdml {
         Instance& m_instance;
         ast::AST* m_ast;
         std::unordered_map<std::string, Type*> m_types;
+        std::unordered_map<size_t, Value*> m_values;
         std::vector<std::string> m_scope;
         Formatter m_formatter;
     
@@ -136,9 +146,16 @@ namespace gdml {
             std::string const& name,
             Args... args
         ) {
-            auto type = new T(name, std::forward<Args>(args)...);
+            auto type = new T(*this, name, std::forward<Args>(args)...);
             m_types.insert({ name, type });
             return type;
+        }
+
+        template<class T = Value, class... Args>
+        T* makeValue(
+            Args... args
+        ) {
+
         }
 
         bool typeExists(std::string const& name) const;

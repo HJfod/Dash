@@ -114,6 +114,11 @@ namespace gdml {
         using Char = char;
         using String = std::string;
 
+        template<class T>
+        using DynamicArray = std::vector<T>;
+        template<class T>
+        using StaticArray = std::array<T>;
+
         std::string dataTypeToString(DataType type);
         std::string dataTypeToCppType(DataType type);
         DataType dataTypeFromString(std::string const& str);
