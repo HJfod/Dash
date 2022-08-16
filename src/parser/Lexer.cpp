@@ -6,14 +6,9 @@
 #include <compiler/GDML.hpp>
 #include <array>
 #include <compiler/Instance.hpp>
+#include <utils/Macros.hpp>
 
 using namespace gdml;
-
-#define THROW_LEX_ERR(code, msg, hint, note) \
-    return Err(LineError { Error::code, msg, \
-    hint, note, positionFromIndex(startIndex),\
-    positionFromIndex(m_index), m_instance.getSource()\
-    })
 
 #define THROW_LEX_ERR_FG(err) \
     return Err(LineError { \
@@ -110,7 +105,7 @@ LiteralResult Lexer::getName() {
     ) {
         identifier.push_back(m_instance.getSource()->data.at(m_index++));
     }
-    return Ok(identifier);
+    return identifier;
 }
 
 NumberResult Lexer::getNumber() {
@@ -224,6 +219,79 @@ LiteralResult Lexer::getStringLiteral() {
     // skip ending quote
     m_index++;
     return res;
+}
+
+EmbeddedCodeResult Lexer::getEmbeddedCodeBlock() {
+    static constexpr size_t SLASH_COUNT = 3;
+
+    #define CHECK_FOR_THREE_SLASHES(...) \
+        for (size_t i = 0; i < SLASH_COUNT; i++) {\
+            if (\
+                m_index + i >= m_instance.getSource()->data.size() ||\
+                m_instance.getSource()->data.at(m_index + i) != '`'\
+            ) {\
+                __VA_ARGS__\
+            }\
+        }\
+        m_index += SLASH_COUNT;
+
+    CHECK_FOR_THREE_SLASHES(
+        return GenericError {
+            Error::MalformedToken,
+            "Expected to find 3 of '`' before embedded code "
+            "block, but found only " + std::to_string(i),
+            "",
+            ""
+        };
+    );
+
+    auto nameStart = m_index;
+    auto iden = getName();
+    if (!iden) {
+        return iden.unwrapErr();
+    }
+    if (iden.unwrap() != "cpp") {
+        m_instance.getShared().logWarning(LineError {
+            Error::UnknownEmbeddedLanguage,
+            "Unknown embedded language \"" + iden.unwrap() + "\"",
+            "Maybe you meant to write GDML code? If so, add space "
+            "between the '```' embedded block start and the language "
+            "identifier",
+            "The code will not be embedded due to unknown language",
+            positionFromIndex(nameStart),
+            positionFromIndex(m_index),
+            m_instance.getSource()
+        });
+    }
+
+    std::string data {};
+
+    bool foundEnd = false;
+    while (m_index < m_instance.getSource()->data.size()) {
+        auto c = m_instance.getSource()->data.at(m_index);
+        if (c == '`') {
+            CHECK_FOR_THREE_SLASHES(
+                goto did_not_find_three;
+            );
+            foundEnd = true;
+            break;
+        }
+    did_not_find_three:
+        data += c;
+        m_index++;
+    }
+
+    if (!foundEnd) {
+        return GenericError {
+            Error::NoEmbedTerminator,
+            "Expected to find terminator for embedded code block, "
+            "but instead found end of file",
+            "Add '```' here",
+            ""
+        };
+    }
+
+    return EmbeddedCodeData { iden.unwrap(), data };
 }
 
 LineResult<void> Lexer::getInterpolatedLiteral() {
@@ -372,6 +440,19 @@ LineResult<void> Lexer::getNextToken() {
     auto op = getOperator();
     if (op.has_value()) {
         ADD_TOKEN(std::get<0>(op.value()), std::get<1>(op.value()));
+        return Ok();
+    }
+
+    // embedded code
+    if (c == '`') {
+        auto code = getEmbeddedCodeBlock();
+        if (!code) {
+            auto err = code.unwrapErr();
+            THROW_LEX_ERR_FG(err);
+        }
+        auto [iden, data] = code.unwrap();
+        ADD_TOKEN(TokenType::EmbedLanguageIdentifier, iden);
+        ADD_TOKEN(TokenType::EmbeddedCode, data);
         return Ok();
     }
 

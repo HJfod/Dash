@@ -17,11 +17,15 @@ static const std::unordered_map<std::string, TokenType> TOKEN_STRINGS = {
     { "<BEGIN_COMPO>", TokenType::BeginInterpolatedComponent },
     { "<END_COMPO>", TokenType::EndInterpolatedComponent },
 
+    { "<EMBED_LANG>", TokenType::EmbedLanguageIdentifier },
+    { "<EMBED_CODE>", TokenType::EmbeddedCode },
+
     { "<IDENTIFIER>", TokenType::Identifier },
 
     { "template", TokenType::Template },
     { "enum", TokenType::Enum },
     { "auto", TokenType::Let },
+    { "let", TokenType::Let },
     { "const", TokenType::Const },
     { "for", TokenType::For },
     { "in", TokenType::In },
@@ -86,8 +90,6 @@ static const std::unordered_map<std::string, TokenType> TOKEN_STRINGS = {
 
     { "->", TokenType::Arrow },
     { "=>", TokenType::FatArrow },
-
-    { "`", TokenType::Code },
 
     { "&", TokenType::BitAnd },
     { "|", TokenType::BitOr },
@@ -231,9 +233,13 @@ std::string gdml::tokenTypeToLongString(TokenType type) {
     return std::to_string(static_cast<int>(type)) + " (" + tokenTypeToString(type) + ")";
 }
 
-size_t gdml::extractSymbolCount(TokenType type, char symbol) {
+size_t gdml::extractSymbolCount(TokenType type, char symbol, bool mustBeAll) {
     auto s = tokenTypeToString(type);
-    return std::count(s.begin(), s.end(), symbol);
+    auto res = std::count(s.begin(), s.end(), symbol);
+    if (mustBeAll && res != s.size()) {
+        return 0;
+    }
+    return res;
 }
 
 bool gdml::isTernaryOperator(TokenType type) {
@@ -284,6 +290,23 @@ bool gdml::isLiteral(TokenType type) {
         type == TokenType::String ||
         type == TokenType::Float ||
         type == TokenType::Int;
+}
+
+bool gdml::isLValueOperator(TokenType type) {
+    return
+        type == TokenType::Assign ||
+        type == TokenType::AddAssign ||
+        type == TokenType::DivAssign ||
+        type == TokenType::ModAssign ||
+        type == TokenType::MulAssign ||
+        type == TokenType::SubAssign ||
+        type == TokenType::BitOrAssign ||
+        type == TokenType::BitAndAssign ||
+        type == TokenType::BitNotAssign ||
+        type == TokenType::BitXorAssign ||
+        type == TokenType::QuestionAssign ||
+        type == TokenType::Increment ||
+        type == TokenType::Decrement;
 }
 
 std::ostream& gdml::operator<<(std::ostream& stream, TokenType type) {

@@ -1,17 +1,10 @@
 #include "Parser.hpp"
+#include <utils/Macros.hpp>
 
 using namespace gdml;
 using namespace gdml::ast;
 
 // macros :3
-
-#define TOKEN_STR(id) ("'" + tokenTypeToString(TokenType::id) + "'")
-#define TOKEN_STR_V(id) ("'" + tokenTypeToString(id) + "'")
-
-#define THROW_SYNTAX_ERR(token, msg, hint, note) \
-    return Err(LineError {\
-        Error::SyntaxError, msg, hint, note,\
-        token.start, token.end, token.source })
 
 #define INVALID_TOKEN() (Token::invalid(m_source))
 #define INVALID_LAST_TOKEN() \
@@ -32,13 +25,6 @@ using namespace gdml::ast;
     UPDATE_TOKEN()
 #define PREV_TOKEN() \
     (m_tokens.size() ? m_tokens.at(m_index - 1) : INVALID_TOKEN())
-
-#define PROPAGATE_ERROR(err) \
-    if (!err) return err.unwrapErr()
-#define PROPAGATE_VALUE(val) \
-    {auto val__ = val; PROPAGATE_ERROR(val__); return val__.unwrap();}
-#define PROPAGATE_ASSIGN(to, expr) \
-    {auto val__ = expr; PROPAGATE_ERROR(val__); to = val__.unwrap();}
 
 ExprResult<InterpolatedLiteralExpr> Parser::parseInterpolated() noexcept {
     INIT_TOKEN();
@@ -194,33 +180,60 @@ ExprResult<TypeExpr> Parser::parseTypeExpression() noexcept {
 
     TypeExpr* res = m_ast->make<TypeNameExpr>(
         m_source, start, PREV_TOKEN().end,
-        typeName.unwrap(), TypeQualifiers { isConst }
+        typeName.unwrap(), types::TypeQualifiers(isConst)
     );
 
     UPDATE_TOKEN();
 
+    // there can be no pointers to a reference, 
+    // so just check for pointers first and then 
+    // for references
+    
+    // pointers
     size_t ptrs = 0;
-    size_t refs = 0;
-    while (
-        // let's just agree i am never to introduce a token 
-        // that contains both * and &
-        (ptrs = extractSymbolCount(token.type, '*')) ||
-        (refs = extractSymbolCount(token.type, '&'))
-    ) {
-        auto count = ptrs ? ptrs : refs;
+    while (ptrs = extractSymbolCount(token.type, '*', true)) {
         isConst = false;
-        for (size_t i = 0; i < count; i++) {
+        for (size_t i = 0; i < ptrs; i++) {
             // const applies to outermost
-            if (i == count - 1) {
+            if (i == ptrs - 1) {
                 NEXT_TOKEN();
                 CHECK_CONST();
                 UPDATE_TOKEN();
             }
             res = m_ast->make<PointerExpr>(
                 m_source, start, PREV_TOKEN().end,
-                res, refs, TypeQualifiers { isConst }
+                res, types::PointerType::Pointer,
+                types::TypeQualifiers(isConst)
             );
         }
+    }
+
+    // references
+    if (token.type == TokenType::BitAnd) {
+        res = m_ast->make<PointerExpr>(
+            m_source, start, PREV_TOKEN().end,
+            res, types::PointerType::Reference,
+            types::TypeQualifiers(isConst)
+        );
+        NEXT_TOKEN();
+    }
+    // move thingies
+    else if (token.type == TokenType::And) {
+        res = m_ast->make<PointerExpr>(
+            m_source, start, PREV_TOKEN().end,
+            res, types::PointerType::Move,
+            types::TypeQualifiers(isConst)
+        );
+        NEXT_TOKEN();
+    }
+
+    // there can be no more references
+    if (token.type == TokenType::BitAnd || token.type == TokenType::And) {
+        THROW_SYNTAX_ERR(
+            token,
+            "You can not create references to references",
+            "", ""
+        );
     }
 
     return res;
@@ -338,7 +351,11 @@ ExprResult<ValueExpr> Parser::parseValue() noexcept {
     }
 
     if (token.type == TokenType::Identifier) {
-        PROPAGATE_VALUE(parseName());
+        NameExpr* name;
+        PROPAGATE_ASSIGN(name, parseName());
+        return m_ast->make<NamedEntityExpr>(
+            m_source, name->start, name->end, name
+        );
     }
 
     // liberals
@@ -482,6 +499,7 @@ ExprResult<ValueExpr> Parser::parseUnary() noexcept {
     // function calls
     if (token.type == TokenType::LeftParen) {
         PROPAGATE_ASSIGN(res, parseCall(res));
+        UPDATE_TOKEN();
     }
 
     // get suffix if there is one
@@ -504,13 +522,30 @@ ExprResult<ValueExpr> Parser::parseUnary() noexcept {
         );
     }
 
+    UPDATE_TOKEN();
+
+    // casts
+    if (token.type == TokenType::As) {
+        // consume 'as'
+        m_index++;
+
+        TypeExpr* intoType;
+        PROPAGATE_ASSIGN(intoType, parseTypeExpression());
+        UPDATE_TOKEN();
+
+        res = m_ast->make<CastTypeExpr>(
+            m_source, start, PREV_TOKEN().end,
+            res, intoType
+        );
+    }
+
     return res;
 }
 
 ExprResult<ValueExpr> Parser::parseBinary(ValueExpr* lhs, int precedence) noexcept {
     INIT_TOKEN();
 
-    auto start = token.start;
+    auto start = lhs->start;
 
     while (m_index < m_tokens.size()) {
 
@@ -593,6 +628,13 @@ ExprResult<FunctionDeclStmt> Parser::parseFunDeclaration() noexcept {
     NEXT_TOKEN();
 
     std::vector<VariableDeclExpr*> params;
+
+    // is it just '()'
+    if (token.type == TokenType::RightParen) {
+        // ooooo! goto! evil code! bad code!
+        goto no_params;
+    }
+
     while (m_index < m_tokens.size()) {
         auto var = parseVarDeclaration();
         PROPAGATE_ERROR(var);
@@ -618,6 +660,8 @@ ExprResult<FunctionDeclStmt> Parser::parseFunDeclaration() noexcept {
             ""
         );
     }
+
+no_params:
 
     // consume parenthesis
     NEXT_TOKEN();
@@ -694,7 +738,8 @@ ExprResult<FunctionDeclStmt> Parser::parseFunDeclaration() noexcept {
         m_source, start, end,
         m_ast->make<FunctionTypeExpr>(
             m_source, start, end,
-            params, retType, TypeQualifiers { isConst }
+            params, retType,
+            types::TypeQualifiers(isConst)
         ),
         funName.unwrap(), body, impl
     );
@@ -900,6 +945,57 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
         case TokenType::Let: {
             m_index++;
             PROPAGATE_VALUE(parseVarDeclaration());
+        } break;
+
+        case TokenType::EmbedLanguageIdentifier: {
+            if (next.type != TokenType::EmbeddedCode) {
+                THROW_SYNTAX_ERR(
+                    next,
+                    "Expected " + TOKEN_STR(EmbeddedCode) + " after " +
+                    TOKEN_STR(EmbedLanguageIdentifier) + ", found " +
+                    TOKEN_STR_V(next.type),
+                    "",
+                    "This should not be possible. Something has gone "
+                    "wrong in the compiler."
+                );
+            }
+            // consume both
+            m_index += 2;
+            return m_ast->make<EmbedCodeStmt>(
+                m_source, token.start, next.end,
+                token.data, next.data
+            );
+        } break;
+
+        case TokenType::Namespace: {
+            auto start = token.start;
+
+            // consume token
+            m_index++;
+            if (next.type != TokenType::Identifier) {
+                THROW_SYNTAX_ERR(
+                    next,
+                    "Expected " + TOKEN_STR(Identifier) + " for " + 
+                    "namespace name, found " + TOKEN_STR_V(next.type),
+                    "",
+                    "Anonymous namespaces are currently not "
+                    "supported, sorry!"
+                );
+            }
+            auto name = next.data;
+
+            // consume name
+            m_index++;
+
+            StmtList* list;
+            PROPAGATE_ASSIGN(list, parseBlock(topLevel));
+
+            UPDATE_TOKEN();
+
+            return m_ast->make<NameSpaceStmt>(
+                m_source, start, PREV_TOKEN().end,
+                name, list
+            );
         } break;
 
         case TokenType::Implement:

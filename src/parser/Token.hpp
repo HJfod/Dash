@@ -21,6 +21,10 @@ namespace gdml {
         BeginInterpolatedComponent,
         EndInterpolatedComponent,
 
+        // embedded code
+        EmbedLanguageIdentifier,
+        EmbeddedCode,
+
         // identifier
         Identifier,
 
@@ -100,9 +104,6 @@ namespace gdml {
         Arrow,      // ->
         FatArrow,   // =>
 
-        // macros
-        Code,   // `
-
         // bitwise
         BitAnd,     // &
         BitOr,      // |
@@ -167,7 +168,7 @@ namespace gdml {
     // in case it is needed to parse something like '**' 
     // as two of '*', use this to enumerate the amount of 
     // instances and then hop on to the next token
-    size_t extractSymbolCount(TokenType type, char symbol);
+    size_t extractSymbolCount(TokenType type, char symbol, bool mustBeAll = false);
 
     // token categorization
     bool isTernaryOperator(TokenType type);
@@ -176,6 +177,7 @@ namespace gdml {
     bool isUnarySuffixOperator(TokenType type);
     bool isLiteralPrefixOperator(TokenType type);
     bool isLiteral(TokenType type);
+    bool isLValueOperator(TokenType type);
 
     std::ostream& operator<<(std::ostream& stream, TokenType type);
 

@@ -3,9 +3,11 @@
 #include <utils/Types.hpp>
 #include "Token.hpp"
 #include <filesystem>
+#include <compiler/Type.hpp>
 
 namespace gdml::ast {
     using TypeCheckResult = LineResult<void>;
+    using BranchInferResult = LineResult<Option<QualifiedType>>;
 
     namespace debug {
         #define GDML_DEBUG_FMT(class) \
@@ -81,10 +83,17 @@ namespace gdml::ast {
         virtual TypeCheckResult compile(Instance&) noexcept {
             return Ok();
         };
+        virtual BranchInferResult inferBranchReturnType(Instance& instance) {
+            return Option<QualifiedType>(None);
+        }
     };
 
     struct Expr : Stmt {
         QualifiedType evalType;
+
+        virtual Value* eval(Instance& instance) {
+            return nullptr;
+        }
 
         Expr(
             SourceFile const* src,
@@ -94,13 +103,13 @@ namespace gdml::ast {
     };
 
     struct TypeExpr : Expr {
-        TypeQualifiers qualifiers;
+        types::TypeQualifiers qualifiers;
 
         TypeExpr(
             SourceFile const* src,
             Position const& start,
             Position const& end,
-            TypeQualifiers const& qualifiers
+            types::TypeQualifiers const& qualifiers
         ) : Expr(src, start, end), qualifiers(qualifiers) {}
 
         std::string debugPrintASTTypeProps(size_t i) const {
@@ -142,7 +151,8 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT(BoolLiteralExpr) +
                 GDML_DEBUG_FMT_PROP(value);
         }
-
+        
+        Value* eval(Instance& instance) override;
         TypeCheckResult compile(Instance&) noexcept override;
 
         void codegen(Instance&, std::ostream& stream) const noexcept override {
@@ -170,6 +180,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP_NUMT(type);
         }
 
+        Value* eval(Instance& instance) override;
         TypeCheckResult compile(Instance&) noexcept override;
 
         void codegen(Instance&, std::ostream& stream) const noexcept override {
@@ -201,6 +212,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP_NUMT(type);
         }
 
+        Value* eval(Instance& instance) override;
         TypeCheckResult compile(Instance&) noexcept override;
 
         void codegen(Instance&, std::ostream& stream) const noexcept override {
@@ -232,6 +244,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP_NUMT(type);
         }
 
+        Value* eval(Instance& instance) override;
         TypeCheckResult compile(Instance&) noexcept override;
 
         void codegen(Instance&, std::ostream& stream) const noexcept override {
@@ -268,6 +281,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP_S(rawValue);
         }
 
+        Value* eval(Instance& instance) override;
         TypeCheckResult compile(Instance&) noexcept override;
 
         void codegen(Instance&, std::ostream& stream) const noexcept override {
@@ -315,24 +329,10 @@ namespace gdml::ast {
             return str;
         }
 
-        TypeCheckResult compile(Instance& instance) noexcept override {
-            GDML_TYPECHECK_CHILDREN(components);
-            return Ok();
-        }
+        Value* eval(Instance& instance) override;
+        TypeCheckResult compile(Instance& instance) noexcept override;
     
-        void codegen(Instance& com, std::ostream& stream) const noexcept override {
-            for (size_t ix = 0; ix < rawStrings.size() + components.size(); ix++) {
-                if (ix) {
-                    stream << " + ";
-                }
-                if (ix % 2) {
-                    // todo: convert codegenned result to string or smth
-                    components.at(ix / 2)->codegen(com, stream);
-                } else {
-                    stream << "\"" << rawStrings.at(ix / 2) << "\"";
-                }
-            }
-        }
+        void codegen(Instance& com, std::ostream& stream) const noexcept override;
     };
 
     struct NoneLiteralExpr : LiteralExpr {
@@ -362,6 +362,9 @@ namespace gdml::ast {
             return GDML_DEBUG_FMT(NullLiteralExpr);
         }
 
+        Value* eval(Instance& instance) override;
+        TypeCheckResult compile(Instance&) noexcept override;
+
         void codegen(Instance&, std::ostream& stream) const noexcept override {
             stream << "nullptr";
         }
@@ -373,6 +376,7 @@ namespace gdml::ast {
         Option<TypeExpr*> type;
         std::string name;
         Option<ValueExpr*> value;
+        NamedEntity* variable = nullptr;
 
         VariableDeclExpr(
             SourceFile const* src,
@@ -392,25 +396,10 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD_O(value);
         }
 
-        TypeCheckResult compile(Instance& instance) noexcept override {
-            GDML_TYPECHECK_CHILD_O(type);
-            GDML_TYPECHECK_CHILD_O(value);
-            return Ok();
-        }
+        Value* eval(Instance& instance) override;
+        TypeCheckResult compile(Instance& instance) noexcept override;
     
-        void codegen(Instance& com, std::ostream& stream) const noexcept override {
-            if (type.has_value()) {
-                type.value()->codegen(com, stream);
-                stream << " ";
-            } else {
-                stream << "auto ";
-            }
-            stream << name;
-            if (value.has_value()) {
-                stream << " = ";
-                value.value()->codegen(com, stream);
-            }
-        }
+        void codegen(Instance& com, std::ostream& stream) const noexcept override;
     };
 
     struct NameExpr : ValueExpr {
@@ -477,6 +466,27 @@ namespace gdml::ast {
         }
     };
 
+    struct NamedEntityExpr : ValueExpr {
+        NameExpr* name;
+
+        NamedEntityExpr(
+            SourceFile const* src,
+            Position const& start,
+            Position const& end,
+            NameExpr* name
+        ) : ValueExpr(src, start, end), name(name) {}
+
+        std::string debugPrintAST(size_t i) const override {
+            return
+                GDML_DEBUG_FMT(NamedEntityExpr) +
+                GDML_DEBUG_FMT_CHILD(name);
+        }
+
+        Value* eval(Instance& instance) override;
+        TypeCheckResult compile(Instance& instance) noexcept override;
+        void codegen(Instance&, std::ostream& stream) const noexcept override;
+    };
+
     struct UnaryExpr : ValueExpr {
         enum Type : bool {
             Prefix,
@@ -497,10 +507,7 @@ namespace gdml::ast {
         ) : ValueExpr(src, start, end),
             op(op), value(value), type(type) {}
 
-        TypeCheckResult compile(Instance& instance) noexcept override {
-            GDML_TYPECHECK_CHILD(value);
-            return Ok();
-        }
+        TypeCheckResult compile(Instance& instance) noexcept override;
     
         std::string debugPrintAST(size_t i) const override {
             return
@@ -544,11 +551,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD(RHS);
         }
         
-        TypeCheckResult compile(Instance& instance) noexcept override {
-            GDML_TYPECHECK_CHILD(LHS);
-            GDML_TYPECHECK_CHILD(RHS);
-            return Ok();
-        }
+        TypeCheckResult compile(Instance& instance) noexcept override;
     
         void codegen(Instance& com, std::ostream& stream) const noexcept override;
     };
@@ -608,11 +611,7 @@ namespace gdml::ast {
             return str;
         }
 
-        TypeCheckResult compile(Instance& instance) noexcept override {
-            GDML_TYPECHECK_CHILD(target);
-            GDML_TYPECHECK_CHILDREN(args);
-            return Ok();
-        }
+        TypeCheckResult compile(Instance& instance) noexcept override;
     
         void codegen(Instance& com, std::ostream& stream) const noexcept override {
             stream << "(";
@@ -651,15 +650,9 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD(intoType);
         }
 
-        TypeCheckResult compile(Instance& instance) noexcept override {
-            GDML_TYPECHECK_CHILD(target);
-            GDML_TYPECHECK_CHILD(intoType);
-            return Ok();
-        }
+        TypeCheckResult compile(Instance& instance) noexcept override;
     
-        void codegen(Instance&, std::ostream& stream) const noexcept override {
-            // todo: idk
-        }
+        void codegen(Instance&, std::ostream& stream) const noexcept override;
     };
 
     // types
@@ -672,7 +665,7 @@ namespace gdml::ast {
             Position const& start,
             Position const& end,
             NameExpr* name,
-            TypeQualifiers const& qualifiers
+            types::TypeQualifiers const& qualifiers
         ) : TypeExpr(src, start, end, qualifiers), name(name) {}
 
         std::string debugPrintAST(size_t i) const override {
@@ -688,23 +681,23 @@ namespace gdml::ast {
 
     struct PointerExpr : TypeExpr {
         TypeExpr* to;
-        bool isReference;
+        types::PointerType type;
 
         PointerExpr(
             SourceFile const* src,
             Position const& start,
             Position const& end,
             TypeExpr* to,
-            bool isReference,
-            TypeQualifiers const& qualifiers
+            types::PointerType type,
+            types::TypeQualifiers const& qualifiers
         ) : TypeExpr(src, start, end, qualifiers),
-            to(to), isReference(isReference) {}
+            to(to), type(type) {}
 
         std::string debugPrintAST(size_t i) const override {
             return
                 GDML_DEBUG_FMT(PointerExpr) +
                 GDML_DEBUG_FMT_CHILD(to) +
-                GDML_DEBUG_FMT_PROP(isReference) +
+                GDML_DEBUG_FMT_PROP_E(type) +
                 debugPrintASTTypeProps(i);
         }
         
@@ -720,7 +713,7 @@ namespace gdml::ast {
             Position const& start,
             Position const& end,
             Expr* value
-        ) : TypeExpr(src, start, end, { false }), value(value) {}
+        ) : TypeExpr(src, start, end, types::TypeQualifiers()), value(value) {}
 
         std::string debugPrintAST(size_t i) const override {
             return
@@ -750,7 +743,7 @@ namespace gdml::ast {
             Position const& end,
             std::vector<VariableDeclExpr*> params,
             Option<TypeExpr*> rtype,
-            TypeQualifiers const& qualifiers
+            types::TypeQualifiers const& qualifiers
         ) : TypeExpr(src, start, end, qualifiers),
             parameters(params),
             returnType(rtype) {}
@@ -765,11 +758,7 @@ namespace gdml::ast {
             return pstring;
         }
 
-        TypeCheckResult compile(Instance& instance) noexcept override {
-            GDML_TYPECHECK_CHILDREN(parameters);
-            GDML_TYPECHECK_CHILD_O(returnType);
-            return Ok();
-        }
+        TypeCheckResult compile(Instance& instance) noexcept override;
 
         void codegen(Instance& com, std::ostream& stream) const noexcept override {
             if (returnType.has_value()) {
@@ -800,7 +789,7 @@ namespace gdml::ast {
             Position const& end,
             TypeExpr* memberType,
             size_t capacity,
-            TypeQualifiers const& qualifiers
+            types::TypeQualifiers const& qualifiers
         ) : TypeExpr(src, start, end, qualifiers),
             memberType(memberType),
             capacity(capacity) {}
@@ -854,6 +843,7 @@ namespace gdml::ast {
             GDML_TYPECHECK_CHILDREN(statements);
             return Ok();
         }
+        BranchInferResult inferBranchReturnType(Instance& instance) override;
 
         void codegen(Instance& instance, std::ostream& stream) const noexcept override;
     };
@@ -873,6 +863,9 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT(BlockStmt) +
                 GDML_DEBUG_FMT_CHILD(body);
         }
+        
+        TypeCheckResult compile(Instance& instance) noexcept override;
+        BranchInferResult inferBranchReturnType(Instance& instance) override;
 
         void codegen(Instance& instance, std::ostream& stream) const noexcept override;
     };
@@ -903,11 +896,8 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD_O(elseBranch);
         }
 
-        TypeCheckResult compile(Instance& instance) noexcept override {
-            GDML_TYPECHECK_CHILD_O(condition);
-            GDML_TYPECHECK_CHILD_O(elseBranch);
-            return Ok();
-        }
+        TypeCheckResult compile(Instance& instance) noexcept override;
+        BranchInferResult inferBranchReturnType(Instance& instance) override;
 
         void codegen(Instance& com, std::ostream& stream) const noexcept override;
     };
@@ -928,6 +918,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD(value);
         }
 
+        BranchInferResult inferBranchReturnType(Instance& instance) override;
         TypeCheckResult compile(Instance& instance) noexcept override {
             GDML_TYPECHECK_CHILD(value);
             return Ok();
@@ -976,11 +967,37 @@ namespace gdml::ast {
         }
     };
 
+    struct NameSpaceStmt : Stmt {
+        std::string name;
+        StmtList* contents;
+
+        NameSpaceStmt(
+            SourceFile const* src,
+            Position const& start,
+            Position const& end,
+            std::string const& name,
+            StmtList* contents
+        ) : Stmt(src, start, end),
+            name(name), contents(contents) {}
+
+        std::string debugPrintAST(size_t i) const override {
+            return 
+                GDML_DEBUG_FMT(NameSpaceStmt) +
+                GDML_DEBUG_FMT_PROP_S(name) + 
+                GDML_DEBUG_FMT_CHILD(contents);
+        }
+
+        TypeCheckResult compile(Instance& instance) noexcept override;
+
+        void codegen(Instance& com, std::ostream& stream) const noexcept override;
+    };
+
     struct FunctionDeclStmt : Stmt {
         FunctionTypeExpr* type;
         NameExpr* name;
         Option<StmtList*> body;
         bool isImplementation;
+        NamedEntity* entity = nullptr;
 
         FunctionDeclStmt(
             SourceFile const* src,
@@ -1006,6 +1023,31 @@ namespace gdml::ast {
         TypeCheckResult compile(Instance&) noexcept override;
 
         void codegen(Instance& com, std::ostream& stream) const noexcept override;
+    };
+
+    // embed
+
+    struct EmbedCodeStmt : Stmt {
+        std::string language;
+        std::string data;
+
+        EmbedCodeStmt(
+            SourceFile const* src,
+            Position const& start,
+            Position const& end,
+            std::string const& lang,
+            std::string const& data
+        ) : Stmt(src, start, end),
+            language(lang), data(data) {}
+
+        std::string debugPrintAST(size_t i) const override {
+            return
+                GDML_DEBUG_FMT(EmbedCodeStmt) + 
+                GDML_DEBUG_FMT_PROP_S(language) + 
+                GDML_DEBUG_FMT_PROP_S(data);
+        }
+
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
     };
 
     // import / export

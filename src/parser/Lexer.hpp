@@ -12,6 +12,8 @@ namespace gdml {
     using LiteralResult = GenericResult<std::string>;
     using OperatorData = std::tuple<TokenType, std::string>;
     using OperatorOption = Option<OperatorData>;
+    using EmbeddedCodeData = std::tuple<std::string, std::string>;
+    using EmbeddedCodeResult = GenericResult<EmbeddedCodeData>;
 
     class Lexer {
     protected:
@@ -24,6 +26,7 @@ namespace gdml {
         OperatorOption getNumberSuffix();
         OperatorOption getOperator();
         LiteralResult getStringLiteral();
+        EmbeddedCodeResult getEmbeddedCodeBlock();
 
         LineResult<void> getInterpolatedLiteral();
         LineResult<void> getNextToken();

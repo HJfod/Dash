@@ -33,7 +33,7 @@ function(process_gdml_files proname)
 
         add_custom_command(
             OUTPUT ${GeneratedFiles}
-            COMMAND ${GDML_CLI} ${SourceFilesWithDest}
+            COMMAND ${GDML_CLI} ${SourceFilesWithDest} ${GDML_EXTRA_FLAGS}
             COMMENT "Processing GDML files"
             DEPENDS ${SourceFiles}
             VERBATIM

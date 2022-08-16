@@ -13,6 +13,7 @@ file(GLOB SOURCES
     src/compiler/*.cpp
     src/parser/*.cpp
     src/utils/*.cpp
+    src/cli/*.cpp
 )
 configure_file(src/utils/about.hpp.in ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/about.hpp)
 

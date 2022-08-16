@@ -12,6 +12,7 @@ add_dependencies(${PROJECT_NAME} GDMLv4)
 # this works because the path is only used in a 
 # generator expression in GDML.cmake :3
 set(GDML_CLI $<TARGET_FILE:GDMLv4>)
+set(GDML_EXTRA_FLAGS --debug)
 include(../cmake/GDML.cmake)
 
 process_gdml_files(${PROJECT_NAME}

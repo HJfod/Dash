@@ -32,8 +32,12 @@ namespace gdml {
     class Compiler;
     class Instance;
     class GDML;
+    class Type;
+    class Value;
+    struct NamedEntity;
 
     namespace ast {
+        struct Stmt;
         class AST;
     }
 
@@ -49,11 +53,13 @@ namespace gdml {
             F32, F64,
             Bool,
             Char, String,
+            Pointer,
+            Function,
             Array,
             Class,
         };
 
-        constexpr size_t DATATYPE_COUNT = 16;
+        constexpr size_t DATATYPE_COUNT = 18;
         
         constexpr std::array<DataType, DATATYPE_COUNT> DATATYPES {
             DataType::Void,
@@ -64,6 +70,8 @@ namespace gdml {
             DataType::F32, DataType::F64,
             DataType::Bool,
             DataType::Char, DataType::String,
+            DataType::Pointer,
+            DataType::Function,
             DataType::Array,
             DataType::Class,
         };
@@ -75,8 +83,10 @@ namespace gdml {
             "f32", "f64",
             "bool",
             "char", "string",
-            "@@array@@",
-            "@@class@@"
+            "@pointer",
+            "@function",
+            "@array",
+            "@class"
         };
 
     #ifdef GDML_IS_32_BIT
@@ -115,14 +125,64 @@ namespace gdml {
         using String = std::string;
 
         template<class T>
-        using DynamicArray = std::vector<T>;
+        constexpr DataType getDataType() {
+            #define GDML_REAL_TYPE_TO_DATA_TYPE(t) \
+                if constexpr (std::is_same_v<T, t>) { return DataType::t; } else
+            
+            GDML_REAL_TYPE_TO_DATA_TYPE(Void)
+            GDML_REAL_TYPE_TO_DATA_TYPE(Bool)
+            GDML_REAL_TYPE_TO_DATA_TYPE(Char)
+            GDML_REAL_TYPE_TO_DATA_TYPE(String)
+            GDML_REAL_TYPE_TO_DATA_TYPE(I8)
+            GDML_REAL_TYPE_TO_DATA_TYPE(I16)
+            GDML_REAL_TYPE_TO_DATA_TYPE(I32)
+            GDML_REAL_TYPE_TO_DATA_TYPE(I64)
+            GDML_REAL_TYPE_TO_DATA_TYPE(U8)
+            GDML_REAL_TYPE_TO_DATA_TYPE(U16)
+            GDML_REAL_TYPE_TO_DATA_TYPE(U32)
+            GDML_REAL_TYPE_TO_DATA_TYPE(U64)
+            GDML_REAL_TYPE_TO_DATA_TYPE(F32)
+            GDML_REAL_TYPE_TO_DATA_TYPE(F64)
+            {
+                static_assert(!std::is_same_v<T, T>, "Invalid type to convert to enum");
+            }
+        }
+
         template<class T>
-        using StaticArray = std::array<T>;
+        using DynamicArray = std::vector<T>;
+        template<class T, size_t S>
+        using StaticArray = std::array<T, S>;
 
         std::string dataTypeToString(DataType type);
         std::string dataTypeToCppType(DataType type);
         DataType dataTypeFromString(std::string const& str);
         bool dataTypeIsUnsigned(DataType type);
+        
+        struct TypeQualifiers {
+            bool isConst = false;
+            
+            constexpr TypeQualifiers() = default;
+            constexpr TypeQualifiers(
+                bool isConst
+            ) : isConst(isConst) {}
+
+            constexpr TypeQualifiers operator|(TypeQualifiers const& other) const {
+                return TypeQualifiers(
+                    other.isConst || isConst
+                );
+            }
+        };
+
+        // this is much easier to read than slamming
+        // `TypeQualifiers { true }` everywhere
+        constexpr TypeQualifiers NON_CONST_QUALIFIED = { false };
+        constexpr TypeQualifiers CONST_QUALIFIED = { true };
+
+        enum class PointerType {
+            Pointer,
+            Reference,
+            Move,
+        };
     }
 
     template<class T>
@@ -177,7 +237,4 @@ namespace gdml {
     std::ostream& operator<<(std::ostream& stream, Error error);
     std::ostream& operator<<(std::ostream& stream, Position const& pos);
 
-    struct TypeQualifiers {
-        bool isConst;
-    };
 }

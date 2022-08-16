@@ -1,107 +1,28 @@
 #pragma once
 
 #include <utils/Types.hpp>
+#include "Type.hpp"
+#include <unordered_set>
 
 namespace gdml {
-    class GDML;
-    class Compiler;
-    
-    namespace ast {
-        class AST;
-    }
-
-    class Value;
-    
-    class Type {
-    protected:
-        Compiler& m_compiler;
-        const types::DataType m_type;
-    
-        Type(Compiler& compiler, const types::DataType type);
-
-        friend class Compiler;
-
-    public:
-        const types::DataType getType() const;
-
-        virtual Value* instantiate(TypeQualifiers const& qualifiers);
-        virtual std::string codegen() const;
-
-        virtual ~Type() = default;
+    enum class ConstValue {
+        True,
+        False,
+        Zero,
+        EmptyString,
+        Null,
     };
-
-    class ArrayType : public Type {
-    protected:
-        Type* m_inner;
-        size_t m_size; // 0 for vector
-
-        ArrayType(Type* inner, size_t size);
-
-        friend class Compiler;
-
-    public:
-        Type* getInnerType();
-
-        std::string codegen() const override;
-    };
-
-    class ClassType : public Type {
-    protected:
-        std::string m_name;
-        std::unordered_map<std::string, Type*> m_members;
-
-        ClassType();
-
-        friend class Compiler;
-
-    public:
-        inline void addMember(std::string const& name, Type* type) {
-            m_members.insert({ name, type });
-        }
-
-        std::string const& getName() const;
-        std::unordered_map<std::string, Type*> const& getMembers() const;
-
-        std::string codegen() const override;
-    };
-
-    struct QualifiedType {
-        Type* type;
-        TypeQualifiers qualifiers;
-    };
+    constexpr size_t CONST_VALUE_COUNT = 5;
 
     class Value {
     protected:
-        QualifiedType m_type;
+        Compiler& m_compiler;
 
     public:
-        Value(QualifiedType const& type);
+        Value(Compiler& compiler);
 
         virtual Value* copy() = 0;
         virtual ~Value() = default;
-    };
-
-    template<class T>
-    class BuiltInValue : public Value {
-    protected:
-        T m_value;
-    
-    public:
-        BuiltInValue(
-            T const& value,
-            TypeQualifiers const& type
-        ) : Value({ type }),
-            m_value(value) {}
-
-        Value* copy() override {
-            
-        }
-        T getValue() const {
-            return m_value;
-        }
-        void setValue(T const& value) {
-            m_value = value;
-        }
     };
 
     class Formatter {
@@ -117,16 +38,55 @@ namespace gdml {
         void newline(std::ostream& stream) const;
     };
 
+    struct NamedEntity {
+        QualifiedType type;
+        Value* value = nullptr;
+        ast::Stmt* declaration = nullptr;
+
+        NamedEntity(
+            QualifiedType const& type,
+            Value* value,
+            ast::Stmt* decl
+        ) : type(type), value(value), declaration(decl) {}
+
+        ~NamedEntity() {}
+    };
+
+    struct Scope {
+        std::vector<std::shared_ptr<Type>> types;
+        std::unordered_map<std::string, std::shared_ptr<Type>> namedTypes;
+        std::unordered_map<std::string, NamedEntity> variables;
+
+        void pushType(std::shared_ptr<Type> type) {
+            types.push_back(type);
+        }
+
+        void pushNamedType(std::string const& name, std::shared_ptr<Type> type) {
+            namedTypes.insert({ name, type });
+        }
+
+        NamedEntity* pushVariable(std::string const& name, NamedEntity const& var) {
+            variables.insert({ name, var });
+            return &variables.at(name);
+        }
+
+        bool hasVariable(std::string const& name) const {
+            return variables.count(name);
+        }
+    };
+
     class Compiler {
     protected:
         Instance& m_instance;
         ast::AST* m_ast;
-        std::unordered_map<std::string, Type*> m_types;
-        std::unordered_map<size_t, Value*> m_values;
-        std::vector<std::string> m_scope;
+        std::unordered_set<Value*> m_values;
+        std::vector<Scope> m_scope;
+        std::vector<std::string> m_namespace;
+        std::unordered_map<ConstValue, Value*> m_constValues;
         Formatter m_formatter;
     
         void loadBuiltinTypes();
+        void loadConstValues();
 
         friend class GDML;
 
@@ -134,20 +94,33 @@ namespace gdml {
         Compiler(Instance& instance, ast::AST* ast);
         Error compile();
 
+        ~Compiler();
+
         Instance& getInstance() const;
         Formatter& getFormatter();
 
-        void pushScope(std::string const& name);
-        void popScope(std::string const& name);
-        std::vector<std::string> const& getScope() const;
+        void pushNameSpace(std::string const& name);
+        void popNameSpace(std::string const& name);
+        std::vector<std::string> const& getNameSpace() const;
+
+        void pushScope();
+        void popScope();
+        Scope& getScope();
 
         template<class T = Type, class... Args>
-        T* makeType(
+        std::shared_ptr<T> makeNamedType(
             std::string const& name,
             Args... args
         ) {
-            auto type = new T(*this, name, std::forward<Args>(args)...);
-            m_types.insert({ name, type });
+            auto type = std::make_shared<T>(*this, std::forward<Args>(args)...);
+            m_scope.back().pushNamedType(name, type);
+            return type;
+        }
+
+        template<class T = Type, class... Args>
+        std::shared_ptr<T> makeType(Args... args) {
+            auto type = std::make_shared<T>(*this, std::forward<Args>(args)...);
+            m_scope.back().pushType(type);
             return type;
         }
 
@@ -155,12 +128,62 @@ namespace gdml {
         T* makeValue(
             Args... args
         ) {
-
+            auto value = new T(*this, std::forward<Args>(args)...);
+            m_values.insert(value);
+            return value;
         }
 
+        NamedEntity const* getVariable(std::string const& name) const;
+        bool variableExists(std::string const& name) const;
+
         bool typeExists(std::string const& name) const;
-        Type* getType(std::string const& name) const;
+        std::shared_ptr<Type> getType(std::string const& name) const;
+        template<class T>
+        std::shared_ptr<Type> getBuiltInType() const {
+            return getType(types::dataTypeToString(types::getDataType<T>()));
+        }
+        std::shared_ptr<Type> getBuiltInType(types::DataType type) const;
+
+        Value* getConstValue(ConstValue value) const;
 
         void codegen(std::ostream& stream) const noexcept;
+    };
+
+    // this has to be defined after Compiler 
+    // because it uses it
+    template<class T>
+    class BuiltInValue : public Value {
+    protected:
+        T m_value;
+    
+    public:
+        BuiltInValue(
+            Compiler& compiler,
+            T const& value
+        ) : Value(compiler),
+            m_value(value) {}
+
+        Value* copy() override {
+            return m_compiler.makeValue<BuiltInValue<T>>(m_value);
+        }
+        T getValue() const {
+            return m_value;
+        }
+        void setValue(T const& value) {
+            m_value = value;
+        }
+    };
+
+    class PointerValue : public Value {
+    protected:
+        Value* m_value;
+    
+    public:
+        PointerValue(Compiler& compiler, Value* value);
+
+        Value* copy() override;
+
+        Value* getValue() const;
+        void setValue(Value* value);
     };
 }

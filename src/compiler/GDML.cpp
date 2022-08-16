@@ -84,6 +84,11 @@ void GDML::formatLines(LineError const& error) {
             squigglesStart = 0;
         }
 
+        // at least one error squiggle
+        if (squigglesCount == 0) {
+            squigglesCount = 1;
+        }
+
         // squiggles
         m_io
             << Color::Red

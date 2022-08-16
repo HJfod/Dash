@@ -16,10 +16,11 @@ namespace gdml {
             LogErrors      = 0b1,
             LogWarnings    = 0b10,
             LogMessages    = 0b100,
-            LogDebug       = 0b100,
-            LogTokens      = 0b1000,
-            LogAST         = 0b10000,
-            PrettifyOutput = 0b100000,
+            LogDebug       = 0b1000,
+            LogTokens      = 0b10000,
+            LogAST         = 0b100000,
+            PrettifyOutput = 0b1000000,
+            LogAsJson      = 0b10000000,
         };
         using Value = decltype(None);
 
@@ -40,16 +41,14 @@ namespace gdml {
         inline Flags(Value flags) : m_value(flags) {}
     };
 
-    #ifdef GDML_DEBUG
-    static constexpr const auto DEFAULT_FLAGS =
-        Flags::LogErrors | Flags::LogWarnings | Flags::LogTokens |
-        Flags::LogAST    | Flags::LogMessages | Flags::LogDebug  |
-        Flags::PrettifyOutput;
-    #else
     static constexpr const auto DEFAULT_FLAGS =
         Flags::LogErrors | Flags::LogWarnings | Flags::LogMessages | 
         Flags::PrettifyOutput;
-    #endif
+
+    static constexpr const auto DEBUG_FLAGS =
+        Flags::LogErrors | Flags::LogWarnings | Flags::LogTokens |
+        Flags::LogAST    | Flags::LogMessages | Flags::LogDebug  |
+        Flags::PrettifyOutput;
 
     class GDML {
     protected:

@@ -1,17 +1,9 @@
 
-import "MyLayer.hpp";
+fun addTwo(x: i32, y: i32) => x + y;
 
-fun addTwo(a, b) => a + b;
-
-impl MyLayer::init(title: string const&) -> bool {
-    if !CCLayer::init() {
-        false
-    }
-
-    auto x = addTwo(2, 5);
+fun test() {
+    let x = addTwo(7, -5);
     x += 2;
 
-    std::cout << x << "\n";
-    
-    true
+    x
 }
