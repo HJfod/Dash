@@ -11,6 +11,27 @@ using namespace gdml::io;
 Value::Value(Compiler& compiler) : m_compiler(compiler) {}
 
 
+Scope::Scope(Compiler& compiler) : compiler(compiler) {}
+
+void Scope::pushType(std::shared_ptr<Type> type) {
+    types.push_back(type);
+}
+
+void Scope::pushNamedType(std::string const& name, std::shared_ptr<Type> type) {
+    namedTypes.insert({ compiler.getNameSpace() + name, type });
+}
+
+NamedEntity* Scope::pushVariable(std::string const& name, NamedEntity const& var) {
+    auto fullName = compiler.getNameSpace() + name;
+    variables.insert({ fullName, var });
+    return &variables.at(fullName);
+}
+
+bool Scope::hasVariable(std::string const& name) const {
+    return variables.count(name);
+}
+
+
 Error Compiler::compile() {
     auto tres = m_ast->compile(m_instance);
     if (!tres) {
@@ -21,8 +42,16 @@ Error Compiler::compile() {
     return Error::OK;
 }
 
-std::vector<std::string> const& Compiler::getNameSpace() const {
+std::vector<std::string> const& Compiler::getNameSpaceStack() const {
     return m_namespace;
+}
+
+std::string Compiler::getNameSpace() const {
+    std::string res {};
+    for (auto& ns : m_namespace) {
+        res += ns + "::";
+    }
+    return res;
 }
 
 void Compiler::pushNameSpace(std::string const& name) {
@@ -31,7 +60,7 @@ void Compiler::pushNameSpace(std::string const& name) {
 
 void Compiler::popNameSpace(std::string const& name) {
     if (m_namespace.back() == name) {
-        m_scope.pop_back();
+        m_namespace.pop_back();
     } else {
         std::string stack = "";
         for (auto const& s : m_namespace) {
@@ -41,10 +70,10 @@ void Compiler::popNameSpace(std::string const& name) {
         m_instance.getShared().logError({
             Error::InternalError,
             "Attempted to pop \"" + name + "\" off the top of "
-            "the scope stack, but it wasn't there. This is "
+            "the namespace stack, but it wasn't there. This is "
             "likely a bug within the compiler itself.",
             "",
-            "Current scope: " + stack,
+            "Current stack: " + stack,
             Position { 0, 0 },
             Position { 0, 0 },
             m_instance.getSource()
@@ -53,7 +82,7 @@ void Compiler::popNameSpace(std::string const& name) {
 }
 
 void Compiler::pushScope() {
-    m_scope.push_back(Scope());
+    m_scope.push_back(Scope(*this));
 }
 
 void Compiler::popScope() {
@@ -65,9 +94,10 @@ Scope& Compiler::getScope() {
 }
 
 NamedEntity const* Compiler::getVariable(std::string const& name) const {
+    auto fullName = getNameSpace() + name;
     for (auto& scope : std::ranges::reverse_view(m_scope)) {
-        if (scope.variables.count(name)) {
-            return &(scope.variables.at(name));
+        if (scope.variables.count(fullName)) {
+            return &(scope.variables.at(fullName));
         }
     }
     return nullptr;
@@ -117,7 +147,7 @@ void Compiler::codegen(std::ostream& stream) const noexcept {
 
 Compiler::Compiler(Instance& shared, ast::AST* ast)
  : m_instance(shared), m_ast(ast),
-   m_formatter(*this), m_scope({ Scope() }) {
+   m_formatter(*this), m_scope({ Scope(*this) }) {
     loadBuiltinTypes();
     loadConstValues();
 }

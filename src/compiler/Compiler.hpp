@@ -53,26 +53,18 @@ namespace gdml {
     };
 
     struct Scope {
+        Compiler& compiler;
         std::vector<std::shared_ptr<Type>> types;
         std::unordered_map<std::string, std::shared_ptr<Type>> namedTypes;
         std::unordered_map<std::string, NamedEntity> variables;
 
-        void pushType(std::shared_ptr<Type> type) {
-            types.push_back(type);
-        }
+        Scope(Compiler& compiler);
 
-        void pushNamedType(std::string const& name, std::shared_ptr<Type> type) {
-            namedTypes.insert({ name, type });
-        }
+        void pushType(std::shared_ptr<Type> type);
+        void pushNamedType(std::string const& name, std::shared_ptr<Type> type);
 
-        NamedEntity* pushVariable(std::string const& name, NamedEntity const& var) {
-            variables.insert({ name, var });
-            return &variables.at(name);
-        }
-
-        bool hasVariable(std::string const& name) const {
-            return variables.count(name);
-        }
+        NamedEntity* pushVariable(std::string const& name, NamedEntity const& var);
+        bool hasVariable(std::string const& name) const;
     };
 
     class Compiler {
@@ -101,7 +93,8 @@ namespace gdml {
 
         void pushNameSpace(std::string const& name);
         void popNameSpace(std::string const& name);
-        std::vector<std::string> const& getNameSpace() const;
+        std::vector<std::string> const& getNameSpaceStack() const;
+        std::string getNameSpace() const;
 
         void pushScope();
         void popScope();

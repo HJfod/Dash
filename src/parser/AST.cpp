@@ -689,6 +689,7 @@ TypeCheckResult BlockStmt::compile(Instance& instance) noexcept {
     PUSH_SCOPE();
     GDML_TYPECHECK_CHILD(body);
     POP_SCOPE();
+
     return Ok();
 }
 
@@ -751,9 +752,11 @@ TypeCheckResult IfStmt::compile(Instance& instance) noexcept {
     PUSH_SCOPE();
     GDML_TYPECHECK_CHILD_O(condition);
     POP_SCOPE();
+
     PUSH_SCOPE();
     GDML_TYPECHECK_CHILD_O(elseBranch);
     POP_SCOPE();
+
     return Ok();
 }
 

@@ -1,9 +1,22 @@
 
-fun addTwo(x: i32, y: i32) => x + y;
+// class MyClass {
+//     x: i32;
+//     y: i32;
+
+//     impl new() {}
+// }
+
+namespace c {
+    let x: i32;
+
+    fun addTwo(x: i32, y: i32) => x + y;
+}
 
 fun test() {
-    let x = addTwo(7, -5);
+    let x = c::addTwo(7, -5);
     x += 2;
 
-    x
+    c::x = 5;
+
+    // let cls = MyClass();
 }
