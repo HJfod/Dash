@@ -104,6 +104,10 @@ Error Instance::execute() {
 
     // codegen
 
+    if (m_shared.getFlag(Flags::DryRun)) {
+        return Error::OK;
+    }
+
     m_shared.logDebug("Generating code...");
 
     { // save generated file

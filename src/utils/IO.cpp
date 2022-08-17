@@ -8,6 +8,10 @@ using namespace gdml::io;
 
 #include <Windows.h>
 
+void IO::setup() {
+    SetConsoleOutputCP(CP_UTF8);
+}
+
 static HANDLE CONSOLE_HANDLE = GetStdHandle(STD_OUTPUT_HANDLE);
 static std::unordered_map<Color, char> COLOR_BITS {
     { Color::White,  0b1110 },

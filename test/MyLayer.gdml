@@ -1,22 +1,12 @@
 
-// class MyClass {
-//     x: i32;
-//     y: i32;
-
-//     impl new() {}
-// }
+import "MyLayer.hpp"
 
 namespace c {
-    let x: i32;
-
     fun addTwo(x: i32, y: i32) => x + y;
+
 }
 
 fun test() {
-    let x = c::addTwo(7, -5);
-    x += 2;
-
-    c::x = 5;
-
-    // let cls = MyClass();
+    let x = c::addTwo(5, 7);
+    x += 2
 }

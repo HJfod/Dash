@@ -34,10 +34,14 @@ namespace gdml {
     class GDML;
     class Type;
     class Value;
-    struct NamedEntity;
+    struct Entity;
+    struct Variable;
+    struct FunctionEntity;
 
     namespace ast {
         struct Stmt;
+        struct VariableDeclExpr;
+        struct FunctionDeclStmt;
         class AST;
     }
 
@@ -89,36 +93,29 @@ namespace gdml {
             "@class"
         };
 
-    #ifdef GDML_IS_32_BIT
-
         constexpr std::array<const char*, DATATYPE_COUNT> DATATYPE_CPP {
             "void",
-            "char", "short", "int", "long long",
-            "unsigned char", "unsigned short", "unsigned int", "unsigned long long",
+            "int8_t", "int16_t", "int32_t", "int64_t",
+            "uint8_t", "uint16_t", "uint32_t", "uint64_t",
             "float", "double",
             "bool",
             "char", "gd::string",
-            "@@array@@",
-            "@@class@@"
+            "", "", "", ""
         };
 
-        using I8  = char;
-        using I16 = short;
-        using I32 = int;
-        using I64 = long long;
+        using I8  = int8_t;
+        using I16 = int16_t;
+        using I32 = int32_t;
+        using I64 = int64_t;
 
-        using U8  = unsigned char;
-        using U16 = unsigned short;
-        using U32 = unsigned int;
-        using U64 = unsigned long long;
+        using U8  = std::uint8_t;
+        using U16 = std::uint16_t;
+        using U32 = std::uint32_t;
+        using U64 = std::uint64_t;
 
         using F32 = float;
         using F64 = double;
 
-    #else
-        #error "No types defined for 64-bit"
-    #endif
-        
         using Void = void;
         using Bool = bool;
         using Char = char;

@@ -21,6 +21,7 @@ namespace gdml {
             LogAST         = 0b100000,
             PrettifyOutput = 0b1000000,
             LogAsJson      = 0b10000000,
+            DryRun         = 0b100000000,
         };
         using Value = decltype(None);
 

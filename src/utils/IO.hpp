@@ -44,6 +44,8 @@ namespace gdml {
         io::Color m_color;
         io::Color m_bg;
 
+        void setup();
+
     public:
         inline IO(
             std::ostream& cout = std::cout,
@@ -57,6 +59,8 @@ namespace gdml {
         {
             m_color = io::Color::White;
             m_bg = io::Color::Black;
+
+            this->setup();
         }
         inline ~IO() {
             this->color(io::Color::White);

@@ -77,6 +77,10 @@ namespace gdml::ast {
             start(start),
             end(end) {}
 
+        virtual Value* eval(Instance& instance) {
+            return nullptr;
+        }
+
         virtual ~Stmt() = default;
         virtual std::string debugPrintAST(size_t i) const = 0;
         virtual void codegen(Instance&, std::ostream& stream) const noexcept = 0;
@@ -90,10 +94,6 @@ namespace gdml::ast {
 
     struct Expr : Stmt {
         QualifiedType evalType;
-
-        virtual Value* eval(Instance& instance) {
-            return nullptr;
-        }
 
         Expr(
             SourceFile const* src,
@@ -376,7 +376,7 @@ namespace gdml::ast {
         Option<TypeExpr*> type;
         std::string name;
         Option<ValueExpr*> value;
-        NamedEntity* variable = nullptr;
+        Variable* variable = nullptr;
 
         VariableDeclExpr(
             SourceFile const* src,
@@ -466,10 +466,10 @@ namespace gdml::ast {
         }
     };
 
-    struct NamedEntityExpr : ValueExpr {
+    struct VariableExpr : ValueExpr {
         NameExpr* name;
 
-        NamedEntityExpr(
+        VariableExpr(
             SourceFile const* src,
             Position const& start,
             Position const& end,
@@ -478,7 +478,7 @@ namespace gdml::ast {
 
         std::string debugPrintAST(size_t i) const override {
             return
-                GDML_DEBUG_FMT(NamedEntityExpr) +
+                GDML_DEBUG_FMT(VariableExpr) +
                 GDML_DEBUG_FMT_CHILD(name);
         }
 
@@ -997,7 +997,7 @@ namespace gdml::ast {
         NameExpr* name;
         Option<StmtList*> body;
         bool isImplementation;
-        NamedEntity* entity = nullptr;
+        FunctionEntity* entity = nullptr;
 
         FunctionDeclStmt(
             SourceFile const* src,

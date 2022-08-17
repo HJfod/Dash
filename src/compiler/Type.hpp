@@ -35,21 +35,56 @@ namespace gdml {
         virtual ~Type() = default;
     };
 
-    struct QualifiedType {
-        std::shared_ptr<Type> type = nullptr;
+    template<class T>
+    struct TQualifiedType {
+        std::shared_ptr<T> type = nullptr;
         types::TypeQualifiers qualifiers = types::NON_CONST_QUALIFIED;
 
-        QualifiedType() = default;
-        QualifiedType(
-            std::shared_ptr<Type> type,
+        TQualifiedType() = default;
+        TQualifiedType(
+            std::shared_ptr<T> type,
             types::TypeQualifiers qualifiers = types::NON_CONST_QUALIFIED
-        );
+        ) : type(type), qualifiers(qualifiers) {}
 
-        bool convertibleTo(QualifiedType const& other) const;
-        bool castableTo(QualifiedType const& other) const;
-        std::string codegenName() const;
-        std::string toString() const;
+        template<class T2>
+        TQualifiedType<T2> into() const {
+            return TQualifiedType<T2>(
+                std::static_pointer_cast<T2>(type),
+                qualifiers
+            );
+        }
+
+        bool convertibleTo(TQualifiedType<T> const& other) const {
+            if (!type) return false;
+            return type->convertibleTo(other.type);
+        }
+
+        bool castableTo(TQualifiedType<T> const& other) const {
+            if (qualifiers.isConst && !other.qualifiers.isConst) {
+                return false;
+            }
+            return type->castableTo(other.type);
+        }
+
+        std::string codegenName() const {
+            std::string res {};
+            res += type ? type->codegenName() : "auto";
+            if (qualifiers.isConst) {
+                res += " const";
+            }
+            return res;
+        }
+
+        std::string toString() const {
+            std::string res {};
+            res += type ? type->toString() : "auto";
+            if (qualifiers.isConst) {
+                res += " const";
+            }
+            return res;
+        }
     };
+    using QualifiedType = TQualifiedType<Type>;
 
     class FunctionType : public Type {
     protected:
@@ -67,6 +102,8 @@ namespace gdml {
         void setReturnType(QualifiedType const& type);
         
         std::vector<QualifiedType> const& getParameters();
+
+        bool matchParameters(std::vector<QualifiedType> const& parameters) const;
 
         std::string codegenName() const override;
         std::string toString() const override;
@@ -124,4 +161,6 @@ namespace gdml {
         std::string codegenName() const override;
         std::string toString() const override;
     };
+
+    using QualifiedFunType = TQualifiedType<FunctionType>;
 }

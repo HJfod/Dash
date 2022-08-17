@@ -353,7 +353,7 @@ ExprResult<ValueExpr> Parser::parseValue() noexcept {
     if (token.type == TokenType::Identifier) {
         NameExpr* name;
         PROPAGATE_ASSIGN(name, parseName());
-        return m_ast->make<NamedEntityExpr>(
+        return m_ast->make<VariableExpr>(
             m_source, name->start, name->end, name
         );
     }
@@ -938,7 +938,7 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
             );
             // skip 'import' and literal
             m_index += 2;
-            CHECK_SEMICOLON();
+            // CHECK_SEMICOLON();
             return stmt;
         } break;
 

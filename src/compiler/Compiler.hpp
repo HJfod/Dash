@@ -14,15 +14,44 @@ namespace gdml {
     };
     constexpr size_t CONST_VALUE_COUNT = 5;
 
-    class Value {
+    struct Scope {
+    public:
+        enum class Search {
+            Found,
+            NoMatchingOverload,
+            NotFound,
+        };
+
     protected:
         Compiler& m_compiler;
+        bool m_blocking;
+        std::unordered_map<std::string, std::shared_ptr<Type>> m_types;
+        std::unordered_map<std::string, Variable> m_variables;
+        std::unordered_map<std::string, std::vector<FunctionEntity>> m_functions;
+
+        Scope(Compiler& compiler, bool blocking);
+
+        friend class Compiler;
 
     public:
-        Value(Compiler& compiler);
+        Compiler& getCompiler();
 
-        virtual Value* copy() = 0;
-        virtual ~Value() = default;
+        void pushType(std::string const& name, std::shared_ptr<Type> type);
+        bool hasType(std::string const& name) const;
+
+        Variable* pushVariable(std::string const& name, Variable const& var);
+        bool hasVariable(std::string const& name) const;
+        Variable* getVariable(std::string const& name);
+
+        FunctionEntity* pushFunction(std::string const& name, FunctionEntity const& fun);
+        Search hasFunction(
+            std::string const& name,
+            Option<std::vector<QualifiedType>> const& parameters
+        ) const;
+        FunctionEntity* getFunction(
+            std::string const& name,
+            Option<std::vector<QualifiedType>> const& parameters
+        );
     };
 
     class Formatter {
@@ -36,35 +65,6 @@ namespace gdml {
         void pushIndent();
         void popIndent();
         void newline(std::ostream& stream) const;
-    };
-
-    struct NamedEntity {
-        QualifiedType type;
-        Value* value = nullptr;
-        ast::Stmt* declaration = nullptr;
-
-        NamedEntity(
-            QualifiedType const& type,
-            Value* value,
-            ast::Stmt* decl
-        ) : type(type), value(value), declaration(decl) {}
-
-        ~NamedEntity() {}
-    };
-
-    struct Scope {
-        Compiler& compiler;
-        std::vector<std::shared_ptr<Type>> types;
-        std::unordered_map<std::string, std::shared_ptr<Type>> namedTypes;
-        std::unordered_map<std::string, NamedEntity> variables;
-
-        Scope(Compiler& compiler);
-
-        void pushType(std::shared_ptr<Type> type);
-        void pushNamedType(std::string const& name, std::shared_ptr<Type> type);
-
-        NamedEntity* pushVariable(std::string const& name, NamedEntity const& var);
-        bool hasVariable(std::string const& name) const;
     };
 
     class Compiler {
@@ -96,26 +96,43 @@ namespace gdml {
         std::vector<std::string> const& getNameSpaceStack() const;
         std::string getNameSpace() const;
 
-        void pushScope();
+        void pushScope(bool blocking);
         void popScope();
-        Scope& getScope();
+        Scope& getScope(size_t offset = 0);
 
-        template<class T = Type, class... Args>
-        std::shared_ptr<T> makeNamedType(
+        // entities
+
+        Entity* getEntity(std::string const& name);
+
+        Variable* getVariable(std::string const& name);
+        bool variableExists(std::string const& name) const;
+
+        FunctionEntity* getFunction(
             std::string const& name,
-            Args... args
-        ) {
-            auto type = std::make_shared<T>(*this, std::forward<Args>(args)...);
-            m_scope.back().pushNamedType(name, type);
-            return type;
-        }
+            Option<std::vector<QualifiedType>> const& parameters
+        );
+        bool functionExists(
+            std::string const& name,
+            Option<std::vector<QualifiedType>> const& parameters
+        ) const;
+
+        // types
 
         template<class T = Type, class... Args>
         std::shared_ptr<T> makeType(Args... args) {
             auto type = std::make_shared<T>(*this, std::forward<Args>(args)...);
-            m_scope.back().pushType(type);
             return type;
         }
+
+        bool typeExists(std::string const& name) const;
+        std::shared_ptr<Type> getType(std::string const& name) const;
+        template<class T>
+        std::shared_ptr<Type> getBuiltInType() const {
+            return getType(types::dataTypeToString(types::getDataType<T>()));
+        }
+        std::shared_ptr<Type> getBuiltInType(types::DataType type) const;
+
+        // values
 
         template<class T = Value, class... Args>
         T* makeValue(
@@ -126,57 +143,8 @@ namespace gdml {
             return value;
         }
 
-        NamedEntity const* getVariable(std::string const& name) const;
-        bool variableExists(std::string const& name) const;
-
-        bool typeExists(std::string const& name) const;
-        std::shared_ptr<Type> getType(std::string const& name) const;
-        template<class T>
-        std::shared_ptr<Type> getBuiltInType() const {
-            return getType(types::dataTypeToString(types::getDataType<T>()));
-        }
-        std::shared_ptr<Type> getBuiltInType(types::DataType type) const;
-
         Value* getConstValue(ConstValue value) const;
 
         void codegen(std::ostream& stream) const noexcept;
-    };
-
-    // this has to be defined after Compiler 
-    // because it uses it
-    template<class T>
-    class BuiltInValue : public Value {
-    protected:
-        T m_value;
-    
-    public:
-        BuiltInValue(
-            Compiler& compiler,
-            T const& value
-        ) : Value(compiler),
-            m_value(value) {}
-
-        Value* copy() override {
-            return m_compiler.makeValue<BuiltInValue<T>>(m_value);
-        }
-        T getValue() const {
-            return m_value;
-        }
-        void setValue(T const& value) {
-            m_value = value;
-        }
-    };
-
-    class PointerValue : public Value {
-    protected:
-        Value* m_value;
-    
-    public:
-        PointerValue(Compiler& compiler, Value* value);
-
-        Value* copy() override;
-
-        Value* getValue() const;
-        void setValue(Value* value);
     };
 }

@@ -12,12 +12,19 @@ using TimePoint = std::chrono::time_point<Clock>;
 using Time = std::chrono::milliseconds;
 using std::chrono::duration_cast;
 
+#define INFO()  Color::Cyan  << "[info] " << Color::White
+#define ERROR() Color::Red   << "[fail] " << Color::White
+#define SUCC()  Color::Lime  << "[done] " << Color::White
+#define WARN()  Color::Yellow<< "[warn] " << Color::White
+
 constexpr const char* TIME_LITERAL = "ms";
 
 int main(int argc, char* argv[]) {
     CLI cli {
         { "debug", None },
         { "intellisense", None },
+        { "silent", None },
+        { "dry", None },
     };
 
     IO& io = DEFAULT_IO;
@@ -28,7 +35,18 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    GDML compiler(cli.getFlag("debug") ? DEBUG_FLAGS : DEFAULT_FLAGS);
+    auto flags = DEFAULT_FLAGS;
+    if (cli.getFlag("debug")) {
+        flags = DEBUG_FLAGS;
+    }
+    if (cli.getFlag("silent")) {
+        flags = Flags::None;
+    }
+    if (cli.getFlag("dry")) {
+        flags |= Flags::DryRun;
+    }
+
+    GDML compiler(flags);
     for (auto arg : cli.getArgs()) {
         std::string input = arg;
         std::string output = arg + ".cpp";
@@ -39,22 +57,23 @@ int main(int argc, char* argv[]) {
             output = arg.substr(arrow + 2);
         }
 
-        std::cout << "Transpiling " << input << "\n";
+        io << INFO() << "Transpiling " << input << "\n";
 
         auto startTime = Clock::now();
         auto res = compiler.compileFile(input, output);
 
-        std::cout
+        io
+            << INFO()
             << "Transpiling done in "
             << duration_cast<Time>(Clock::now() - startTime).count() << TIME_LITERAL
-            << ": " << errorToString(res) << "\n";
+            << ": " << Color::Lime << errorToString(res) << "\n";
 
         if (res != Error::OK) {
-            std::cout << "Some transpilations failed :(\n";
+            io << ERROR() << "Some transpilations failed :(\n";
             return 2;
         }
     }
-    std::cout << "Transpilation finished\n";
+    io << SUCC() << "Transpilation finished\n";
 
     return 0;
 }

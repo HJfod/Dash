@@ -2,6 +2,7 @@
 #include "Compiler.hpp"
 #include "Instance.hpp"
 #include "GDML.hpp"
+#include "Value.hpp"
 
 using namespace gdml;
 
@@ -61,42 +62,6 @@ void Type::addCastOperatorFor(std::shared_ptr<Type> type, std::string const& op)
 }
 
 
-QualifiedType::QualifiedType(
-    std::shared_ptr<Type> type,
-    types::TypeQualifiers qualifiers
-) : type(type), qualifiers(qualifiers) {}
-
-std::string QualifiedType::codegenName() const {
-    std::string res {};
-    res += type ? type->codegenName() : "auto";
-    if (qualifiers.isConst) {
-        res += " const";
-    }
-    return res;
-}
-
-std::string QualifiedType::toString() const {
-    std::string res {};
-    res += type ? type->toString() : "auto";
-    if (qualifiers.isConst) {
-        res += " const";
-    }
-    return res;
-}
-
-bool QualifiedType::convertibleTo(QualifiedType const& other) const {
-    if (!type) return false;
-    return type->convertibleTo(other.type);
-}
-
-bool QualifiedType::castableTo(QualifiedType const& other) const {
-    if (qualifiers.isConst && !other.qualifiers.isConst) {
-        return false;
-    }
-    return type->castableTo(other.type);
-}
-
-
 FunctionType::FunctionType(
     Compiler& compiler,
     QualifiedType const& returnType,
@@ -114,6 +79,19 @@ void FunctionType::setReturnType(QualifiedType const& type) {
 
 std::vector<QualifiedType> const& FunctionType::getParameters() {
     return m_parameters;
+}
+
+bool FunctionType::matchParameters(
+    std::vector<QualifiedType> const& parameters
+) const {
+    size_t i = 0;
+    for (auto& param : m_parameters) {
+        if (!parameters.at(i).convertibleTo(param)) {
+            return false;
+        }
+        i++;
+    }
+    return true;
 }
 
 std::string FunctionType::codegenName() const {
@@ -138,9 +116,9 @@ std::string FunctionType::toString() const {
             res += ", ";
         }
         first = false;
-        res += param.codegenName();
+        res += param.toString();
     }
-    res += ") -> " + m_returnType.codegenName();
+    res += ") -> " + m_returnType.toString();
     return res;
 }
 

@@ -4,31 +4,90 @@
 #include <parser/AST.hpp>
 #include "Instance.hpp"
 #include <ranges>
+#include "Value.hpp"
 
 using namespace gdml;
 using namespace gdml::io;
 
-Value::Value(Compiler& compiler) : m_compiler(compiler) {}
 
+Scope::Scope(Compiler& compiler, bool blocking)
+ : m_compiler(compiler), m_blocking(blocking)
+{}
 
-Scope::Scope(Compiler& compiler) : compiler(compiler) {}
-
-void Scope::pushType(std::shared_ptr<Type> type) {
-    types.push_back(type);
+Compiler& Scope::getCompiler() {
+    return m_compiler;
 }
 
-void Scope::pushNamedType(std::string const& name, std::shared_ptr<Type> type) {
-    namedTypes.insert({ compiler.getNameSpace() + name, type });
+void Scope::pushType(std::string const& name, std::shared_ptr<Type> type) {
+    m_types.insert({ m_compiler.getNameSpace() + name, type });
 }
 
-NamedEntity* Scope::pushVariable(std::string const& name, NamedEntity const& var) {
-    auto fullName = compiler.getNameSpace() + name;
-    variables.insert({ fullName, var });
-    return &variables.at(fullName);
+bool Scope::hasType(std::string const& name) const {
+    return m_types.count(name);
+}
+
+Variable* Scope::pushVariable(std::string const& name, Variable const& var) {
+    auto fullName = m_compiler.getNameSpace() + name;
+    m_variables.insert({ fullName, var });
+    return &m_variables.at(fullName);
 }
 
 bool Scope::hasVariable(std::string const& name) const {
-    return variables.count(name);
+    return m_variables.count(name);
+}
+
+Variable* Scope::getVariable(std::string const& name) {
+    if (!m_variables.count(name)) {
+        return nullptr;
+    }
+    return &m_variables.at(name);
+}
+
+FunctionEntity* Scope::pushFunction(std::string const& name, FunctionEntity const& fun) {
+    auto fullName = m_compiler.getNameSpace() + name;
+    if (m_functions.count(fullName)) {
+        m_functions.at(fullName).push_back(fun);
+    } else {
+        m_functions.insert({ fullName, { fun }});
+    }
+    return &m_functions.at(fullName).back();
+}
+
+Scope::Search Scope::hasFunction(
+    std::string const& name,
+    Option<std::vector<QualifiedType>> const& parameters
+) const {
+    auto fullName = m_compiler.getNameSpace() + name;
+    if (!m_functions.count(fullName)) {
+        return Search::NotFound;
+    }
+    for (auto& fun : m_functions.at(fullName)) {
+        if (
+            !parameters.has_value() ||
+            fun.type.type->matchParameters(parameters.value())
+        ) {
+            return Search::Found;
+        }
+    }
+    return Search::NoMatchingOverload;
+}
+
+FunctionEntity* Scope::getFunction(
+    std::string const& name,
+    Option<std::vector<QualifiedType>> const& parameters
+) {
+    if (!m_functions.count(name)) {
+        return nullptr;
+    }
+    for (auto& fun : m_functions.at(name)) {
+        if (
+            !parameters.has_value() ||
+            fun.type.type->matchParameters(parameters.value())
+        ) {
+            return &fun;
+        }
+    }
+    return nullptr;
 }
 
 
@@ -81,57 +140,128 @@ void Compiler::popNameSpace(std::string const& name) {
     }
 }
 
-void Compiler::pushScope() {
-    m_scope.push_back(Scope(*this));
+void Compiler::pushScope(bool blocking) {
+    m_scope.push_back(Scope(*this, blocking));
 }
 
 void Compiler::popScope() {
     m_scope.pop_back();
 }
 
-Scope& Compiler::getScope() {
+Scope& Compiler::getScope(size_t offset) {
+    if (offset) {
+        return *(m_scope.rbegin() + offset);
+    }
     return m_scope.back();
 }
 
-NamedEntity const* Compiler::getVariable(std::string const& name) const {
-    auto fullName = getNameSpace() + name;
+
+Entity* Compiler::getEntity(std::string const& name) {
+    auto var = getVariable(name);
+    if (var) return var;
+    return getFunction(name, None);
+}
+
+bool Compiler::variableExists(std::string const& name) const {
+    // prioritize innermost scope
     for (auto& scope : std::ranges::reverse_view(m_scope)) {
-        if (scope.variables.count(fullName)) {
-            return &(scope.variables.at(fullName));
+        // backwards test all current namespaces
+        auto testName = name;
+        if (scope.hasVariable(name)) {
+            return true;
+        }
+        for (auto& ns : std::ranges::reverse_view(m_namespace)) {
+            testName = ns + "::" + name;
+            if (scope.hasVariable(name)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+Variable* Compiler::getVariable(std::string const& name) {
+    // prioritize innermost scope
+    for (auto& scope : std::ranges::reverse_view(m_scope)) {
+        // backwards test all current namespaces
+        auto testName = name;
+        auto var = scope.getVariable(testName);
+        if (var) {
+            return var;
+        }
+        for (auto& ns : std::ranges::reverse_view(m_namespace)) {
+            testName = ns + "::" + name;
+            var = scope.getVariable(testName);
+            if (var) {
+                return var;
+            }
         }
     }
     return nullptr;
 }
 
-bool Compiler::variableExists(std::string const& name) const {
+bool Compiler::functionExists(
+    std::string const& name,
+    Option<std::vector<QualifiedType>> const& parameters
+) const {
+    // prioritize innermost scope
     for (auto& scope : std::ranges::reverse_view(m_scope)) {
-        if (scope.variables.count(name)) {
+        // backwards test all current namespaces
+        auto testName = name;
+        if (scope.hasFunction(name, parameters) == Scope::Search::Found) {
             return true;
+        }
+        for (auto& ns : std::ranges::reverse_view(m_namespace)) {
+            testName = ns + "::" + name;
+            if (scope.hasFunction(name, parameters) == Scope::Search::Found) {
+                return true;
+            }
         }
     }
     return false;
 }
 
-bool Compiler::typeExists(std::string const& name) const {
+FunctionEntity* Compiler::getFunction(
+    std::string const& name,
+    Option<std::vector<QualifiedType>> const& parameters
+) {
+    // prioritize innermost scope
     for (auto& scope : std::ranges::reverse_view(m_scope)) {
-        if (scope.namedTypes.count(name)) {
-            return true;
+        // backwards test all current namespaces
+        auto testName = name;
+        auto fun = scope.getFunction(testName, parameters);
+        if (fun) {
+            return fun;
         }
-        std::string testNameSpace = "";
-        for (auto& nameSpace : m_namespace) {
-            if (scope.namedTypes.count(testNameSpace + name)) {
-                return true;
+        for (auto& ns : std::ranges::reverse_view(m_namespace)) {
+            testName = ns + "::" + name;
+            fun = scope.getFunction(testName, parameters);
+            if (fun) {
+                return fun;
             }
-            testNameSpace += nameSpace + "::";
         }
     }
-    return false;
+    return nullptr;
+}
+
+
+bool Compiler::typeExists(std::string const& name) const {
+    return getType(name).get();
 }
 
 std::shared_ptr<Type> Compiler::getType(std::string const& name) const {
+    // prioritize innermost scope
     for (auto& scope : std::ranges::reverse_view(m_scope)) {
-        if (scope.namedTypes.count(name)) {
-            return scope.namedTypes.at(name);
+        // backwards test all current namespaces
+        auto testName = name;
+        if (scope.m_types.count(testName)) {
+            return scope.m_types.at(testName);
+        }
+        for (auto& ns : std::ranges::reverse_view(m_namespace)) {
+            testName = ns + "::" + name;
+            if (scope.m_types.count(testName)) {
+                return scope.m_types.at(testName);
+            }
         }
     }
     return nullptr;
@@ -147,7 +277,7 @@ void Compiler::codegen(std::ostream& stream) const noexcept {
 
 Compiler::Compiler(Instance& shared, ast::AST* ast)
  : m_instance(shared), m_ast(ast),
-   m_formatter(*this), m_scope({ Scope(*this) }) {
+   m_formatter(*this), m_scope({ Scope(*this, true) }) {
     loadBuiltinTypes();
     loadConstValues();
 }
@@ -175,10 +305,7 @@ void Compiler::loadBuiltinTypes() {
 
     size_t i = 0;
     for (auto& type : types::DATATYPES) {
-        makeNamedType(
-            types::DATATYPE_STRS[i],
-            type
-        );
+        m_scope.back().pushType(types::DATATYPE_STRS[i], makeType(type));
         i++;
     }
     for (auto& fromDataType : STATIC_CASTABLE) {

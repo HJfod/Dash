@@ -3,6 +3,7 @@
 #include <compiler/Compiler.hpp>
 #include <compiler/Instance.hpp>
 #include <utils/Macros.hpp>
+#include <compiler/Value.hpp>
 
 using namespace gdml;
 using namespace gdml::ast;
@@ -18,8 +19,8 @@ using namespace gdml::ast;
 #define NEW_LINE() \
     instance.getCompiler().getFormatter().newline(stream)
 
-#define PUSH_SCOPE() \
-    instance.getCompiler().pushScope()
+#define PUSH_SCOPE(blocking) \
+    instance.getCompiler().pushScope(blocking)
 
 #define POP_SCOPE() \
     instance.getCompiler().popScope()
@@ -346,10 +347,10 @@ void PointerExpr::codegen(Instance& instance, std::ostream& stream) const noexce
     stream << evalType.codegenName();
 }
 
-// NameExpr
+// VariableExpr
 
-TypeCheckResult NamedEntityExpr::compile(Instance& instance) noexcept {
-    auto var = instance.getCompiler().getVariable(name->fullName());
+TypeCheckResult VariableExpr::compile(Instance& instance) noexcept {
+    auto var = instance.getCompiler().getEntity(name->fullName());
     if (!var) {
         THROW_COMPILE_ERR(
            "Identifier \"" + name->fullName() + "\" is undefined",
@@ -358,18 +359,18 @@ TypeCheckResult NamedEntityExpr::compile(Instance& instance) noexcept {
         );
     }
 
-    evalType = var->type;
+    evalType = var->getType();
 
     DEBUG_LOG_TYPE();
     
     return Ok();
 }
 
-Value* NamedEntityExpr::eval(Instance& instance) {
-    return instance.getCompiler().getVariable(name->fullName())->value;
+Value* VariableExpr::eval(Instance& instance) {
+    return instance.getCompiler().getEntity(name->fullName())->eval(instance);
 }
 
-void NamedEntityExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
+void VariableExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
     name->codegen(instance, stream);
 }
 
@@ -465,7 +466,7 @@ TypeCheckResult VariableDeclExpr::compile(Instance& instance) noexcept {
         );
     }
     variable = instance.getCompiler().getScope().pushVariable(
-        name, NamedEntity(evalType, nullptr, this)
+        name, Variable(evalType, nullptr, this)
     );
     DEBUG_LOG_TYPE();
     
@@ -557,38 +558,43 @@ TypeCheckResult FunctionTypeExpr::compile(Instance& instance) noexcept {
 // FunctionDeclStmt
 
 TypeCheckResult FunctionDeclStmt::compile(Instance& instance) noexcept {
+    PUSH_SCOPE(true);
+
     GDML_TYPECHECK_CHILD(type);
     GDML_TYPECHECK_CHILD(name);
 
-    if (instance.getCompiler().getScope().hasVariable(name->fullName())) {
-        THROW_COMPILE_ERR(
-            "Entity named \"" + name->fullName() + "\" already exists "
-            "in this scope",
-            "",
-            ""
-        );
+    auto funType = type->evalType.into<FunctionType>();
+
+    switch (instance.getCompiler().getScope(1).hasFunction(
+        name->fullName(), funType.type->getParameters()
+    )) {
+        case Scope::Search::Found:
+            THROW_COMPILE_ERR(
+                "Function named \"" + name->fullName() + "\" with "
+                "these parameters already exists in this scope",
+                "",
+                ""
+            );
+        default: break;
     }
 
-    entity = instance.getCompiler().getScope().pushVariable(
-        name->fullName(), NamedEntity(type->evalType, nullptr, this)
+    entity = instance.getCompiler().getScope(1).pushFunction(
+        name->fullName(), FunctionEntity(funType, this)
     );
 
-    PUSH_SCOPE();
     GDML_TYPECHECK_CHILD_O(body);
     POP_SCOPE();
     
-    auto funType = static_cast<FunctionType*>(type->evalType.type.get());
-
     // return type inference
-    if (!funType->getReturnType().type.get() && body.has_value()) {
+    if (!funType.type->getReturnType().type.get() && body.has_value()) {
         auto infer = body.value()->inferBranchReturnType(instance);
         if (!infer) return infer.unwrapErr();
         
         auto inferredType = infer.unwrap();
         if (inferredType.has_value()) {
-            funType->setReturnType(inferredType.value());
+            funType.type->setReturnType(inferredType.value());
         } else {
-            funType->setReturnType(QualifiedType(
+            funType.type->setReturnType(QualifiedType(
                 instance.getCompiler().getBuiltInType(types::DataType::Void)
             ));
         }
@@ -686,7 +692,7 @@ BranchInferResult BlockStmt::inferBranchReturnType(Instance& instance) {
 }
 
 TypeCheckResult BlockStmt::compile(Instance& instance) noexcept {
-    PUSH_SCOPE();
+    PUSH_SCOPE(false);
     GDML_TYPECHECK_CHILD(body);
     POP_SCOPE();
 
@@ -749,11 +755,11 @@ BranchInferResult IfStmt::inferBranchReturnType(Instance& instance) {
 }
 
 TypeCheckResult IfStmt::compile(Instance& instance) noexcept {
-    PUSH_SCOPE();
+    PUSH_SCOPE(false);
     GDML_TYPECHECK_CHILD_O(condition);
     POP_SCOPE();
 
-    PUSH_SCOPE();
+    PUSH_SCOPE(false);
     GDML_TYPECHECK_CHILD_O(elseBranch);
     POP_SCOPE();
 
