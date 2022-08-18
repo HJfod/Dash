@@ -3,6 +3,7 @@
 #include <utils/Types.hpp>
 #include "Type.hpp"
 #include <unordered_set>
+#include "Entity.hpp"
 
 namespace gdml {
     enum class ConstValue {
@@ -13,76 +14,6 @@ namespace gdml {
         Null,
     };
     constexpr size_t CONST_VALUE_COUNT = 5;
-
-    struct Scope {
-    public:
-        enum class Search {
-            Found,
-            NoMatchingOverload,
-            NotFound,
-        };
-
-    protected:
-        Compiler& m_compiler;
-        std::vector<std::string> m_namespace;
-        std::unordered_map<std::string, std::shared_ptr<Type>> m_types;
-        std::unordered_map<std::string, std::shared_ptr<Variable>> m_variables;
-        std::unordered_map<std::string, std::vector<std::shared_ptr<FunctionEntity>>> m_functions;
-
-        Scope(Compiler& compiler);
-
-        friend class Compiler;
-
-    public:
-        Compiler& getCompiler();
-
-        // types
-
-        void pushType(std::string const& name, std::shared_ptr<Type> type);
-        bool hasType(std::string const& name) const;
-        std::shared_ptr<Type> getType(std::string const& name) const;
-
-        // entities
-
-        bool hasEntity(
-            std::string const& name,
-            Option<std::vector<QualifiedType>> const& parameters
-        );
-        std::shared_ptr<Entity> getEntity(
-            std::string const& name,
-            Option<std::vector<QualifiedType>> const& parameters
-        );
-
-        // variables
-
-        std::shared_ptr<Variable> pushVariable(
-            std::string const& name,
-            std::shared_ptr<Variable> var
-        );
-        bool hasVariable(std::string const& name) const;
-        std::shared_ptr<Variable> getVariable(std::string const& name);
-
-        // functions
-
-        std::shared_ptr<FunctionEntity> pushFunction(
-            std::string const& name,
-            std::shared_ptr<FunctionEntity> fun
-        );
-        Search hasFunction(
-            std::string const& name,
-            Option<std::vector<QualifiedType>> const& parameters
-        ) const;
-        std::shared_ptr<FunctionEntity> getFunction(
-            std::string const& name,
-            Option<std::vector<QualifiedType>> const& parameters
-        );
-
-        // namespaces
-
-        void pushNameSpace(std::string const& name);
-        void popNameSpace();
-        std::string getNameSpace() const;
-    };
 
     class Formatter {
     protected:
@@ -100,13 +31,43 @@ namespace gdml {
         void skipSemiColon();
     };
 
+    struct Scope {
+        std::shared_ptr<Namespace> global;
+        std::vector<std::string> namespaces;
+
+        Scope();
+
+        void pushNamespace(std::string const& name);
+        void popNamespace();
+        std::string currentNamespace() const;
+
+        bool hasEntity(
+            std::string const& name,
+            Option<EntityType> type,
+            Option<std::vector<QualifiedType>> const& parameters
+        ) const;
+        std::shared_ptr<Entity> getEntity(
+            std::string const& name,
+            Option<EntityType> type,
+            Option<std::vector<QualifiedType>> const& parameters
+        ) const;
+        template<class T, class... Args>
+        std::shared_ptr<T> makeEntity(
+            std::string const& name, Args&&... args
+        ) {
+            return global->makeEntity<T, Args...>(
+                currentNamespace() + name, std::forward<Args>(args)...
+            );
+        }
+    };
+
     class Compiler {
     protected:
         Instance& m_instance;
         ast::AST* m_ast;
         std::unordered_set<Value*> m_values;
-        std::vector<Scope> m_scope;
         std::unordered_map<ConstValue, Value*> m_constValues;
+        std::vector<Scope> m_scope;
         Formatter m_formatter;
     
         void loadBuiltinTypes();
@@ -127,29 +88,85 @@ namespace gdml {
         void popScope();
         Scope& getScope(size_t offset = 0);
 
-        bool hasType(std::string const& name) const;
-        std::shared_ptr<Type> getType(std::string const& name) const;
-
         bool hasEntity(
             std::string const& name,
-            Option<std::vector<QualifiedType>> const& parameters
-        );
-        std::shared_ptr<Entity> getEntity(
-            std::string const& name,
-            Option<std::vector<QualifiedType>> const& parameters
-        );
-
-        bool hasVariable(std::string const& name) const;
-        std::shared_ptr<Variable> getVariable(std::string const& name);
-
-        Scope::Search hasFunction(
-            std::string const& name,
+            Option<EntityType> type,
             Option<std::vector<QualifiedType>> const& parameters
         ) const;
-        std::shared_ptr<FunctionEntity> getFunction(
+        template<class T>
+        bool hasEntity(
             std::string const& name,
+            Option<std::vector<QualifiedType>> const& parameters = None
+        ) {
+            if constexpr (std::is_same_v<T, Variable>) {
+                return hasEntityAs<T>(name, EntityType::Variable, None);
+            }
+            else if constexpr (std::is_same_v<T, FunctionEntity>) {
+                return hasEntityAs<T>(name, EntityType::Function, parameters);
+            }
+            else if constexpr (std::is_same_v<T, TypeEntity>) {
+                return hasEntityAs<T>(name, EntityType::Type, None);
+            }
+            else if constexpr (std::is_same_v<T, Namespace>) {
+                return hasEntityAs<T>(name, EntityType::Namespace, None);
+            }
+            else if constexpr (std::is_same_v<T, ValueEntity>) {
+                return hasEntityAs<T>(name, None, None);
+            }
+            else {
+                static_assert(!std::is_same_v<T, T>, "Invalid type to check entity as");
+            }
+        }
+        template<class T>
+        bool hasEntityAs(
+            std::string const& name,
+            Option<EntityType> type,
             Option<std::vector<QualifiedType>> const& parameters
-        );
+        ) const {
+            return hasEntity(
+                name, type, parameters
+            );
+        }
+
+        std::shared_ptr<Entity> getEntity(
+            std::string const& name,
+            Option<EntityType> type,
+            Option<std::vector<QualifiedType>> const& parameters
+        ) const;
+        template<class T>
+        std::shared_ptr<T> getEntity(
+            std::string const& name,
+            Option<std::vector<QualifiedType>> const& parameters = None
+        ) {
+            if constexpr (std::is_same_v<T, Variable>) {
+                return getEntityAs<T>(name, EntityType::Variable, None);
+            }
+            else if constexpr (std::is_same_v<T, FunctionEntity>) {
+                return getEntityAs<T>(name, EntityType::Function, parameters);
+            }
+            else if constexpr (std::is_same_v<T, TypeEntity>) {
+                return getEntityAs<T>(name, EntityType::Type, None);
+            }
+            else if constexpr (std::is_same_v<T, Namespace>) {
+                return getEntityAs<T>(name, EntityType::Namespace, None);
+            }
+            else if constexpr (std::is_same_v<T, ValueEntity>) {
+                return getEntityAs<T>(name, None, None);
+            }
+            else {
+                static_assert(!std::is_same_v<T, T>, "Invalid type to get entity as");
+            }
+        }
+        template<class T>
+        std::shared_ptr<T> getEntityAs(
+            std::string const& name,
+            Option<EntityType> type,
+            Option<std::vector<QualifiedType>> const& parameters
+        ) const {
+            return std::static_pointer_cast<T>(getEntity(
+                name, type, parameters
+            ));
+        }
 
         template<class T = Type, class... Args>
         std::shared_ptr<T> makeType(Args... args) {

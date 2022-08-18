@@ -420,6 +420,10 @@ namespace gdml::ast {
             return name;
         }
 
+        virtual std::vector<std::string> fullNameList() const {
+            return { name };
+        }
+
         std::string debugPrintAST(size_t i) const override {
             return
                 GDML_DEBUG_FMT(NameExpr) +
@@ -447,6 +451,13 @@ namespace gdml::ast {
         
         std::string fullName() const override {
             return name + "::" + item->fullName();
+        }
+
+        std::vector<std::string> fullNameList() const override {
+            std::vector<std::string> vec { name };
+            auto ivec = item->fullNameList();
+            vec.insert(vec.end(), ivec.begin(), ivec.end());
+            return vec;
         }
 
         std::string debugPrintAST(size_t i) const override {
@@ -957,14 +968,14 @@ namespace gdml::ast {
     };
 
     struct NameSpaceStmt : Stmt {
-        std::string name;
+        NameExpr* name;
         StmtList* contents;
 
         NameSpaceStmt(
             SourceFile const* src,
             Position const& start,
             Position const& end,
-            std::string const& name,
+            NameExpr* name,
             StmtList* contents
         ) : Stmt(src, start, end),
             name(name), contents(contents) {}
@@ -972,12 +983,11 @@ namespace gdml::ast {
         std::string debugPrintAST(size_t i) const override {
             return 
                 GDML_DEBUG_FMT(NameSpaceStmt) +
-                GDML_DEBUG_FMT_PROP_S(name) + 
+                GDML_DEBUG_FMT_CHILD(name) + 
                 GDML_DEBUG_FMT_CHILD(contents);
         }
 
         TypeCheckResult compile(Instance& instance) noexcept override;
-
         void codegen(Instance& com, std::ostream& stream) const noexcept override;
     };
 
@@ -1012,6 +1022,26 @@ namespace gdml::ast {
         TypeCheckResult compile(Instance&) noexcept override;
 
         void codegen(Instance& com, std::ostream& stream) const noexcept override;
+    };
+
+    struct UsingNameSpaceStmt : Stmt {
+        NameExpr* name;
+
+        UsingNameSpaceStmt(
+            SourceFile const* src,
+            Position const& start,
+            Position const& end,
+            NameExpr* name
+        ) : Stmt(src, start, end), name(name) {}
+
+        std::string debugPrintAST(size_t i) const override {
+            return 
+                GDML_DEBUG_FMT(UsingNameSpaceStmt) +
+                GDML_DEBUG_FMT_CHILD(name);
+        }
+
+        TypeCheckResult compile(Instance& instance) noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
     };
 
     // embed

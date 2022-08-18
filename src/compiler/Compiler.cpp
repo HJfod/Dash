@@ -5,25 +5,45 @@
 #include "Instance.hpp"
 #include <ranges>
 #include "Value.hpp"
+#include "Entity.hpp"
 
 using namespace gdml;
 using namespace gdml::io;
 
-#define SCOPES_SEARCH_BY(fun, ...) \
-    for (auto& scope : std::ranges::reverse_view(m_scope)) {\
-        if (scope.fun(__VA_ARGS__)) {\
-            return true;\
-        }\
-    }\
-    return false
+Scope::Scope() : global(std::make_shared<Namespace>(nullptr, "")) {}
 
-#define SCOPES_FIND_BY(fun, ...) \
-    for (auto& scope : std::ranges::reverse_view(m_scope)) {\
-        if (auto x = scope.fun(__VA_ARGS__)) {\
-            return x;\
-        }\
-    }\
-    return nullptr
+void Scope::pushNamespace(std::string const& name) {
+    namespaces.push_back(name);
+}
+
+void Scope::popNamespace() {
+    namespaces.pop_back();
+}
+
+std::string Scope::currentNamespace() const {
+    std::string res {};
+    for (auto& ns : namespaces) {
+        res += ns + "::";
+    }
+    return res;
+}
+
+bool Scope::hasEntity(
+    std::string const& name,
+    Option<EntityType> type,
+    Option<std::vector<QualifiedType>> const& parameters
+) const {
+    return global->hasEntity(name, type, parameters);
+}
+
+std::shared_ptr<Entity> Scope::getEntity(
+    std::string const& name,
+    Option<EntityType> type,
+    Option<std::vector<QualifiedType>> const& parameters
+) const {
+    return global->getEntity(name, type, parameters);
+}
+
 
 Error Compiler::compile() {
     auto tres = m_ast->compile(m_instance);
@@ -36,7 +56,7 @@ Error Compiler::compile() {
 }
 
 void Compiler::pushScope() {
-    m_scope.push_back(Scope(*this));
+    m_scope.push_back(Scope());
 }
 
 void Compiler::popScope() {
@@ -50,66 +70,37 @@ Scope& Compiler::getScope(size_t offset) {
     return m_scope.back();
 }
 
-bool Compiler::hasType(std::string const& name) const {
-    SCOPES_SEARCH_BY(hasType, name);
-}
-
-std::shared_ptr<Type> Compiler::getType(std::string const& name) const {
-    SCOPES_FIND_BY(getType, name);
-}
-
 bool Compiler::hasEntity(
     std::string const& name,
+    Option<EntityType> type,
     Option<std::vector<QualifiedType>> const& parameters
-) {
-    SCOPES_SEARCH_BY(hasEntity, name, parameters);
+) const {
+    for (auto& scope : std::ranges::reverse_view(m_scope)) {
+        if (scope.hasEntity(name, type, parameters)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 std::shared_ptr<Entity> Compiler::getEntity(
     std::string const& name,
-    Option<std::vector<QualifiedType>> const& parameters
-) {
-    SCOPES_FIND_BY(getEntity, name, parameters);
-}
-
-bool Compiler::hasVariable(std::string const& name) const {
-    SCOPES_SEARCH_BY(hasVariable, name);
-}
-
-std::shared_ptr<Variable> Compiler::getVariable(std::string const& name) {
-    SCOPES_FIND_BY(getVariable, name);
-}
-
-Scope::Search Compiler::hasFunction(
-    std::string const& name,
+    Option<EntityType> type,
     Option<std::vector<QualifiedType>> const& parameters
 ) const {
-    Scope::Search status = Scope::Search::NotFound;
     for (auto& scope : std::ranges::reverse_view(m_scope)) {
-        switch (scope.hasFunction(name, parameters)) {
-            case Scope::Search::Found: {
-                return Scope::Search::Found;
-            } break;
-            
-            case Scope::Search::NoMatchingOverload: {
-                status = Scope::Search::NoMatchingOverload;
-            } break;
-
-            default: break;
+        if (auto r = scope.getEntity(name, type, parameters)) {
+            return r;
         }
     }
-    return status;
-}
-
-std::shared_ptr<FunctionEntity> Compiler::getFunction(
-    std::string const& name,
-    Option<std::vector<QualifiedType>> const& parameters
-) {
-    SCOPES_FIND_BY(getFunction, name, parameters);
+    return nullptr;
 }
 
 std::shared_ptr<Type> Compiler::getBuiltInType(types::DataType type) const {
-    return getType(types::dataTypeToString(type));
+    auto entity = getEntityAs<TypeEntity>(
+        types::dataTypeToString(type), EntityType::Type, None
+    );
+    return entity ? entity->type : nullptr;
 }
 
 void Compiler::codegen(std::ostream& stream) const noexcept {
@@ -118,7 +109,8 @@ void Compiler::codegen(std::ostream& stream) const noexcept {
 
 Compiler::Compiler(Instance& shared, ast::AST* ast)
  : m_instance(shared), m_ast(ast),
-   m_formatter(*this), m_scope({ Scope(*this) }) {
+   m_formatter(*this), m_scope({ Scope() })
+{
     loadBuiltinTypes();
     loadConstValues();
 }
@@ -146,7 +138,9 @@ void Compiler::loadBuiltinTypes() {
 
     size_t i = 0;
     for (auto& type : types::DATATYPES) {
-        m_scope.back().pushType(types::DATATYPE_STRS[i], makeType(type));
+        m_scope.back().global->makeEntity<TypeEntity>(
+            types::DATATYPE_STRS[i], makeType(type)
+        );
         i++;
     }
     for (auto& fromDataType : STATIC_CASTABLE) {

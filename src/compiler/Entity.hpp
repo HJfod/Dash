@@ -1,0 +1,126 @@
+#pragma once
+
+#include <utils/Types.hpp>
+#include "Type.hpp"
+
+namespace gdml {
+    struct Entity {
+    protected:
+        std::shared_ptr<Namespace> m_namespace;
+        std::string m_name;
+        EntityType m_type;
+
+    public:
+        Entity(
+            std::shared_ptr<Namespace> container,
+            std::string const& name,
+            EntityType type
+        );
+
+        EntityType getType() const;
+        std::string getFullName() const;
+
+        virtual bool isValue() const {
+            return false;
+        }
+        virtual ~Entity() = default;
+    };
+
+    struct TypeEntity : public Entity {
+        std::shared_ptr<Type> type;
+
+        TypeEntity(
+            std::shared_ptr<Namespace> container,
+            std::string const& name,
+            std::shared_ptr<Type> type
+        );
+    };
+
+    struct ValueEntity : public Entity {
+        virtual QualifiedType getValueType() const = 0;
+        virtual Value* eval(Instance& instance) = 0;
+
+        bool isValue() const override {
+            return true;
+        }
+        ValueEntity(
+            std::shared_ptr<Namespace> container, 
+            std::string const& name,
+            EntityType type
+        );
+    };
+
+    struct Variable : public ValueEntity {
+        QualifiedType type;
+        Value* value = nullptr;
+        ast::VariableDeclExpr* declaration = nullptr;
+
+        QualifiedType getValueType() const override {
+            return type;
+        }
+        Value* eval(Instance&) override {
+            return value;
+        }
+
+        Variable(
+            std::shared_ptr<Namespace> container,
+            std::string const& name,
+            QualifiedType const& type,
+            Value* value,
+            ast::VariableDeclExpr* decl
+        );
+    };
+
+    struct FunctionEntity : public ValueEntity {
+        QualifiedFunType type;
+        ast::FunctionDeclStmt* declaration = nullptr;
+
+        QualifiedType getValueType() const override {
+            return type.into<Type>();
+        }
+        Value* eval(Instance& instance) override;
+
+        FunctionEntity(
+            std::shared_ptr<Namespace> container,
+            std::string const& name,
+            QualifiedFunType const& type,
+            ast::FunctionDeclStmt* decl
+        );
+    };
+
+    struct Namespace : public Entity {
+    protected:
+        std::unordered_map<std::string, std::vector<std::shared_ptr<Entity>>> m_entities;
+
+        void pushEntity(std::string const& name, std::shared_ptr<Entity> entity);
+        
+    public:
+        Namespace(
+            std::shared_ptr<Namespace> container,
+            std::string const& name
+        );
+        virtual ~Namespace();
+
+        bool hasEntity(
+            std::string const& name,
+            Option<EntityType> type,
+            Option<std::vector<QualifiedType>> const& parameters
+        ) const;
+        std::shared_ptr<Entity> getEntity(
+            std::string const& name,
+            Option<EntityType> type,
+            Option<std::vector<QualifiedType>> const& parameters
+        ) const;
+        template<class T, class... Args>
+        std::shared_ptr<T> makeEntity(
+            std::string const& name, Args&&... args
+        ) {
+            auto entity = std::make_shared<T>(
+                std::shared_ptr<Namespace>(this),
+                name, std::forward<Args>(args)...
+            );
+            pushEntity(name, entity);
+            return entity;
+        }
+    };
+}

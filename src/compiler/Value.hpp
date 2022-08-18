@@ -50,46 +50,4 @@ namespace gdml {
             m_value = value;
         }
     };
-
-    struct Entity {
-        std::string fullName;
-
-        virtual QualifiedType getType() const = 0;
-        virtual Value* eval(Instance& instance) = 0;
-        virtual ~Entity() = default;
-    };
-
-    struct Variable : public Entity {
-        QualifiedType type;
-        Value* value = nullptr;
-        ast::VariableDeclExpr* declaration = nullptr;
-
-        QualifiedType getType() const override {
-            return type;
-        }
-        Value* eval(Instance& instance) override {
-            return value;
-        }
-
-        Variable(
-            QualifiedType const& type,
-            Value* value,
-            ast::VariableDeclExpr* decl
-        );
-    };
-
-    struct FunctionEntity : public Entity {
-        QualifiedFunType type;
-        ast::FunctionDeclStmt* declaration = nullptr;
-
-        QualifiedType getType() const override {
-            return type.into<Type>();
-        }
-        Value* eval(Instance& instance) override;
-
-        FunctionEntity(
-            QualifiedFunType const& type,
-            ast::FunctionDeclStmt* decl
-        );
-    };
 }

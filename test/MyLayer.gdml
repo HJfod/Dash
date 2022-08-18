@@ -1,11 +1,13 @@
 
 import "MyLayer.hpp"
 
-namespace c {
+namespace b::c {
     let z = 32;
 
     fun addTwo(x: i32, y: i32) => x + y + z;
 }
+
+using namespace b;
 
 fun test() {
     let x = c::addTwo(5, 7);

@@ -4,6 +4,7 @@
 #include <compiler/Instance.hpp>
 #include <utils/Macros.hpp>
 #include <compiler/Value.hpp>
+#include <compiler/Entity.hpp>
 
 using namespace gdml;
 using namespace gdml::ast;
@@ -26,10 +27,10 @@ using namespace gdml::ast;
     instance.getCompiler().popScope()
 
 #define PUSH_NAMESPACE(name) \
-    instance.getCompiler().getScope().pushNameSpace(name)
+    instance.getCompiler().getScope().pushNamespace(name)
 
 #define POP_NAMESPACE() \
-    instance.getCompiler().getScope().popNameSpace()
+    instance.getCompiler().getScope().popNamespace()
 
 #define EXPECT_TYPE(from) \
     if (!from->evalType.type) {\
@@ -350,7 +351,7 @@ void PointerExpr::codegen(Instance& instance, std::ostream& stream) const noexce
 // VariableExpr
 
 TypeCheckResult VariableExpr::compile(Instance& instance) noexcept {
-    auto var = instance.getCompiler().getEntity(name->fullName(), None);
+    auto var = instance.getCompiler().getEntity<ValueEntity>(name->fullName());
     if (!var) {
         THROW_COMPILE_ERR(
            "Identifier \"" + name->fullName() + "\" is undefined",
@@ -358,9 +359,16 @@ TypeCheckResult VariableExpr::compile(Instance& instance) noexcept {
             ""
         );
     }
+    if (!var->isValue()) {
+        THROW_COMPILE_ERR(
+           "Identifier \"" + name->fullName() + "\" is not a variable "
+           "or function",
+            "",
+            ""
+        );
+    }
 
-
-    evalType = var->getType();
+    evalType = var->getValueType();
     entity = var;
 
     DEBUG_LOG_TYPE();
@@ -369,11 +377,11 @@ TypeCheckResult VariableExpr::compile(Instance& instance) noexcept {
 }
 
 Value* VariableExpr::eval(Instance& instance) {
-    return instance.getCompiler().getEntity(name->fullName(), None)->eval(instance);
+    return std::static_pointer_cast<ValueEntity>(entity)->eval(instance);
 }
 
 void VariableExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
-    stream << entity->fullName;
+    stream << entity->getFullName();
 }
 
 // NameExpr
@@ -400,7 +408,8 @@ void ScopeExpr::codegen(Instance& com, std::ostream& stream) const noexcept {
 // TypeNameExpr
 
 TypeCheckResult TypeNameExpr::compile(Instance& instance) noexcept {
-    if (!instance.getCompiler().hasType(name->fullName())) {
+    auto entity = instance.getCompiler().getEntity<TypeEntity>(name->fullName());
+    if (!entity) {
         THROW_TYPE_ERR(
             "Unknown type \"" + name->fullName() + "\"",
             "Not all C++ types are supported yet, sorry!",
@@ -408,10 +417,7 @@ TypeCheckResult TypeNameExpr::compile(Instance& instance) noexcept {
         );
     }
 
-    evalType = QualifiedType {
-        instance.getCompiler().getType(name->fullName()),
-        qualifiers
-    };
+    evalType = QualifiedType { entity->type, qualifiers };
     DEBUG_LOG_TYPE();
 
     return Ok();
@@ -424,20 +430,47 @@ void TypeNameExpr::codegen(Instance& instance, std::ostream& stream) const noexc
 // NameSpaceStmt
 
 TypeCheckResult NameSpaceStmt::compile(Instance& instance) noexcept {
-    PUSH_NAMESPACE(name);
+    for (auto& ns : name->fullNameList()) {
+        PUSH_NAMESPACE(ns);
+    }
     GDML_TYPECHECK_CHILD(contents);
-    POP_NAMESPACE();
+    for (auto& _ : name->fullNameList()) {
+        POP_NAMESPACE();
+    }
     
     return Ok();
 }
 
 void NameSpaceStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
-    stream << "namespace " << name << " {";
+    stream << "namespace " << name->fullName() << " {";
     PUSH_INDENT();
     contents->codegen(instance, stream);
     POP_INDENT();
     stream << "}";
     instance.getCompiler().getFormatter().skipSemiColon();
+}
+
+// UsingNameSpaceStmt
+
+TypeCheckResult UsingNameSpaceStmt::compile(Instance& instance) noexcept {
+    GDML_TYPECHECK_CHILD(name);
+
+    if (!instance.getCompiler().getScope().hasEntity(
+        name->fullName(), EntityType::Namespace, None
+    )) {
+        THROW_COMPILE_ERR(
+            "Unknown namespace \"" + name->fullName() + "\"",
+            "",
+            ""
+        );
+    }
+
+    return Ok();
+}
+
+void UsingNameSpaceStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    stream << "using namespace ";
+    name->codegen(instance, stream);
 }
 
 // VariableDeclExpr
@@ -471,16 +504,16 @@ TypeCheckResult VariableDeclExpr::compile(Instance& instance) noexcept {
         }
     }
 
-    if (instance.getCompiler().getScope().hasVariable(name)) {
+    if (instance.getCompiler().hasEntity<Variable>(name)) {
         THROW_COMPILE_ERR(
-            "Entity named \"" + name + "\" already exists "
+            "Variable named \"" + name + "\" already exists "
             "in this scope",
             "",
             ""
         );
     }
-    variable = instance.getCompiler().getScope().pushVariable(
-        name, std::make_shared<Variable>(evalType, nullptr, this)
+    variable = instance.getCompiler().getScope().makeEntity<Variable>(
+        name, evalType, nullptr, this
     );
     DEBUG_LOG_TYPE();
     
@@ -579,21 +612,19 @@ TypeCheckResult FunctionDeclStmt::compile(Instance& instance) noexcept {
 
     auto funType = type->evalType.into<FunctionType>();
 
-    switch (instance.getCompiler().getScope(1).hasFunction(
-        name->fullName(), funType.type->getParameters()
+    if (instance.getCompiler().getScope(1).hasEntity(
+        name->fullName(), EntityType::Function, funType.type->getParameters()
     )) {
-        case Scope::Search::Found:
-            THROW_COMPILE_ERR(
-                "Function named \"" + name->fullName() + "\" with "
-                "these parameters already exists in this scope",
-                "",
-                ""
-            );
-        default: break;
+        THROW_COMPILE_ERR(
+            "Function named \"" + name->fullName() + "\" with "
+            "these parameters already exists in this scope",
+            "",
+            ""
+        );
     }
 
-    entity = instance.getCompiler().getScope(1).pushFunction(
-        name->fullName(), std::make_shared<FunctionEntity>(funType, this)
+    entity = instance.getCompiler().getScope(1).makeEntity<FunctionEntity>(
+        name->fullName(), funType, this
     );
 
     GDML_TYPECHECK_CHILD_O(body);

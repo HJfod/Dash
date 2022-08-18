@@ -600,6 +600,38 @@ ExprResult<ValueExpr> Parser::parseExpression() noexcept {
     return value;
 }
 
+ExprResult<Stmt> Parser::parseUsing() noexcept {
+    INIT_TOKEN();
+
+    auto start = token.start;
+
+    // consume 'using'
+    NEXT_TOKEN();
+
+    switch (token.type) {
+        case TokenType::Namespace: {
+            // consume 'namespace'
+            m_index++;
+
+            NameExpr* name;
+            PROPAGATE_ASSIGN(name, parseName());
+
+            return m_ast->make<UsingNameSpaceStmt>(
+                m_source, start, PREV_TOKEN().end, name
+            );
+        } break;
+
+        default: break;
+    }
+
+    THROW_SYNTAX_ERR(
+        token,
+        "Invalid token for an " + TOKEN_STR(Using) + " declaration",
+        "",
+        ""
+    );
+}
+
 ExprResult<FunctionDeclStmt> Parser::parseFunDeclaration() noexcept {
     INIT_TOKEN();
 
@@ -991,10 +1023,8 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
                     "supported, sorry!"
                 );
             }
-            auto name = next.data;
-
-            // consume name
-            m_index++;
+            auto name = parseName();
+            PROPAGATE_ERROR(name);
 
             StmtList* list;
             PROPAGATE_ASSIGN(list, parseBlock(topLevel));
@@ -1003,8 +1033,15 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
 
             return m_ast->make<NameSpaceStmt>(
                 m_source, start, PREV_TOKEN().end,
-                name, list
+                name.unwrap(), list
             );
+        } break;
+
+        case TokenType::Using: {
+            Stmt* stmt;
+            PROPAGATE_ASSIGN(stmt, parseUsing());
+            CHECK_SEMICOLON();
+            return stmt;
         } break;
 
         case TokenType::Implement:

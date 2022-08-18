@@ -35,8 +35,25 @@ namespace gdml {
     class Type;
     class Value;
     struct Entity;
+    struct ValueEntity;
     struct Variable;
     struct FunctionEntity;
+    struct TypeEntity;
+    struct Namespace;
+    struct Scope;
+
+    enum class FunctionSearch {
+        Found,
+        NoMatchingOverload,
+        NotFound,
+    };
+
+    enum class EntityType {
+        Type,
+        Variable,
+        Function,
+        Namespace,
+    };
 
     namespace ast {
         struct Stmt;
