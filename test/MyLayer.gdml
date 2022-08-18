@@ -2,8 +2,9 @@
 import "MyLayer.hpp"
 
 namespace c {
-    fun addTwo(x: i32, y: i32) => x + y;
+    let z = 32;
 
+    fun addTwo(x: i32, y: i32) => x + y + z;
 }
 
 fun test() {

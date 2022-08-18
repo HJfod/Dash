@@ -10,26 +10,26 @@ using namespace gdml::ast;
 
 #define PUSH_INDENT() \
     instance.getCompiler().getFormatter().pushIndent(); \
-    instance.getCompiler().getFormatter().newline(stream)
+    instance.getCompiler().getFormatter().newLine(stream)
 
 #define POP_INDENT() \
     instance.getCompiler().getFormatter().popIndent(); \
-    instance.getCompiler().getFormatter().newline(stream)
+    instance.getCompiler().getFormatter().newLine(stream)
 
 #define NEW_LINE() \
-    instance.getCompiler().getFormatter().newline(stream)
+    instance.getCompiler().getFormatter().newLine(stream)
 
-#define PUSH_SCOPE(blocking) \
-    instance.getCompiler().pushScope(blocking)
+#define PUSH_SCOPE() \
+    instance.getCompiler().pushScope()
 
 #define POP_SCOPE() \
     instance.getCompiler().popScope()
 
 #define PUSH_NAMESPACE(name) \
-    instance.getCompiler().pushNameSpace(name)
+    instance.getCompiler().getScope().pushNameSpace(name)
 
-#define POP_NAMESPACE(name) \
-    instance.getCompiler().popNameSpace(name)
+#define POP_NAMESPACE() \
+    instance.getCompiler().getScope().popNameSpace()
 
 #define EXPECT_TYPE(from) \
     if (!from->evalType.type) {\
@@ -314,13 +314,13 @@ void TernaryExpr::codegen(Instance& instance, std::ostream& stream) const noexce
     condition->codegen(instance, stream);
     stream << ")";
 
-    instance.getCompiler().getFormatter().newline(stream);
+    instance.getCompiler().getFormatter().newLine(stream);
 
     stream << " ? (";
     truthy->codegen(instance, stream);
     stream << ")";
 
-    instance.getCompiler().getFormatter().newline(stream);
+    instance.getCompiler().getFormatter().newLine(stream);
 
     stream << " : (";
     falsy->codegen(instance, stream);
@@ -350,7 +350,7 @@ void PointerExpr::codegen(Instance& instance, std::ostream& stream) const noexce
 // VariableExpr
 
 TypeCheckResult VariableExpr::compile(Instance& instance) noexcept {
-    auto var = instance.getCompiler().getEntity(name->fullName());
+    auto var = instance.getCompiler().getEntity(name->fullName(), None);
     if (!var) {
         THROW_COMPILE_ERR(
            "Identifier \"" + name->fullName() + "\" is undefined",
@@ -359,7 +359,9 @@ TypeCheckResult VariableExpr::compile(Instance& instance) noexcept {
         );
     }
 
+
     evalType = var->getType();
+    entity = var;
 
     DEBUG_LOG_TYPE();
     
@@ -367,11 +369,17 @@ TypeCheckResult VariableExpr::compile(Instance& instance) noexcept {
 }
 
 Value* VariableExpr::eval(Instance& instance) {
-    return instance.getCompiler().getEntity(name->fullName())->eval(instance);
+    return instance.getCompiler().getEntity(name->fullName(), None)->eval(instance);
 }
 
 void VariableExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
-    name->codegen(instance, stream);
+    stream << entity->fullName;
+}
+
+// NameExpr
+
+void NameExpr::codegen(Instance&, std::ostream& stream) const noexcept {
+    stream << name;
 }
 
 // ScopeExpr
@@ -379,15 +387,20 @@ void VariableExpr::codegen(Instance& instance, std::ostream& stream) const noexc
 TypeCheckResult ScopeExpr::compile(Instance& instance) noexcept {
     PUSH_NAMESPACE(name);
     GDML_TYPECHECK_CHILD(item);
-    POP_NAMESPACE(name);
+    POP_NAMESPACE();
 
     return Ok();
+}
+
+void ScopeExpr::codegen(Instance& com, std::ostream& stream) const noexcept {
+    stream << name << "::";
+    item->codegen(com, stream);
 }
 
 // TypeNameExpr
 
 TypeCheckResult TypeNameExpr::compile(Instance& instance) noexcept {
-    if (!instance.getCompiler().typeExists(name->fullName())) {
+    if (!instance.getCompiler().hasType(name->fullName())) {
         THROW_TYPE_ERR(
             "Unknown type \"" + name->fullName() + "\"",
             "Not all C++ types are supported yet, sorry!",
@@ -413,7 +426,7 @@ void TypeNameExpr::codegen(Instance& instance, std::ostream& stream) const noexc
 TypeCheckResult NameSpaceStmt::compile(Instance& instance) noexcept {
     PUSH_NAMESPACE(name);
     GDML_TYPECHECK_CHILD(contents);
-    POP_NAMESPACE(name);
+    POP_NAMESPACE();
     
     return Ok();
 }
@@ -424,6 +437,7 @@ void NameSpaceStmt::codegen(Instance& instance, std::ostream& stream) const noex
     contents->codegen(instance, stream);
     POP_INDENT();
     stream << "}";
+    instance.getCompiler().getFormatter().skipSemiColon();
 }
 
 // VariableDeclExpr
@@ -466,7 +480,7 @@ TypeCheckResult VariableDeclExpr::compile(Instance& instance) noexcept {
         );
     }
     variable = instance.getCompiler().getScope().pushVariable(
-        name, Variable(evalType, nullptr, this)
+        name, std::make_shared<Variable>(evalType, nullptr, this)
     );
     DEBUG_LOG_TYPE();
     
@@ -558,7 +572,7 @@ TypeCheckResult FunctionTypeExpr::compile(Instance& instance) noexcept {
 // FunctionDeclStmt
 
 TypeCheckResult FunctionDeclStmt::compile(Instance& instance) noexcept {
-    PUSH_SCOPE(true);
+    PUSH_SCOPE();
 
     GDML_TYPECHECK_CHILD(type);
     GDML_TYPECHECK_CHILD(name);
@@ -579,7 +593,7 @@ TypeCheckResult FunctionDeclStmt::compile(Instance& instance) noexcept {
     }
 
     entity = instance.getCompiler().getScope(1).pushFunction(
-        name->fullName(), FunctionEntity(funType, this)
+        name->fullName(), std::make_shared<FunctionEntity>(funType, this)
     );
 
     GDML_TYPECHECK_CHILD_O(body);
@@ -637,6 +651,7 @@ void FunctionDeclStmt::codegen(Instance& instance, std::ostream& stream) const n
         body.value()->codegen(instance, stream);
         POP_INDENT();
         stream << "}";
+        instance.getCompiler().getFormatter().skipSemiColon();
     }
 }
 
@@ -692,7 +707,7 @@ BranchInferResult BlockStmt::inferBranchReturnType(Instance& instance) {
 }
 
 TypeCheckResult BlockStmt::compile(Instance& instance) noexcept {
-    PUSH_SCOPE(false);
+    PUSH_SCOPE();
     GDML_TYPECHECK_CHILD(body);
     POP_SCOPE();
 
@@ -726,6 +741,7 @@ void ImportStmt::codegen(Instance& instance, std::ostream& stream) const noexcep
             NEW_LINE();
         }
     }
+    instance.getCompiler().getFormatter().skipSemiColon();
 }
 
 // IfStmt
@@ -755,11 +771,11 @@ BranchInferResult IfStmt::inferBranchReturnType(Instance& instance) {
 }
 
 TypeCheckResult IfStmt::compile(Instance& instance) noexcept {
-    PUSH_SCOPE(false);
+    PUSH_SCOPE();
     GDML_TYPECHECK_CHILD_O(condition);
     POP_SCOPE();
 
-    PUSH_SCOPE(false);
+    PUSH_SCOPE();
     GDML_TYPECHECK_CHILD_O(elseBranch);
     POP_SCOPE();
 
@@ -811,8 +827,19 @@ void StmtList::codegen(Instance& instance, std::ostream& stream) const noexcept 
         first = false;
 
         stmt->codegen(instance, stream);
-        stream << ";";
+        instance.getCompiler().getFormatter().semiColon(stream);
     }
+}
+
+// ClassDeclStmt
+
+void ClassDeclStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    stream << "class " << name << "{";
+    for (auto const& member : members) {
+        member->codegen(instance, stream);
+        instance.getCompiler().getFormatter().semiColon(stream);
+    }
+    stream << "}";
 }
 
 // ReturnStmt
@@ -839,7 +866,7 @@ void AST::codegen(Instance& instance, std::ostream& stream) const noexcept {
         first = false;
 
         stmt->codegen(instance, stream);
-        stream << ";";
+        instance.getCompiler().getFormatter().semiColon(stream);
     }
     NEW_LINE();
 }

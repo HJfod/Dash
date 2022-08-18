@@ -968,6 +968,15 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
         } break;
 
         case TokenType::Namespace: {
+            if (!topLevel) {
+                THROW_SYNTAX_ERR(
+                    token,
+                    "Namespaces are only permitted at top level",
+                    "",
+                    ""
+                );
+            }
+
             auto start = token.start;
 
             // consume token

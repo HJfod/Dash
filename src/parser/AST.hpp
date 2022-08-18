@@ -376,7 +376,7 @@ namespace gdml::ast {
         Option<TypeExpr*> type;
         std::string name;
         Option<ValueExpr*> value;
-        Variable* variable = nullptr;
+        std::shared_ptr<Variable> variable = nullptr;
 
         VariableDeclExpr(
             SourceFile const* src,
@@ -426,9 +426,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP_S(name);
         }
 
-        void codegen(Instance&, std::ostream& stream) const noexcept override {
-            stream << name;
-        }
+        void codegen(Instance&, std::ostream& stream) const noexcept override;
     };
 
     struct ScopeExpr : NameExpr {
@@ -460,14 +458,12 @@ namespace gdml::ast {
 
         TypeCheckResult compile(Instance& instance) noexcept override;
     
-        void codegen(Instance& com, std::ostream& stream) const noexcept override {
-            stream << name << "::";
-            item->codegen(com, stream);
-        }
+        void codegen(Instance& com, std::ostream& stream) const noexcept override;
     };
 
     struct VariableExpr : ValueExpr {
         NameExpr* name;
+        std::shared_ptr<Entity> entity = nullptr;
 
         VariableExpr(
             SourceFile const* src,
@@ -957,14 +953,7 @@ namespace gdml::ast {
             return Ok();
         }
 
-        void codegen(Instance& com, std::ostream& stream) const noexcept override {
-            stream << "class " << name << "{";
-            for (auto const& member : members) {
-                member->codegen(com, stream);
-                stream << ";";
-            }
-            stream << "};";
-        }
+        void codegen(Instance& com, std::ostream& stream) const noexcept override;
     };
 
     struct NameSpaceStmt : Stmt {
@@ -997,7 +986,7 @@ namespace gdml::ast {
         NameExpr* name;
         Option<StmtList*> body;
         bool isImplementation;
-        FunctionEntity* entity = nullptr;
+        std::shared_ptr<FunctionEntity> entity = nullptr;
 
         FunctionDeclStmt(
             SourceFile const* src,

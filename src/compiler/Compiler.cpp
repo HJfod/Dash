@@ -9,87 +9,21 @@
 using namespace gdml;
 using namespace gdml::io;
 
+#define SCOPES_SEARCH_BY(fun, ...) \
+    for (auto& scope : std::ranges::reverse_view(m_scope)) {\
+        if (scope.fun(__VA_ARGS__)) {\
+            return true;\
+        }\
+    }\
+    return false
 
-Scope::Scope(Compiler& compiler, bool blocking)
- : m_compiler(compiler), m_blocking(blocking)
-{}
-
-Compiler& Scope::getCompiler() {
-    return m_compiler;
-}
-
-void Scope::pushType(std::string const& name, std::shared_ptr<Type> type) {
-    m_types.insert({ m_compiler.getNameSpace() + name, type });
-}
-
-bool Scope::hasType(std::string const& name) const {
-    return m_types.count(name);
-}
-
-Variable* Scope::pushVariable(std::string const& name, Variable const& var) {
-    auto fullName = m_compiler.getNameSpace() + name;
-    m_variables.insert({ fullName, var });
-    return &m_variables.at(fullName);
-}
-
-bool Scope::hasVariable(std::string const& name) const {
-    return m_variables.count(name);
-}
-
-Variable* Scope::getVariable(std::string const& name) {
-    if (!m_variables.count(name)) {
-        return nullptr;
-    }
-    return &m_variables.at(name);
-}
-
-FunctionEntity* Scope::pushFunction(std::string const& name, FunctionEntity const& fun) {
-    auto fullName = m_compiler.getNameSpace() + name;
-    if (m_functions.count(fullName)) {
-        m_functions.at(fullName).push_back(fun);
-    } else {
-        m_functions.insert({ fullName, { fun }});
-    }
-    return &m_functions.at(fullName).back();
-}
-
-Scope::Search Scope::hasFunction(
-    std::string const& name,
-    Option<std::vector<QualifiedType>> const& parameters
-) const {
-    auto fullName = m_compiler.getNameSpace() + name;
-    if (!m_functions.count(fullName)) {
-        return Search::NotFound;
-    }
-    for (auto& fun : m_functions.at(fullName)) {
-        if (
-            !parameters.has_value() ||
-            fun.type.type->matchParameters(parameters.value())
-        ) {
-            return Search::Found;
-        }
-    }
-    return Search::NoMatchingOverload;
-}
-
-FunctionEntity* Scope::getFunction(
-    std::string const& name,
-    Option<std::vector<QualifiedType>> const& parameters
-) {
-    if (!m_functions.count(name)) {
-        return nullptr;
-    }
-    for (auto& fun : m_functions.at(name)) {
-        if (
-            !parameters.has_value() ||
-            fun.type.type->matchParameters(parameters.value())
-        ) {
-            return &fun;
-        }
-    }
-    return nullptr;
-}
-
+#define SCOPES_FIND_BY(fun, ...) \
+    for (auto& scope : std::ranges::reverse_view(m_scope)) {\
+        if (auto x = scope.fun(__VA_ARGS__)) {\
+            return x;\
+        }\
+    }\
+    return nullptr
 
 Error Compiler::compile() {
     auto tres = m_ast->compile(m_instance);
@@ -101,47 +35,8 @@ Error Compiler::compile() {
     return Error::OK;
 }
 
-std::vector<std::string> const& Compiler::getNameSpaceStack() const {
-    return m_namespace;
-}
-
-std::string Compiler::getNameSpace() const {
-    std::string res {};
-    for (auto& ns : m_namespace) {
-        res += ns + "::";
-    }
-    return res;
-}
-
-void Compiler::pushNameSpace(std::string const& name) {
-    m_namespace.push_back(name);
-}
-
-void Compiler::popNameSpace(std::string const& name) {
-    if (m_namespace.back() == name) {
-        m_namespace.pop_back();
-    } else {
-        std::string stack = "";
-        for (auto const& s : m_namespace) {
-            stack += s + "::";
-        }
-        stack.erase(stack.end() - 2, stack.end());
-        m_instance.getShared().logError({
-            Error::InternalError,
-            "Attempted to pop \"" + name + "\" off the top of "
-            "the namespace stack, but it wasn't there. This is "
-            "likely a bug within the compiler itself.",
-            "",
-            "Current stack: " + stack,
-            Position { 0, 0 },
-            Position { 0, 0 },
-            m_instance.getSource()
-        });
-    }
-}
-
-void Compiler::pushScope(bool blocking) {
-    m_scope.push_back(Scope(*this, blocking));
+void Compiler::pushScope() {
+    m_scope.push_back(Scope(*this));
 }
 
 void Compiler::popScope() {
@@ -155,116 +50,62 @@ Scope& Compiler::getScope(size_t offset) {
     return m_scope.back();
 }
 
-
-Entity* Compiler::getEntity(std::string const& name) {
-    auto var = getVariable(name);
-    if (var) return var;
-    return getFunction(name, None);
-}
-
-bool Compiler::variableExists(std::string const& name) const {
-    // prioritize innermost scope
-    for (auto& scope : std::ranges::reverse_view(m_scope)) {
-        // backwards test all current namespaces
-        auto testName = name;
-        if (scope.hasVariable(name)) {
-            return true;
-        }
-        for (auto& ns : std::ranges::reverse_view(m_namespace)) {
-            testName = ns + "::" + name;
-            if (scope.hasVariable(name)) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-Variable* Compiler::getVariable(std::string const& name) {
-    // prioritize innermost scope
-    for (auto& scope : std::ranges::reverse_view(m_scope)) {
-        // backwards test all current namespaces
-        auto testName = name;
-        auto var = scope.getVariable(testName);
-        if (var) {
-            return var;
-        }
-        for (auto& ns : std::ranges::reverse_view(m_namespace)) {
-            testName = ns + "::" + name;
-            var = scope.getVariable(testName);
-            if (var) {
-                return var;
-            }
-        }
-    }
-    return nullptr;
-}
-
-bool Compiler::functionExists(
-    std::string const& name,
-    Option<std::vector<QualifiedType>> const& parameters
-) const {
-    // prioritize innermost scope
-    for (auto& scope : std::ranges::reverse_view(m_scope)) {
-        // backwards test all current namespaces
-        auto testName = name;
-        if (scope.hasFunction(name, parameters) == Scope::Search::Found) {
-            return true;
-        }
-        for (auto& ns : std::ranges::reverse_view(m_namespace)) {
-            testName = ns + "::" + name;
-            if (scope.hasFunction(name, parameters) == Scope::Search::Found) {
-                return true;
-            }
-        }
-    }
-    return false;
-}
-
-FunctionEntity* Compiler::getFunction(
-    std::string const& name,
-    Option<std::vector<QualifiedType>> const& parameters
-) {
-    // prioritize innermost scope
-    for (auto& scope : std::ranges::reverse_view(m_scope)) {
-        // backwards test all current namespaces
-        auto testName = name;
-        auto fun = scope.getFunction(testName, parameters);
-        if (fun) {
-            return fun;
-        }
-        for (auto& ns : std::ranges::reverse_view(m_namespace)) {
-            testName = ns + "::" + name;
-            fun = scope.getFunction(testName, parameters);
-            if (fun) {
-                return fun;
-            }
-        }
-    }
-    return nullptr;
-}
-
-
-bool Compiler::typeExists(std::string const& name) const {
-    return getType(name).get();
+bool Compiler::hasType(std::string const& name) const {
+    SCOPES_SEARCH_BY(hasType, name);
 }
 
 std::shared_ptr<Type> Compiler::getType(std::string const& name) const {
-    // prioritize innermost scope
+    SCOPES_FIND_BY(getType, name);
+}
+
+bool Compiler::hasEntity(
+    std::string const& name,
+    Option<std::vector<QualifiedType>> const& parameters
+) {
+    SCOPES_SEARCH_BY(hasEntity, name, parameters);
+}
+
+std::shared_ptr<Entity> Compiler::getEntity(
+    std::string const& name,
+    Option<std::vector<QualifiedType>> const& parameters
+) {
+    SCOPES_FIND_BY(getEntity, name, parameters);
+}
+
+bool Compiler::hasVariable(std::string const& name) const {
+    SCOPES_SEARCH_BY(hasVariable, name);
+}
+
+std::shared_ptr<Variable> Compiler::getVariable(std::string const& name) {
+    SCOPES_FIND_BY(getVariable, name);
+}
+
+Scope::Search Compiler::hasFunction(
+    std::string const& name,
+    Option<std::vector<QualifiedType>> const& parameters
+) const {
+    Scope::Search status = Scope::Search::NotFound;
     for (auto& scope : std::ranges::reverse_view(m_scope)) {
-        // backwards test all current namespaces
-        auto testName = name;
-        if (scope.m_types.count(testName)) {
-            return scope.m_types.at(testName);
-        }
-        for (auto& ns : std::ranges::reverse_view(m_namespace)) {
-            testName = ns + "::" + name;
-            if (scope.m_types.count(testName)) {
-                return scope.m_types.at(testName);
-            }
+        switch (scope.hasFunction(name, parameters)) {
+            case Scope::Search::Found: {
+                return Scope::Search::Found;
+            } break;
+            
+            case Scope::Search::NoMatchingOverload: {
+                status = Scope::Search::NoMatchingOverload;
+            } break;
+
+            default: break;
         }
     }
-    return nullptr;
+    return status;
+}
+
+std::shared_ptr<FunctionEntity> Compiler::getFunction(
+    std::string const& name,
+    Option<std::vector<QualifiedType>> const& parameters
+) {
+    SCOPES_FIND_BY(getFunction, name, parameters);
 }
 
 std::shared_ptr<Type> Compiler::getBuiltInType(types::DataType type) const {
@@ -277,7 +118,7 @@ void Compiler::codegen(std::ostream& stream) const noexcept {
 
 Compiler::Compiler(Instance& shared, ast::AST* ast)
  : m_instance(shared), m_ast(ast),
-   m_formatter(*this), m_scope({ Scope(*this, true) }) {
+   m_formatter(*this), m_scope({ Scope(*this) }) {
     loadBuiltinTypes();
     loadConstValues();
 }
@@ -370,10 +211,22 @@ void Formatter::popIndent() {
     m_indentation -= 4;
 }
 
-void Formatter::newline(std::ostream& stream) const {
+void Formatter::newLine(std::ostream& stream) const {
     if (m_compiler.getInstance().getShared().getFlag(Flags::PrettifyOutput)) {
         stream << "\n" << std::string(m_indentation, ' ');
     }
+}
+
+void Formatter::semiColon(std::ostream& stream) {
+    if (m_skipSemiColon) {
+        m_skipSemiColon = false;
+    } else {
+        stream << ";";
+    }
+}
+
+void Formatter::skipSemiColon() {
+    m_skipSemiColon = true;
 }
 
 

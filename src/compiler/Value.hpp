@@ -52,6 +52,8 @@ namespace gdml {
     };
 
     struct Entity {
+        std::string fullName;
+
         virtual QualifiedType getType() const = 0;
         virtual Value* eval(Instance& instance) = 0;
         virtual ~Entity() = default;
