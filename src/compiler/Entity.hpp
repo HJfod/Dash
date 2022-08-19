@@ -19,6 +19,7 @@ namespace gdml {
 
         EntityType getType() const;
         std::string getFullName() const;
+        bool hasParentNamespace() const;
 
         virtual bool isValue() const {
             return false;
@@ -88,27 +89,45 @@ namespace gdml {
         );
     };
 
-    struct Namespace : public Entity {
+    struct Namespace :
+        public Entity,
+        public std::enable_shared_from_this<Namespace>
+    {
     protected:
+        bool m_isGlobal;
         std::unordered_map<std::string, std::vector<std::shared_ptr<Entity>>> m_entities;
 
         void pushEntity(std::string const& name, std::shared_ptr<Entity> entity);
         
+        std::shared_ptr<Entity> getEntity(
+            std::string const& name,
+            Option<EntityType> const& type,
+            Option<std::vector<QualifiedType>> const& parameters
+        ) const;
+        std::shared_ptr<const Namespace> getNamespace(std::string const& name) const;
+        std::shared_ptr<const Namespace> getNamespace(NamespaceParts const& name) const;
+
     public:
         Namespace(
             std::shared_ptr<Namespace> container,
-            std::string const& name
+            std::string const& name,
+            bool isGlobal = false
         );
-        virtual ~Namespace();
+
+        bool isGlobal() const;
 
         bool hasEntity(
             std::string const& name,
-            Option<EntityType> type,
+            NamespaceParts const& currentNamespace,
+            std::vector<NamespaceParts> const& testNamespaces,
+            Option<EntityType> const& type,
             Option<std::vector<QualifiedType>> const& parameters
         ) const;
         std::shared_ptr<Entity> getEntity(
             std::string const& name,
-            Option<EntityType> type,
+            NamespaceParts const& currentNamespace,
+            std::vector<NamespaceParts> const& testNamespaces,
+            Option<EntityType> const& type,
             Option<std::vector<QualifiedType>> const& parameters
         ) const;
         template<class T, class... Args>
@@ -116,7 +135,7 @@ namespace gdml {
             std::string const& name, Args&&... args
         ) {
             auto entity = std::make_shared<T>(
-                std::shared_ptr<Namespace>(this),
+                shared_from_this(),
                 name, std::forward<Args>(args)...
             );
             pushEntity(name, entity);

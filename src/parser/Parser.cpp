@@ -26,6 +26,10 @@ using namespace gdml::ast;
 #define PREV_TOKEN() \
     (m_tokens.size() ? m_tokens.at(m_index - 1) : INVALID_TOKEN())
 
+static bool isNameComingUp(TokenType type) {
+    return type == TokenType::Identifier || type == TokenType::Scope;
+}
+
 ExprResult<InterpolatedLiteralExpr> Parser::parseInterpolated() noexcept {
     INIT_TOKEN();
 
@@ -80,8 +84,20 @@ ExprResult<InterpolatedLiteralExpr> Parser::parseInterpolated() noexcept {
     );
 }
 
-ExprResult<NameExpr> Parser::parseName() noexcept {
+ExprResult<NameExpr> Parser::parseName(bool checkGlobal) noexcept {
     INIT_TOKEN();
+
+    if (checkGlobal && token.type == TokenType::Scope) {
+        m_index++;
+        
+        // parse inner scope
+        auto innerScope = parseName(false);
+        PROPAGATE_ERROR(innerScope);
+        return m_ast->make<ScopeExpr>(
+            m_source, token.start, PREV_TOKEN().end,
+            "", innerScope.unwrap()
+        );
+    }
 
     if (token.type != TokenType::Identifier) {
         THROW_SYNTAX_ERR(
@@ -101,7 +117,7 @@ ExprResult<NameExpr> Parser::parseName() noexcept {
         m_index++;
 
         // parse inner scope
-        auto innerScope = parseName();
+        auto innerScope = parseName(false);
         PROPAGATE_ERROR(innerScope);
         return m_ast->make<ScopeExpr>(
             m_source, token.start, PREV_TOKEN().end,
@@ -161,7 +177,7 @@ ExprResult<TypeExpr> Parser::parseTypeExpression() noexcept {
     bool isConst = false;
     CHECK_CONST();
 
-    if (token.type != TokenType::Identifier) {
+    if (!isNameComingUp(token.type)) {
         THROW_SYNTAX_ERR(
             token,
             "Expected " + TOKEN_STR(Identifier) + " for type, "
@@ -350,7 +366,7 @@ ExprResult<ValueExpr> Parser::parseValue() noexcept {
         return static_cast<ValueExpr*>(expr.unwrap());
     }
 
-    if (token.type == TokenType::Identifier) {
+    if (isNameComingUp(token.type)) {
         NameExpr* name;
         PROPAGATE_ASSIGN(name, parseName());
         return m_ast->make<VariableExpr>(
@@ -1010,30 +1026,21 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
             }
 
             auto start = token.start;
+        
+            Option<NameExpr*> name = None;
 
             // consume token
             m_index++;
-            if (next.type != TokenType::Identifier) {
-                THROW_SYNTAX_ERR(
-                    next,
-                    "Expected " + TOKEN_STR(Identifier) + " for " + 
-                    "namespace name, found " + TOKEN_STR_V(next.type),
-                    "",
-                    "Anonymous namespaces are currently not "
-                    "supported, sorry!"
-                );
+            if (isNameComingUp(next.type)) {
+                PROPAGATE_ASSIGN(name, parseName());
             }
-            auto name = parseName();
-            PROPAGATE_ERROR(name);
 
             StmtList* list;
             PROPAGATE_ASSIGN(list, parseBlock(topLevel));
 
-            UPDATE_TOKEN();
-
             return m_ast->make<NameSpaceStmt>(
                 m_source, start, PREV_TOKEN().end,
-                name.unwrap(), list
+                name, list
             );
         } break;
 

@@ -20,7 +20,7 @@ namespace gdml {
         ExprResult<ast::TypeExpr> parseTypeExpression() noexcept;
 
         ExprResult<ast::CallExpr> parseCall(ast::ValueExpr* value) noexcept;
-        ExprResult<ast::NameExpr> parseName() noexcept;
+        ExprResult<ast::NameExpr> parseName(bool checkGlobal = true) noexcept;
         ExprResult<ast::InterpolatedLiteralExpr> parseInterpolated() noexcept;
         ExprResult<ast::Expr> parseParenthesis(bool expectType = false) noexcept;
         ExprResult<ast::VariableDeclExpr> parseVarDeclaration() noexcept;

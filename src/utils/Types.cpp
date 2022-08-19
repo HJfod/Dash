@@ -66,3 +66,17 @@ std::vector<std::string> SourceFile::linesFrom(
 
     return std::move(lines);
 }
+
+NamespaceParts gdml::splitNamespaceString(std::string const& str) {
+    std::vector<std::string> res;
+    if (str.size()) {
+        auto s = str;
+        size_t pos = 0;
+        while ((pos = s.find("::")) != std::string::npos) {
+            res.push_back(s.substr(0, pos));
+            s.erase(0, pos + 2);
+        }
+        res.push_back(s);
+    }
+    return res;
+}

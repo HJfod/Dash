@@ -62,6 +62,9 @@ namespace gdml {
         class AST;
     }
 
+    using NamespaceParts = std::vector<std::string>;
+    NamespaceParts splitNamespaceString(std::string const& str);
+
     constexpr unsigned int hash(const char* str, int h = 0) {
         return !str[h] ? 5381 : (hash(str, h+1) * 33) ^ str[h];
     }

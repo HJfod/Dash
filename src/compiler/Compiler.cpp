@@ -10,19 +10,24 @@
 using namespace gdml;
 using namespace gdml::io;
 
-Scope::Scope() : global(std::make_shared<Namespace>(nullptr, "")) {}
+Scope::Scope(bool isGlobal)
+  : m_global(std::make_shared<Namespace>(nullptr, "", isGlobal)) {}
+
+void Scope::useNamespace(NamespaceParts const& space) {
+    m_namespaces.push_back(space);
+}
 
 void Scope::pushNamespace(std::string const& name) {
-    namespaces.push_back(name);
+    m_currentNamespace.push_back(name);
 }
 
 void Scope::popNamespace() {
-    namespaces.pop_back();
+    m_currentNamespace.pop_back();
 }
 
 std::string Scope::currentNamespace() const {
     std::string res {};
-    for (auto& ns : namespaces) {
+    for (auto& ns : m_currentNamespace) {
         res += ns + "::";
     }
     return res;
@@ -33,7 +38,7 @@ bool Scope::hasEntity(
     Option<EntityType> type,
     Option<std::vector<QualifiedType>> const& parameters
 ) const {
-    return global->hasEntity(name, type, parameters);
+    return m_global->hasEntity(name, m_currentNamespace, m_namespaces, type, parameters);
 }
 
 std::shared_ptr<Entity> Scope::getEntity(
@@ -41,7 +46,7 @@ std::shared_ptr<Entity> Scope::getEntity(
     Option<EntityType> type,
     Option<std::vector<QualifiedType>> const& parameters
 ) const {
-    return global->getEntity(name, type, parameters);
+    return m_global->getEntity(name, m_currentNamespace, m_namespaces, type, parameters);
 }
 
 
@@ -56,7 +61,7 @@ Error Compiler::compile() {
 }
 
 void Compiler::pushScope() {
-    m_scope.push_back(Scope());
+    m_scope.emplace_back(false);
 }
 
 void Compiler::popScope() {
@@ -75,6 +80,12 @@ bool Compiler::hasEntity(
     Option<EntityType> type,
     Option<std::vector<QualifiedType>> const& parameters
 ) const {
+    // if the name is a full path then 
+    // search only global namespace
+    if (name.starts_with("::")) {
+        return m_scope.front().hasEntity(name, type, parameters);
+    }
+    // otherwise prioritize innermost namespace
     for (auto& scope : std::ranges::reverse_view(m_scope)) {
         if (scope.hasEntity(name, type, parameters)) {
             return true;
@@ -88,6 +99,12 @@ std::shared_ptr<Entity> Compiler::getEntity(
     Option<EntityType> type,
     Option<std::vector<QualifiedType>> const& parameters
 ) const {
+    // if the name is a full path then 
+    // search only global namespace
+    if (name.starts_with("::")) {
+        return m_scope.front().getEntity(name, type, parameters);
+    }
+    // otherwise prioritize innermost namespace
     for (auto& scope : std::ranges::reverse_view(m_scope)) {
         if (auto r = scope.getEntity(name, type, parameters)) {
             return r;
@@ -108,9 +125,10 @@ void Compiler::codegen(std::ostream& stream) const noexcept {
 }
 
 Compiler::Compiler(Instance& shared, ast::AST* ast)
- : m_instance(shared), m_ast(ast),
-   m_formatter(*this), m_scope({ Scope() })
+  : m_instance(shared), m_ast(ast),
+    m_formatter(*this), m_scope()
 {
+    m_scope.emplace_back(true);
     loadBuiltinTypes();
     loadConstValues();
 }
@@ -138,7 +156,7 @@ void Compiler::loadBuiltinTypes() {
 
     size_t i = 0;
     for (auto& type : types::DATATYPES) {
-        m_scope.back().global->makeEntity<TypeEntity>(
+        m_scope.back().makeEntity<TypeEntity>(
             types::DATATYPE_STRS[i], makeType(type)
         );
         i++;

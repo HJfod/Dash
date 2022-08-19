@@ -9,8 +9,9 @@ using namespace gdml::io;
 #define GDML_LINE   "========================"
 #define GDML_W_LINE "------------------------"
 
-std::unordered_map<LanguageRule, bool> DEFAULT_RULES = {
+static const std::unordered_map<LanguageRule, bool> DEFAULT_RULES = {
     { LanguageRule::DefaultStaticFunctions, true },
+    { LanguageRule::KeepUsingStatements, false },
 };
 
 GDML::GDML(Flags flags, IO& io)

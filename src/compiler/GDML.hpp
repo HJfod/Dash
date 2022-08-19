@@ -8,6 +8,7 @@
 namespace gdml {
     enum class LanguageRule {
         DefaultStaticFunctions,
+        KeepUsingStatements,
     };
 
     struct Flags {

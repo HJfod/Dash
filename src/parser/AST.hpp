@@ -968,14 +968,14 @@ namespace gdml::ast {
     };
 
     struct NameSpaceStmt : Stmt {
-        NameExpr* name;
+        Option<NameExpr*> name;
         StmtList* contents;
 
         NameSpaceStmt(
             SourceFile const* src,
             Position const& start,
             Position const& end,
-            NameExpr* name,
+            Option<NameExpr*> name,
             StmtList* contents
         ) : Stmt(src, start, end),
             name(name), contents(contents) {}
@@ -983,7 +983,7 @@ namespace gdml::ast {
         std::string debugPrintAST(size_t i) const override {
             return 
                 GDML_DEBUG_FMT(NameSpaceStmt) +
-                GDML_DEBUG_FMT_CHILD(name) + 
+                GDML_DEBUG_FMT_CHILD_O(name) + 
                 GDML_DEBUG_FMT_CHILD(contents);
         }
 

@@ -430,19 +430,27 @@ void TypeNameExpr::codegen(Instance& instance, std::ostream& stream) const noexc
 // NameSpaceStmt
 
 TypeCheckResult NameSpaceStmt::compile(Instance& instance) noexcept {
-    for (auto& ns : name->fullNameList()) {
-        PUSH_NAMESPACE(ns);
+    GDML_TYPECHECK_CHILD_O(name);
+
+    if (name) {
+        for (auto& ns : name.value()->fullNameList()) {
+            PUSH_NAMESPACE(ns);
+        }
+    } else {
+        PUSH_NAMESPACE("");
     }
     GDML_TYPECHECK_CHILD(contents);
-    for (auto& _ : name->fullNameList()) {
-        POP_NAMESPACE();
+    if (name) {
+        for (auto& _ : name.value()->fullNameList()) {
+            POP_NAMESPACE();
+        }
     }
     
     return Ok();
 }
 
 void NameSpaceStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
-    stream << "namespace " << name->fullName() << " {";
+    stream << "namespace " << (name ? name.value()->fullName() : "") << " {";
     PUSH_INDENT();
     contents->codegen(instance, stream);
     POP_INDENT();
@@ -465,12 +473,16 @@ TypeCheckResult UsingNameSpaceStmt::compile(Instance& instance) noexcept {
         );
     }
 
+    instance.getCompiler().getScope().useNamespace(name->fullNameList());
+
     return Ok();
 }
 
 void UsingNameSpaceStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
-    stream << "using namespace ";
-    name->codegen(instance, stream);
+    if (instance.getShared().getRule(LanguageRule::KeepUsingStatements)) {
+        stream << "using namespace ";
+        name->codegen(instance, stream);
+    }
 }
 
 // VariableDeclExpr

@@ -32,10 +32,17 @@ namespace gdml {
     };
 
     struct Scope {
-        std::shared_ptr<Namespace> global;
-        std::vector<std::string> namespaces;
+    protected:
+        std::shared_ptr<Namespace> m_global;
+        NamespaceParts m_currentNamespace;
+        std::vector<NamespaceParts> m_namespaces;
 
-        Scope();
+        friend class Compiler;
+
+    public:
+        Scope(bool isGlobal);
+
+        void useNamespace(NamespaceParts const& space);
 
         void pushNamespace(std::string const& name);
         void popNamespace();
@@ -55,7 +62,7 @@ namespace gdml {
         std::shared_ptr<T> makeEntity(
             std::string const& name, Args&&... args
         ) {
-            return global->makeEntity<T, Args...>(
+            return m_global->makeEntity<T, Args...>(
                 currentNamespace() + name, std::forward<Args>(args)...
             );
         }
