@@ -716,6 +716,15 @@ TypeCheckResult CallExpr::compile(Instance& instance) noexcept {
 
     auto targetType = static_cast<FunctionType*>(target->evalType.type.get());
 
+    if (targetType->getParameters().size() != args.size()) {
+        THROW_TYPE_ERR(
+            "Function requires " + std::to_string(targetType->getParameters().size()) + 
+            " parameters, but only " + std::to_string(args.size()) + " were provided",
+            "",
+            ""
+        );
+    }
+
     size_t i = 0;
     for (auto& arg : args) {
         auto targetArg = targetType->getParameters().at(i);
