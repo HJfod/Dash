@@ -12,6 +12,6 @@ namespace b {
 using namespace b::c;
 
 fun test() {
-    let x = addTwo(5, 7);
+    let x = addTwo(5, 7i64 as const i32);
     x += 2
 }

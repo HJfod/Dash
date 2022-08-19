@@ -113,11 +113,11 @@ std::shared_ptr<Entity> Compiler::getEntity(
     return nullptr;
 }
 
-std::shared_ptr<Type> Compiler::getBuiltInType(types::DataType type) const {
+std::shared_ptr<BuiltInType> Compiler::getBuiltInType(types::DataType type) const {
     auto entity = getEntityAs<TypeEntity>(
         types::dataTypeToString(type), EntityType::Type, None
     );
-    return entity ? entity->type : nullptr;
+    return std::static_pointer_cast<BuiltInType>(entity ? entity->type : nullptr);
 }
 
 void Compiler::codegen(std::ostream& stream) const noexcept {
@@ -144,34 +144,12 @@ Instance& Compiler::getInstance() const {
 }
 
 void Compiler::loadBuiltinTypes() {
-    static std::array<types::DataType, 12> STATIC_CASTABLE {
-        types::DataType::I8,  types::DataType::I16,
-        types::DataType::I32, types::DataType::I64,
-        types::DataType::U8,  types::DataType::U16,
-        types::DataType::U32, types::DataType::U64,
-        types::DataType::F32, types::DataType::F64,
-        types::DataType::Bool,
-        types::DataType::Char,
-    };
-
     size_t i = 0;
     for (auto& type : types::DATATYPES) {
         m_scope.back().makeEntity<TypeEntity>(
-            types::DATATYPE_STRS[i], makeType(type)
+            types::DATATYPE_STRS[i], makeType<BuiltInType>(type)
         );
         i++;
-    }
-    for (auto& fromDataType : STATIC_CASTABLE) {
-        auto fromType = getBuiltInType(fromDataType);
-
-        for (auto& intoDataType : STATIC_CASTABLE) {
-            auto intoType = getBuiltInType(intoDataType);
-
-            fromType->addCastOperatorFor(
-                intoType,
-                "static_cast<" + intoType->codegenName() + ">"
-            );
-        }
     }
 }
 

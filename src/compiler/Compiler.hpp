@@ -181,10 +181,12 @@ namespace gdml {
         }
 
         template<class T>
-        std::shared_ptr<Type> getBuiltInType() const {
-            return m_scope.back().getType(types::dataTypeToString(types::getDataType<T>()));
+        std::shared_ptr<BuiltInType> getBuiltInType() const {
+            return std::static_pointer_cast<BuiltInType>(
+                m_scope.back().getType(types::dataTypeToString(types::getDataType<T>()))
+            );
         }
-        std::shared_ptr<Type> getBuiltInType(types::DataType type) const;
+        std::shared_ptr<BuiltInType> getBuiltInType(types::DataType type) const;
 
         template<class T = Value, class... Args>
         T* makeValue(

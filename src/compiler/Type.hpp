@@ -3,8 +3,7 @@
 #include <utils/Types.hpp>
 
 namespace gdml {
-    class Compiler;
-    class Value;
+    using FunctionTypeOverloads = std::vector<std::shared_ptr<FunctionType>>;
     
     namespace ast {
         class AST;
@@ -13,24 +12,25 @@ namespace gdml {
     class Type {
     protected:
         Compiler& m_compiler;
-        const types::DataType m_type;
-        std::unordered_map<std::string, std::string> m_casts;
+        const types::TypeClass m_class;
 
         friend class Compiler;
     
     public:
-        Type(Compiler& compiler, const types::DataType type);
+        Type(Compiler& compiler, const types::TypeClass type);
 
-        const types::DataType getType() const;
-    
-        virtual bool convertibleTo(std::shared_ptr<Type> other) const;
-        bool castableTo(std::shared_ptr<Type> other) const;
-        std::string getCastOperatorFor(std::shared_ptr<Type> type) const;
-        void addCastOperatorFor(std::shared_ptr<Type> type, std::string const& op);
+        const types::TypeClass getTypeClass() const;
 
-        virtual Value* instantiate();
-        virtual std::string codegenName() const;
-        virtual std::string toString() const;
+        virtual bool convertibleTo(std::shared_ptr<Type> other) const = 0;
+        virtual bool castableTo(std::shared_ptr<Type> other) const;
+        virtual bool codegenCast(
+            std::shared_ptr<Type> other,
+            ast::ValueExpr* target,
+            std::ostream& stream
+        );
+
+        virtual std::string codegenName() const = 0;
+        virtual std::string toString() const = 0;
 
         virtual ~Type() = default;
     };
@@ -86,6 +86,27 @@ namespace gdml {
     };
     using QualifiedType = TQualifiedType<Type>;
 
+    class BuiltInType : public Type {
+    protected:
+        const types::DataType m_type;
+    
+    public:
+        BuiltInType(Compiler& compiler, const types::DataType type);
+
+        const types::DataType getType() const;
+
+        bool convertibleTo(std::shared_ptr<Type> other) const override;
+        bool castableTo(std::shared_ptr<Type> other) const override;
+        bool codegenCast(
+            std::shared_ptr<Type> other,
+            ast::ValueExpr* target,
+            std::ostream& stream
+        ) override;
+
+        std::string codegenName() const override;
+        std::string toString() const override;
+    };
+
     class FunctionType : public Type {
     protected:
         QualifiedType m_returnType;
@@ -105,6 +126,8 @@ namespace gdml {
 
         bool matchParameters(std::vector<QualifiedType> const& parameters) const;
 
+        bool convertibleTo(std::shared_ptr<Type> other) const override;
+        
         std::string codegenName() const override;
         std::string toString() const override;
     };
@@ -157,6 +180,8 @@ namespace gdml {
         PointerType(Compiler& compiler, QualifiedType const& inner, types::PointerType pointerType);
 
         QualifiedType const& getInnerType();
+
+        bool convertibleTo(std::shared_ptr<Type> other) const override;
 
         std::string codegenName() const override;
         std::string toString() const override;

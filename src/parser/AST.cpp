@@ -579,11 +579,11 @@ TypeCheckResult CastTypeExpr::compile(Instance& instance) noexcept {
 }
 
 void CastTypeExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
-    stream
-        << target->evalType.type->getCastOperatorFor(intoType->evalType.type)
-        << "(";
-    target->codegen(instance, stream);
-    stream << ")";
+    target->evalType.type->codegenCast(
+        intoType->evalType.type,
+        target,
+        stream
+    );
 }
 
 // FunctionTypeExpr
@@ -705,7 +705,7 @@ TypeCheckResult CallExpr::compile(Instance& instance) noexcept {
     GDML_TYPECHECK_CHILDREN(args);
 
     // todo: support operator()
-    if (target->evalType.type->getType() != types::DataType::Function) {
+    if (target->evalType.type->getTypeClass() != types::TypeClass::Function) {
         THROW_TYPE_ERR(
             "Attempted to call an expression that did not "
             "evaluate to a function type",
@@ -714,7 +714,7 @@ TypeCheckResult CallExpr::compile(Instance& instance) noexcept {
         );
     }
 
-    auto targetType = static_cast<FunctionType*>(target->evalType.type.get());
+    auto targetType = std::static_pointer_cast<FunctionType>(target->evalType.type);
 
     if (targetType->getParameters().size() != args.size()) {
         THROW_TYPE_ERR(

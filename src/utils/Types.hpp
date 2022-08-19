@@ -33,6 +33,7 @@ namespace gdml {
     class Instance;
     class GDML;
     class Type;
+    class FunctionType;
     class Value;
     struct Entity;
     struct ValueEntity;
@@ -57,6 +58,7 @@ namespace gdml {
 
     namespace ast {
         struct Stmt;
+        struct ValueExpr;
         struct VariableDeclExpr;
         struct FunctionDeclStmt;
         class AST;
@@ -70,6 +72,14 @@ namespace gdml {
     }
 
     namespace types {
+        enum class TypeClass {
+            BuiltIn,
+            Pointer,
+            Function,
+            Array,
+            Class,
+        };
+
         enum class DataType {
             Void,
             I8, I16, I32, I64,
@@ -77,13 +87,9 @@ namespace gdml {
             F32, F64,
             Bool,
             Char, String,
-            Pointer,
-            Function,
-            Array,
-            Class,
         };
 
-        constexpr size_t DATATYPE_COUNT = 18;
+        constexpr size_t DATATYPE_COUNT = 14;
         
         constexpr std::array<DataType, DATATYPE_COUNT> DATATYPES {
             DataType::Void,
@@ -94,10 +100,6 @@ namespace gdml {
             DataType::F32, DataType::F64,
             DataType::Bool,
             DataType::Char, DataType::String,
-            DataType::Pointer,
-            DataType::Function,
-            DataType::Array,
-            DataType::Class,
         };
 
         constexpr std::array<const char*, DATATYPE_COUNT> DATATYPE_STRS {
@@ -107,10 +109,6 @@ namespace gdml {
             "f32", "f64",
             "bool",
             "char", "string",
-            "@pointer",
-            "@function",
-            "@array",
-            "@class"
         };
 
         constexpr std::array<const char*, DATATYPE_COUNT> DATATYPE_CPP {
@@ -120,7 +118,6 @@ namespace gdml {
             "float", "double",
             "bool",
             "char", "gd::string",
-            "", "", "", ""
         };
 
         using I8  = int8_t;

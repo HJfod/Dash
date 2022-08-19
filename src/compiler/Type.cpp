@@ -3,62 +3,94 @@
 #include "Instance.hpp"
 #include "GDML.hpp"
 #include "Value.hpp"
+#include <parser/AST.hpp>
 
 using namespace gdml;
 
-Type::Type(Compiler& compiler, const types::DataType type)
- : m_compiler(compiler), m_type(type) {}
+Type::Type(Compiler& compiler, const types::TypeClass type)
+ : m_compiler(compiler), m_class(type) {}
 
-const types::DataType Type::getType() const {
+const types::TypeClass Type::getTypeClass() const {
+    return m_class;
+}
+
+// Value* Type::instantiate() {
+//     #define INSTANTIATE_TYPE(t) \
+//         case types::DataType::t: return new BuiltInValue<types::t>(\
+//             m_compiler, types::t()\
+//         )
+//     switch (m_type) {
+//         default: return nullptr;
+//         INSTANTIATE_TYPE(Bool);
+//         INSTANTIATE_TYPE(I8);
+//         INSTANTIATE_TYPE(I16);
+//         INSTANTIATE_TYPE(I32);
+//         INSTANTIATE_TYPE(I64);
+//         INSTANTIATE_TYPE(U8);
+//         INSTANTIATE_TYPE(U16);
+//         INSTANTIATE_TYPE(U32);
+//         INSTANTIATE_TYPE(U64);
+//         INSTANTIATE_TYPE(F32);
+//         INSTANTIATE_TYPE(F64);
+//         INSTANTIATE_TYPE(Char);
+//         INSTANTIATE_TYPE(String);
+//     }
+// }
+
+bool Type::castableTo(std::shared_ptr<Type> other) const {
+    // todo: global cast definitions
+    return false;
+}
+
+bool Type::codegenCast(
+    std::shared_ptr<Type> other,
+    ast::ValueExpr* target,
+    std::ostream& stream
+) {
+    return false;
+}
+
+
+BuiltInType::BuiltInType(Compiler& compiler, const types::DataType type)
+  : Type(compiler, types::TypeClass::BuiltIn), m_type(type) {}
+
+const types::DataType BuiltInType::getType() const {
     return m_type;
 }
 
-Value* Type::instantiate() {
-    #define INSTANTIATE_TYPE(t) \
-        case types::DataType::t: return new BuiltInValue<types::t>(\
-            m_compiler, types::t()\
-        )
-
-    switch (m_type) {
-        default: return nullptr;
-        INSTANTIATE_TYPE(Bool);
-        INSTANTIATE_TYPE(I8);
-        INSTANTIATE_TYPE(I16);
-        INSTANTIATE_TYPE(I32);
-        INSTANTIATE_TYPE(I64);
-        INSTANTIATE_TYPE(U8);
-        INSTANTIATE_TYPE(U16);
-        INSTANTIATE_TYPE(U32);
-        INSTANTIATE_TYPE(U64);
-        INSTANTIATE_TYPE(F32);
-        INSTANTIATE_TYPE(F64);
-        INSTANTIATE_TYPE(Char);
-        INSTANTIATE_TYPE(String);
-    }
-}
-
-std::string Type::codegenName() const {
+std::string BuiltInType::codegenName() const {
     return types::dataTypeToCppType(m_type);
 }
 
-std::string Type::toString() const {
+std::string BuiltInType::toString() const {
     return types::dataTypeToString(m_type);
 }
 
-bool Type::convertibleTo(std::shared_ptr<Type> other) const {
-    return m_type == other->m_type;
+bool BuiltInType::convertibleTo(std::shared_ptr<Type> other) const {
+    if (other->getTypeClass() == types::TypeClass::BuiltIn) {
+        return m_type == std::static_pointer_cast<BuiltInType>(other)->m_type;
+    }
+    return false;
 }
 
-bool Type::castableTo(std::shared_ptr<Type> other) const {
-    return m_casts.count(other->toString());
+bool BuiltInType::castableTo(std::shared_ptr<Type> other) const {
+    if (Type::castableTo(other)) {
+        return true;
+    }
+    return other->getTypeClass() == types::TypeClass::BuiltIn;
 }
 
-std::string Type::getCastOperatorFor(std::shared_ptr<Type> type) const {
-    return m_casts.at(type->toString());
-}
-
-void Type::addCastOperatorFor(std::shared_ptr<Type> type, std::string const& op) {
-    m_casts.insert({ type->toString(), op });
+bool BuiltInType::codegenCast(
+    std::shared_ptr<Type> other,
+    ast::ValueExpr* target,
+    std::ostream& stream
+) {
+    if (Type::codegenCast(other, target, stream)) {
+        return true;
+    }
+    stream << "static_cast<" << other->codegenName() << ">(";
+    target->codegen(m_compiler.getInstance(), stream);
+    stream << ")";
 }
 
 
@@ -66,7 +98,7 @@ FunctionType::FunctionType(
     Compiler& compiler,
     QualifiedType const& returnType,
     std::vector<QualifiedType> const& parameters
-) : Type(compiler, types::DataType::Function),
+) : Type(compiler, types::TypeClass::Function),
     m_returnType(returnType), m_parameters(parameters) {}
 
 QualifiedType const& FunctionType::getReturnType() {
@@ -92,6 +124,10 @@ bool FunctionType::matchParameters(
         i++;
     }
     return true;
+}
+
+bool FunctionType::convertibleTo(std::shared_ptr<Type> other) const {
+    return false;
 }
 
 std::string FunctionType::codegenName() const {
@@ -123,9 +159,10 @@ std::string FunctionType::toString() const {
 }
 
 
-ArrayType::ArrayType(Compiler& compiler, QualifiedType const& inner, size_t size) 
- : Type(compiler, types::DataType::Array),
-   m_inner(inner), m_size(size) {}
+ArrayType::ArrayType(
+    Compiler& compiler, QualifiedType const& inner, size_t size
+) : Type(compiler, types::TypeClass::Array),
+    m_inner(inner), m_size(size) {}
 
 QualifiedType const& ArrayType::getInnerType() {
     return m_inner;
@@ -148,9 +185,10 @@ std::string ArrayType::toString() const {
 }
 
 
-ClassType::ClassType(Compiler& compiler, std::string const& name)
- : Type(compiler, types::DataType::Class),
-   m_name(name) {}
+ClassType::ClassType(
+    Compiler& compiler, std::string const& name
+) : Type(compiler, types::TypeClass::Class),
+    m_name(name) {}
 
 std::string const& ClassType::getName() const {
     return m_name;
@@ -173,12 +211,16 @@ PointerType::PointerType(
     Compiler& compiler,
     QualifiedType const& inner,
     types::PointerType pointerType
-) : Type(compiler, types::DataType::Pointer),
+) : Type(compiler, types::TypeClass::Pointer),
     m_inner(inner),
     m_pointerType(pointerType) {}
 
 QualifiedType const& PointerType::getInnerType() {
     return m_inner;
+}
+
+bool PointerType::convertibleTo(std::shared_ptr<Type> other) const {
+    return other->getTypeClass() == types::TypeClass::Pointer;
 }
 
 std::string PointerType::codegenName() const {
