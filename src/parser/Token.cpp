@@ -97,7 +97,6 @@ static const std::unordered_map<std::string, TokenType> TOKEN_STRINGS = {
     { "^", TokenType::BitXor },
     { "&=", TokenType::BitAndAssign },
     { "|=", TokenType::BitOrAssign },
-    { "~=", TokenType::BitNotAssign },
     { "<<", TokenType::BitShiftLeft },
     { ">>", TokenType::BitShiftRight },
 
@@ -189,7 +188,6 @@ static const std::unordered_map<TokenType, int> OPERATOR_PRESEDENCE {
     { TokenType::ModAssign, 30 },
     { TokenType::BitOrAssign, 30 },
     { TokenType::BitAndAssign, 30 },
-    { TokenType::BitNotAssign, 30 },
     { TokenType::BitXorAssign, 30 },
     { TokenType::QuestionAssign, 30 },
 };
@@ -269,6 +267,7 @@ bool gdml::isUnaryPrefixOperator(TokenType type) {
         type == TokenType::Increment ||
         type == TokenType::Decrement ||
         type == TokenType::Interpolate ||
+        type == TokenType::BitNot ||
         type == TokenType::Not;
 }
 
@@ -302,7 +301,6 @@ bool gdml::isLValueOperator(TokenType type) {
         type == TokenType::SubAssign ||
         type == TokenType::BitOrAssign ||
         type == TokenType::BitAndAssign ||
-        type == TokenType::BitNotAssign ||
         type == TokenType::BitXorAssign ||
         type == TokenType::QuestionAssign ||
         type == TokenType::Increment ||

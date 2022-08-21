@@ -83,9 +83,7 @@ Error Instance::execute() {
     if (m_shared.getFlag(Flags::LogAST)) {
         std::lock_guard lock(m_shared.rawIoLock());
         m_shared.rawIO() << Color::Pink << "========== AST =========\n";
-        for (auto& expr : ast->tree()) {
-            m_shared.rawIO() << expr->debugPrintAST(0);
-        }
+        m_shared.rawIO() << ast->debugPrintAST(0);
         m_shared.rawIO() << GDML_LINE "\n\n" << Color::White;
     }
 

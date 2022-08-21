@@ -408,7 +408,7 @@ ExprResult<ValueExpr> Parser::parseValue() noexcept {
             try {
                 // consume number
                 m_index++;
-                types::DataType numType = types::DataType::I32;
+                types::DataType numType = types::DataType::F32;
                 auto end = token.end;
                 if (next.type == TokenType::NumeralSuffix) {
                     numType = types::dataTypeFromString(next.data);
@@ -1119,6 +1119,8 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
                     res->source, res->start, res->end, res
                 );
             } else {
+                // expression used as statement
+                res->usedAsStmt = true;
                 // check that the statement was ended properly
                 CHECK_SEMICOLON();
             }
@@ -1129,10 +1131,14 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
 }
 
 ParseResult Parser::parse() noexcept {
-    auto ast = new AST();
-
     m_index = 0;
     m_source = m_tokens.front().source;
+
+    auto ast = new AST(
+        m_source,
+        m_tokens.front().start,
+        m_tokens.back().end
+    );
 
     m_ast = ast;
     while (m_index < m_tokens.size()) {
@@ -1143,6 +1149,7 @@ ParseResult Parser::parse() noexcept {
             return stmt.unwrapErr();
         }
         if (stmt.unwrap()) {
+            stmt.unwrap()->parent = ast;
             ast->tree().push_back(stmt.unwrap());
         }
     }

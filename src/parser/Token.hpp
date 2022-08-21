@@ -111,7 +111,6 @@ namespace gdml {
         BitXor,     // ^
         BitAndAssign,// &=
         BitOrAssign, // |=
-        BitNotAssign,// ~=
         BitXorAssign,// ^=
         BitShiftLeft,  // <<
         BitShiftRight, // >>

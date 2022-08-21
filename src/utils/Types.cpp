@@ -48,6 +48,18 @@ bool types::dataTypeIsUnsigned(types::DataType type) {
         type == DataType::U64;
 }
 
+bool types::dataTypeIsInteger(DataType type) {
+    return
+        type == DataType::I8  ||
+        type == DataType::I16 ||
+        type == DataType::I32 ||
+        type == DataType::I64 ||
+        type == DataType::U8  ||
+        type == DataType::U16 ||
+        type == DataType::U32 ||
+        type == DataType::U64;
+}
+
 std::vector<std::string> SourceFile::linesFrom(
     Position const& start,
     Position const& end
@@ -79,4 +91,9 @@ NamespaceParts gdml::splitNamespaceString(std::string const& str) {
         res.push_back(s);
     }
     return res;
+}
+
+std::string gdml::generateIdentifierName() {
+    static size_t i = 0;
+    return "i__gdml_placeholder_" + std::to_string(i); 
 }

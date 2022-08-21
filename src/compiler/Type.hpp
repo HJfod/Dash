@@ -5,9 +5,11 @@
 namespace gdml {
     using FunctionTypeOverloads = std::vector<std::shared_ptr<FunctionType>>;
     
-    namespace ast {
-        class AST;
-    }
+    enum class ImplStatus {
+        None,
+        Exists,
+        Constexpr,
+    };
 
     class Type {
     protected:
@@ -21,6 +23,8 @@ namespace gdml {
 
         const types::TypeClass getTypeClass() const;
 
+        // typecasts
+
         virtual bool convertibleTo(std::shared_ptr<Type> other) const = 0;
         virtual bool castableTo(std::shared_ptr<Type> other) const;
         virtual bool codegenCast(
@@ -28,6 +32,38 @@ namespace gdml {
             ast::ValueExpr* target,
             std::ostream& stream
         );
+
+        // unary
+
+        virtual ImplStatus implementsUnaryOperator(
+            TokenType op,
+            bool prefix
+        ) const;
+        virtual std::shared_ptr<Value> evalUnary(
+            TokenType op,
+            std::shared_ptr<Value> target,
+            bool prefix
+        );
+        virtual bool codegenUnary(
+            ast::UnaryExpr const* expr,
+            std::ostream& stream
+        ) const;
+
+        // binary
+
+        virtual ImplStatus implementsBinaryOperator(
+            TokenType op,
+            std::shared_ptr<Type> other
+        ) const;
+        virtual std::shared_ptr<Value> evalBinary(
+            TokenType op,
+            std::shared_ptr<Value> first,
+            std::shared_ptr<Value> second
+        );
+        virtual bool codegenBinary(
+            ast::BinaryExpr const* expr,
+            std::ostream& stream
+        ) const;
 
         virtual std::string codegenName() const = 0;
         virtual std::string toString() const = 0;
@@ -102,6 +138,34 @@ namespace gdml {
             ast::ValueExpr* target,
             std::ostream& stream
         ) override;
+
+        ImplStatus implementsUnaryOperator(
+            TokenType op,
+            bool prefix
+        ) const override;
+        std::shared_ptr<Value> evalUnary(
+            TokenType op,
+            std::shared_ptr<Value> target,
+            bool prefix
+        ) override;
+        bool codegenUnary(
+            ast::UnaryExpr const* expr,
+            std::ostream& stream
+        ) const override;
+
+        ImplStatus implementsBinaryOperator(
+            TokenType op,
+            std::shared_ptr<Type> other
+        ) const override;
+        std::shared_ptr<Value> evalBinary(
+            TokenType op,
+            std::shared_ptr<Value> first,
+            std::shared_ptr<Value> second
+        ) override;
+        bool codegenBinary(
+            ast::BinaryExpr const* expr,
+            std::ostream& stream
+        ) const override;
 
         std::string codegenName() const override;
         std::string toString() const override;

@@ -4,6 +4,10 @@
 #include "GDML.hpp"
 #include "Value.hpp"
 #include <parser/AST.hpp>
+#include <parser/Token.hpp>
+
+#define DO_PRETTIFY \
+    m_compiler.getInstance().getShared().getFlag(Flags::PrettifyOutput)
 
 using namespace gdml;
 
@@ -14,7 +18,7 @@ const types::TypeClass Type::getTypeClass() const {
     return m_class;
 }
 
-// Value* Type::instantiate() {
+// std::shared_ptr<Value> Type::instantiate() {
 //     #define INSTANTIATE_TYPE(t) \
 //         case types::DataType::t: return new BuiltInValue<types::t>(\
 //             m_compiler, types::t()\
@@ -50,6 +54,39 @@ bool Type::codegenCast(
     return false;
 }
 
+ImplStatus Type::implementsUnaryOperator(TokenType op, bool prefix) const {
+    return ImplStatus::None;
+}
+
+std::shared_ptr<Value> Type::evalUnary(TokenType op, std::shared_ptr<Value> target, bool prefix) {
+    return nullptr;
+}
+
+bool Type::codegenUnary(
+    ast::UnaryExpr const* expr,
+    std::ostream& stream
+) const {
+    return false;
+}
+
+ImplStatus Type::implementsBinaryOperator(
+    TokenType op,
+    std::shared_ptr<Type> other
+) const {
+    return ImplStatus::None;
+}
+
+std::shared_ptr<Value> Type::evalBinary(TokenType op, std::shared_ptr<Value> first, std::shared_ptr<Value> second) {
+    return nullptr;
+}
+
+bool Type::codegenBinary(
+    ast::BinaryExpr const* expr,
+    std::ostream& stream
+) const {
+    return false;
+}
+
 
 BuiltInType::BuiltInType(Compiler& compiler, const types::DataType type)
   : Type(compiler, types::TypeClass::BuiltIn), m_type(type) {}
@@ -80,17 +117,143 @@ bool BuiltInType::castableTo(std::shared_ptr<Type> other) const {
     return other->getTypeClass() == types::TypeClass::BuiltIn;
 }
 
+ImplStatus BuiltInType::implementsUnaryOperator(
+    TokenType op, bool prefix
+) const {
+    auto userImpl = Type::implementsUnaryOperator(op, prefix);
+    if (userImpl != ImplStatus::None) {
+        return userImpl;
+    }
+    return m_type != types::DataType::String ?
+        ImplStatus::Constexpr : ImplStatus::None;
+}
+
+std::shared_ptr<Value> BuiltInType::evalUnary(TokenType op, std::shared_ptr<Value> target, bool prefix) {
+    if (auto userImpl = Type::evalUnary(op, target, prefix)) {
+        return userImpl;
+    }
+    // only built-in implementations are those 
+    // between other built-in values
+    return std::static_pointer_cast<ABuiltInValue>(target)->applyUnary(op, prefix);
+}
+
+bool BuiltInType::codegenUnary(
+    ast::UnaryExpr const* expr,
+    std::ostream& stream
+) const {
+    if (Type::codegenUnary(expr, stream)) {
+        return true;
+    }
+    if (expr->type == ast::UnaryExpr::Prefix) {
+        stream << tokenTypeToString(expr->op);
+    }
+    expr->value->codegen(m_compiler.getInstance(), stream);
+    if (expr->type == ast::UnaryExpr::Suffix) {
+        stream << tokenTypeToString(expr->op);
+    }
+    return true;
+}
+
+ImplStatus BuiltInType::implementsBinaryOperator(
+    TokenType op,
+    std::shared_ptr<Type> other
+) const {
+    auto userImpl = Type::implementsBinaryOperator(op, other);
+    if (userImpl != ImplStatus::None) {
+        return userImpl;
+    }
+    // only built-in operators remain
+    if (other->getTypeClass() != types::TypeClass::BuiltIn) {
+        return ImplStatus::None;
+    }
+    auto otherType = std::static_pointer_cast<BuiltInType>(other)->m_type;
+    // string is special wecial
+    if (m_type == types::DataType::String) {
+        if (types::dataTypeIsInteger(otherType)) {
+            return op == TokenType::Mul ? ImplStatus::Constexpr : ImplStatus::None;
+        }
+        if (otherType != types::DataType::String) {
+            return ImplStatus::None;
+        }
+        return
+            (op == TokenType::Assign ||
+            op == TokenType::Add ||
+            op == TokenType::AddAssign ||
+            op == TokenType::Equal ||
+            op == TokenType::NotEqual ||
+            op == TokenType::Dot) ?
+                ImplStatus::Constexpr :
+                ImplStatus::None;
+    }
+    // ok then, must be an integral or floating type
+    return m_type == otherType ? ImplStatus::Constexpr : ImplStatus::None;
+}
+
+std::shared_ptr<Value> BuiltInType::evalBinary(TokenType op, std::shared_ptr<Value> first, std::shared_ptr<Value> second) {
+    if (auto userImpl = Type::evalBinary(op, first, second)) {
+        return userImpl;
+    }
+    // only built-in implementations are those 
+    // between other built-in values
+    return std::static_pointer_cast<ABuiltInValue>(first)->applyBinary(
+        op, std::static_pointer_cast<ABuiltInValue>(second)
+    );
+}
+
+bool BuiltInType::codegenBinary(
+    ast::BinaryExpr const* expr,
+    std::ostream& stream
+) const {
+    if (Type::codegenBinary(expr, stream)) {
+        return true;
+    }
+
+    switch (expr->op) {
+        // these have been chopped into different AST stuff
+        case TokenType::DoubleQuestion:
+        case TokenType::QuestionAssign: {
+            stream <<
+                "static_assert(false, \""
+                "Something has gone wrong in the GDML compiler. "
+                "You should not see this."
+                "\");";
+        } break;
+
+        case TokenType::Pow: {
+            stream << "static_cast<" << codegenName() << ">(";
+            stream << "pow(";
+
+            expr->LHS->codegen(m_compiler.getInstance(), stream);
+            stream << ",";
+            if (DO_PRETTIFY) stream << " ";
+            expr->RHS->codegen(m_compiler.getInstance(), stream);
+
+            stream << "))";
+        } break;
+
+        default: {
+            expr->LHS->codegen(m_compiler.getInstance(), stream);
+            if (DO_PRETTIFY) stream << " ";
+            stream << tokenTypeToString(expr->op);
+            if (DO_PRETTIFY) stream << " ";
+            expr->RHS->codegen(m_compiler.getInstance(), stream);
+        } break;
+    }
+
+    return true;
+}
+
 bool BuiltInType::codegenCast(
     std::shared_ptr<Type> other,
     ast::ValueExpr* target,
     std::ostream& stream
 ) {
-    if (Type::codegenCast(other, target, stream)) {
-        return true;
+    if (!Type::codegenCast(other, target, stream)) {
+        stream << "static_cast<" << other->codegenName() << ">(";
+        target->codegen(m_compiler.getInstance(), stream);
+        stream << ")";
     }
-    stream << "static_cast<" << other->codegenName() << ">(";
-    target->codegen(m_compiler.getInstance(), stream);
-    stream << ")";
+    return true;
 }
 
 

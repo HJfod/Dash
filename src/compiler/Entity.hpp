@@ -39,7 +39,7 @@ namespace gdml {
 
     struct ValueEntity : public Entity {
         virtual QualifiedType getValueType() const = 0;
-        virtual Value* eval(Instance& instance) = 0;
+        virtual std::shared_ptr<Value> eval(Instance& instance) = 0;
 
         bool isValue() const override {
             return true;
@@ -53,13 +53,13 @@ namespace gdml {
 
     struct Variable : public ValueEntity {
         QualifiedType type;
-        Value* value = nullptr;
+        std::shared_ptr<Value> value = nullptr;
         ast::VariableDeclExpr* declaration = nullptr;
 
         QualifiedType getValueType() const override {
             return type;
         }
-        Value* eval(Instance&) override {
+        std::shared_ptr<Value> eval(Instance&) override {
             return value;
         }
 
@@ -67,7 +67,7 @@ namespace gdml {
             std::shared_ptr<Namespace> container,
             std::string const& name,
             QualifiedType const& type,
-            Value* value,
+            std::shared_ptr<Value> value,
             ast::VariableDeclExpr* decl
         );
     };
@@ -79,7 +79,7 @@ namespace gdml {
         QualifiedType getValueType() const override {
             return type.into<Type>();
         }
-        Value* eval(Instance& instance) override;
+        std::shared_ptr<Value> eval(Instance& instance) override;
 
         FunctionEntity(
             std::shared_ptr<Namespace> container,

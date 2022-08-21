@@ -72,8 +72,7 @@ namespace gdml {
     protected:
         Instance& m_instance;
         ast::AST* m_ast;
-        std::unordered_set<Value*> m_values;
-        std::unordered_map<ConstValue, Value*> m_constValues;
+        std::unordered_map<ConstValue, std::shared_ptr<Value>> m_constValues;
         std::vector<Scope> m_scope;
         Formatter m_formatter;
     
@@ -189,15 +188,13 @@ namespace gdml {
         std::shared_ptr<BuiltInType> getBuiltInType(types::DataType type) const;
 
         template<class T = Value, class... Args>
-        T* makeValue(
-            Args... args
+        std::shared_ptr<T> makeValue(
+            Args&&... args
         ) {
-            auto value = new T(*this, std::forward<Args>(args)...);
-            m_values.insert(value);
-            return value;
+            return std::make_shared<T>(*this, std::forward<Args>(args)...);
         }
 
-        Value* getConstValue(ConstValue value) const;
+        std::shared_ptr<Value> getConstValue(ConstValue value) const;
 
         void codegen(std::ostream& stream) const noexcept;
     };

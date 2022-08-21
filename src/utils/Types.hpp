@@ -43,6 +43,8 @@ namespace gdml {
     struct Namespace;
     struct Scope;
 
+    enum class TokenType;
+
     enum class FunctionSearch {
         Found,
         NoMatchingOverload,
@@ -61,15 +63,30 @@ namespace gdml {
         struct ValueExpr;
         struct VariableDeclExpr;
         struct FunctionDeclStmt;
+        struct UnaryExpr;
+        struct BinaryExpr;
         class AST;
     }
 
     using NamespaceParts = std::vector<std::string>;
     NamespaceParts splitNamespaceString(std::string const& str);
 
+    template<class T>
+    bool replaceOneInVector(std::vector<T>& vec, T const& from, T const& to) {
+        for (auto it = vec.begin(); it != vec.end(); it++) {
+            if (*it == from) {
+                *it = to;
+                return true;
+            }
+        }
+        return false;
+    }
+
     constexpr unsigned int hash(const char* str, int h = 0) {
         return !str[h] ? 5381 : (hash(str, h+1) * 33) ^ str[h];
     }
+
+    std::string generateIdentifierName();
 
     namespace types {
         enum class TypeClass {
@@ -171,26 +188,30 @@ namespace gdml {
         std::string dataTypeToCppType(DataType type);
         DataType dataTypeFromString(std::string const& str);
         bool dataTypeIsUnsigned(DataType type);
+        bool dataTypeIsInteger(DataType type);
         
         struct TypeQualifiers {
             bool isConst = false;
+            bool isConstexpr = false;
             
             constexpr TypeQualifiers() = default;
             constexpr TypeQualifiers(
-                bool isConst
-            ) : isConst(isConst) {}
+                bool isConst,
+                bool isConstexpr = false
+            ) : isConst(isConst), isConstexpr(isConstexpr) {}
 
             constexpr TypeQualifiers operator|(TypeQualifiers const& other) const {
                 return TypeQualifiers(
-                    other.isConst || isConst
+                    other.isConst || isConst,
+                    other.isConstexpr || isConstexpr
                 );
             }
         };
 
-        // this is much easier to read than slamming
-        // `TypeQualifiers { true }` everywhere
-        constexpr TypeQualifiers NON_CONST_QUALIFIED = { false };
-        constexpr TypeQualifiers CONST_QUALIFIED = { true };
+        constexpr TypeQualifiers NON_CONST_QUALIFIED = { false, false };
+        constexpr TypeQualifiers CONST_QUALIFIED = { true, false };
+        constexpr TypeQualifiers CONSTEXPR_QUALIFIED = { false, true };
+        constexpr TypeQualifiers LITERAL_QUALIFIED = { true, true };
 
         enum class PointerType {
             Pointer,

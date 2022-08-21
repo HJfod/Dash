@@ -133,11 +133,7 @@ Compiler::Compiler(Instance& shared, ast::AST* ast)
     loadConstValues();
 }
 
-Compiler::~Compiler() {
-    for (auto& value : m_values) {
-        delete value;
-    }
-}
+Compiler::~Compiler() {}
 
 Instance& Compiler::getInstance() const {
     return m_instance;
@@ -157,22 +153,22 @@ void Compiler::loadConstValues() {
     m_constValues = {
         {
             ConstValue::True,
-            makeValue<BuiltInValue<types::Bool>>(true)
+            makeValue<NumeralValue<types::Bool>>(true)
         },
 
         {
             ConstValue::False,
-            makeValue<BuiltInValue<types::Bool>>(false)
+            makeValue<NumeralValue<types::Bool>>(false)
         },
 
         {
             ConstValue::EmptyString,
-            makeValue<BuiltInValue<types::String>>("")
+            makeValue<StringValue>("")
         },
 
         {
             ConstValue::Zero,
-            makeValue<BuiltInValue<types::I32>>(0)
+            makeValue<NumeralValue<types::I32>>(0)
         },
 
         {
@@ -182,7 +178,7 @@ void Compiler::loadConstValues() {
     };
 }
 
-Value* Compiler::getConstValue(ConstValue value) const {
+std::shared_ptr<Value> Compiler::getConstValue(ConstValue value) const {
     return m_constValues.at(value);
 }
 
@@ -222,17 +218,17 @@ void Formatter::skipSemiColon() {
 
 PointerValue::PointerValue(
     Compiler& compiler,
-    Value* value
+    std::shared_ptr<Value> value
 ) : Value(compiler), m_value(value) {}
 
-Value* PointerValue::copy() {
+std::shared_ptr<Value> PointerValue::copy() {
     return m_compiler.makeValue<PointerValue>(m_value);
 }
 
-Value* PointerValue::getValue() const {
+std::shared_ptr<Value> PointerValue::getValue() const {
     return m_value;
 }
 
-void PointerValue::setValue(Value* value) {
+void PointerValue::setValue(std::shared_ptr<Value> value) {
     m_value = value;
 }

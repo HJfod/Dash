@@ -47,7 +47,7 @@ Variable::Variable(
     std::shared_ptr<Namespace> container,
     std::string const& name,
     QualifiedType const& type,
-    Value* value,
+    std::shared_ptr<Value> value,
     ast::VariableDeclExpr* decl
 ) : ValueEntity(container, name, EntityType::Variable),
     type(type), value(value), declaration(decl) {}
@@ -60,7 +60,7 @@ FunctionEntity::FunctionEntity(
 ) : ValueEntity(container, name, EntityType::Function),
     type(type), declaration(decl) {}
 
-Value* FunctionEntity::eval(Instance& instance) {
+std::shared_ptr<Value> FunctionEntity::eval(Instance& instance) {
     if (!declaration->body.has_value()) {
         return nullptr;
     }

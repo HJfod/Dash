@@ -50,13 +50,13 @@ using namespace gdml::ast;
     case types::DataType::typeName:\
         evalType = QualifiedType {\
             instance.getCompiler().getBuiltInType(types::DataType::typeName),\
-            types::CONST_QUALIFIED\
+            types::LITERAL_QUALIFIED\
         };\
         break
 
 #define DATA_EVAL_VALUE(typeName) \
     case types::DataType::typeName:\
-    return instance.getCompiler().makeValue<BuiltInValue<types::typeName>>(\
+    return instance.getCompiler().makeValue<NumeralValue<types::typeName>>(\
         static_cast<types::typeName>(value)\
     );\
     break
@@ -74,13 +74,13 @@ static bool matchBranchTypes(Option<QualifiedType> const& a, Option<QualifiedTyp
 TypeCheckResult BoolLiteralExpr::compile(Instance& instance) noexcept {
     evalType = QualifiedType {
         instance.getCompiler().getBuiltInType(types::DataType::Bool),
-        types::CONST_QUALIFIED
+        types::LITERAL_QUALIFIED
     };
     DEBUG_LOG_TYPE();
     return Ok();
 }
 
-Value* BoolLiteralExpr::eval(Instance& instance) {
+std::shared_ptr<Value> BoolLiteralExpr::eval(Instance& instance) {
     return instance.getCompiler().getConstValue(
         value ? ConstValue::True : ConstValue::False
     );
@@ -105,7 +105,7 @@ TypeCheckResult IntLiteralExpr::compile(Instance& instance) noexcept {
     return Ok();
 }
 
-Value* IntLiteralExpr::eval(Instance& instance) {
+std::shared_ptr<Value> IntLiteralExpr::eval(Instance& instance) {
     switch (type) {
         DATA_EVAL_VALUE(I8);
         DATA_EVAL_VALUE(I16);
@@ -134,7 +134,7 @@ TypeCheckResult UIntLiteralExpr::compile(Instance& instance) noexcept {
     return Ok();
 }
 
-Value* UIntLiteralExpr::eval(Instance& instance) {
+std::shared_ptr<Value> UIntLiteralExpr::eval(Instance& instance) {
     switch (type) {
         DATA_EVAL_VALUE(U8);
         DATA_EVAL_VALUE(U16);
@@ -161,7 +161,7 @@ TypeCheckResult FloatLiteralExpr::compile(Instance& instance) noexcept {
     return Ok();
 }
 
-Value* FloatLiteralExpr::eval(Instance& instance) {
+std::shared_ptr<Value> FloatLiteralExpr::eval(Instance& instance) {
     switch (type) {
         DATA_EVAL_VALUE(F32);
         DATA_EVAL_VALUE(F64);
@@ -174,17 +174,17 @@ Value* FloatLiteralExpr::eval(Instance& instance) {
 TypeCheckResult StringLiteralExpr::compile(Instance& instance) noexcept {
     evalType = QualifiedType {
         instance.getCompiler().getBuiltInType(types::DataType::String),
-        types::CONST_QUALIFIED
+        types::LITERAL_QUALIFIED
     };
     DEBUG_LOG_TYPE();
     return Ok();
 }
 
-Value* StringLiteralExpr::eval(Instance& instance) {
-    if (value == "") {
+std::shared_ptr<Value> StringLiteralExpr::eval(Instance& instance) {
+    if (!value.size()) {
         return instance.getCompiler().getConstValue(ConstValue::EmptyString);
     }
-    return instance.getCompiler().makeValue<BuiltInValue<types::String>>(value);
+    return instance.getCompiler().makeValue<StringValue>(value);
 }
 
 // InterpolatedLiteralExpr
@@ -196,7 +196,7 @@ TypeCheckResult InterpolatedLiteralExpr::compile(Instance& instance) noexcept {
     return Ok();
 }
 
-Value* InterpolatedLiteralExpr::eval(Instance& instance) {
+std::shared_ptr<Value> InterpolatedLiteralExpr::eval(Instance& instance) {
     // todo
     return nullptr;
 }
@@ -225,13 +225,13 @@ TypeCheckResult NullLiteralExpr::compile(Instance& instance) noexcept {
             ),
             types::PointerType::Pointer
         ),
-        types::CONST_QUALIFIED
+        types::LITERAL_QUALIFIED
     };
     DEBUG_LOG_TYPE();
     return Ok();
 }
 
-Value* NullLiteralExpr::eval(Instance& instance) {
+std::shared_ptr<Value> NullLiteralExpr::eval(Instance& instance) {
     return instance.getCompiler().getConstValue(ConstValue::Null);
 }
 
@@ -256,6 +256,10 @@ TypeCheckResult UnaryExpr::compile(Instance& instance) noexcept {
     return Ok();
 }
 
+void UnaryExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    value->evalType.type->codegenUnary(this, stream);
+}
+
 // BinaryExpr
 
 TypeCheckResult BinaryExpr::compile(Instance& instance) noexcept {
@@ -265,15 +269,14 @@ TypeCheckResult BinaryExpr::compile(Instance& instance) noexcept {
     EXPECT_TYPE(LHS);
     EXPECT_TYPE(RHS);
 
-    if (!RHS->evalType.convertibleTo(LHS->evalType)) {
+    auto foundImpl = LHS->evalType.type->implementsBinaryOperator(op, RHS->evalType.type);
+
+    if (foundImpl == ImplStatus::None) {
         THROW_TYPE_ERR(
-            "Invalid operands for binary expression: left-hand-side "
-            "has the type `" + LHS->evalType.toString() + "`, but "
-            "right-hand-side has the type `" + RHS->evalType.toString() + "`",
-
-            "Add an explicit type conversion on the right-hand-side: "
-            "`as " + LHS->evalType.toString() + "`",
-
+            "Type `" + LHS->evalType.type->toString() + "` does not "
+            "implement operator " + TOKEN_STR_V(op) + " for type `" +
+            RHS->evalType.type->toString() + "`",
+            "",
             "There are no implicit conversions in GDML. All types "
             "must match exactly!"
         );
@@ -294,15 +297,127 @@ TypeCheckResult BinaryExpr::compile(Instance& instance) noexcept {
 
     DEBUG_LOG_TYPE();
 
+    // todo: compile-time
+
+    // special operators
+    if (op == TokenType::QuestionAssign) {
+        // turn into ```
+        // +  if (!LHS) LHS = RHS;
+        // -> LHS
+        // ```
+
+        if (!parent->insertStatement(ast->make<IfStmt>(
+            source, start, end,
+            ast->make<UnaryExpr>(
+                source, start, end,
+                TokenType::Not, LHS, UnaryExpr::Prefix
+            ),
+            ast->make<StmtList>(
+                source, start, end,
+                std::vector<Stmt*> {
+                    ast->make<BinaryExpr>(
+                        source, start, end,
+                        TokenType::Assign, LHS, RHS
+                    ),
+                }
+            ),
+            None
+        ), this, false)) {
+            THROW_COMPILE_ERR(
+                "Unable to unwrap question assignment operator",
+                "",
+                "This is probably a compiler error"
+            );
+        }
+
+        if (usedAsStmt) {
+            if (!parent->removeStatement(this)) {
+                THROW_COMPILE_ERR(
+                    "Unable to remove question assignment operator "
+                    "statement",
+                    "",
+                    "This is probably a compiler error"
+                );
+            }
+        } else {
+            if (!parent->swap(this, LHS)) {
+                THROW_COMPILE_ERR(
+                    "Unable to swap out question assignment operator "
+                    "statement",
+                    "",
+                    "This is probably a compiler error"
+                );
+            }
+        }
+    }
+
+    else if (op == TokenType::DoubleQuestion) {
+        // turn into ```
+        // +  auto _ = LHS;
+        // -> _ ? _ : RHS
+        // ```
+
+        auto placeholder = generateIdentifierName();
+
+        if (!parent->insertStatement(
+            ast->make<VariableDeclExpr>(
+                source, start, end,
+                None, placeholder, LHS
+            ),
+            this, false
+        )) {
+            THROW_COMPILE_ERR(
+                "Unable to unwrap nullish coalescing operator",
+                "",
+                "This is probably a compiler error"
+            );
+        }
+
+        if (!parent->swap(this, ast->make<TernaryExpr>(
+            source, start, end,
+            ast->make<VariableExpr>(
+                source, start, end,
+                ast->make<NameExpr>(
+                    source, start, end,
+                    placeholder
+                )
+            ),
+            ast->make<VariableExpr>(
+                source, start, end,
+                ast->make<NameExpr>(
+                    source, start, end,
+                    placeholder
+                )
+            ),
+            RHS
+        ))) {
+            THROW_COMPILE_ERR(
+                "Unable to swap out nullish coalescing operator",
+                "",
+                "This is probably a compiler error"
+            );
+        }
+    }
+
     return Ok();
 }
 
+std::shared_ptr<Value> BinaryExpr::eval(Instance& instance) {
+    if (status != ImplStatus::Constexpr) {
+        return nullptr;
+    }
+
+    auto lhsValue = LHS->eval(instance);
+    if (!lhsValue) return nullptr;
+
+    auto rhsValue = RHS->eval(instance);
+    if (!rhsValue) return nullptr;
+
+    return evalType.type->evalBinary(op, lhsValue, rhsValue);
+}
+
 void BinaryExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
-    LHS->codegen(instance, stream);
-    if (instance.getShared().getFlag(Flags::PrettifyOutput)) stream << " ";
-    stream << tokenTypeToString(op);
-    if (instance.getShared().getFlag(Flags::PrettifyOutput)) stream << " ";
-    RHS->codegen(instance, stream);
+    LHS->evalType.type->codegenBinary(this, stream);
 }
 
 // TernaryExpr
@@ -376,12 +491,12 @@ TypeCheckResult VariableExpr::compile(Instance& instance) noexcept {
     return Ok();
 }
 
-Value* VariableExpr::eval(Instance& instance) {
+std::shared_ptr<Value> VariableExpr::eval(Instance& instance) {
     return std::static_pointer_cast<ValueEntity>(entity)->eval(instance);
 }
 
 void VariableExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
-    stream << entity->getFullName();
+    stream << (entity.get() ? entity->getFullName() : name->fullName());
 }
 
 // NameExpr
@@ -439,7 +554,7 @@ TypeCheckResult NameSpaceStmt::compile(Instance& instance) noexcept {
     } else {
         PUSH_NAMESPACE("");
     }
-    GDML_TYPECHECK_CHILD(contents);
+    GDML_TYPECHECK_CHILD(content);
     if (name) {
         for (auto& _ : name.value()->fullNameList()) {
             POP_NAMESPACE();
@@ -452,7 +567,7 @@ TypeCheckResult NameSpaceStmt::compile(Instance& instance) noexcept {
 void NameSpaceStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
     stream << "namespace " << (name ? name.value()->fullName() : "") << " {";
     PUSH_INDENT();
-    contents->codegen(instance, stream);
+    content->codegen(instance, stream);
     POP_INDENT();
     stream << "}";
     instance.getCompiler().getFormatter().skipSemiColon();
@@ -532,7 +647,7 @@ TypeCheckResult VariableDeclExpr::compile(Instance& instance) noexcept {
     return Ok();
 }
 
-Value* VariableDeclExpr::eval(Instance& instance) {    
+std::shared_ptr<Value> VariableDeclExpr::eval(Instance& instance) {    
     if (value.value()) {
         variable->value = value.value()->eval(instance);
     }
@@ -883,6 +998,46 @@ void StmtList::codegen(Instance& instance, std::ostream& stream) const noexcept 
     }
 }
 
+bool StmtList::insertStatement(
+    Stmt* toAdd,
+    Option<Stmt*> const& relative,
+    bool after
+) {
+    if (relative) {
+        bool added = false;
+        for (auto it = statements.begin(); it != statements.end(); it++) {
+            if (*it == relative.value()) {
+                if (after) {
+                    statements.insert(it + 1, toAdd);
+                } else {
+                    statements.insert(it, toAdd);
+                }
+                added = true;
+                break;
+            }
+        }
+        if (!added) {
+            statements.push_back(toAdd);
+        }
+    } else {
+        statements.push_back(toAdd);
+    }
+    toAdd->parent = this;
+    return true;
+}
+
+bool StmtList::removeStatement(Stmt* stmt) {
+    auto rem = std::ranges::remove(statements, stmt);
+    statements.erase(rem.begin(), rem.end());
+    stmt->parent = nullptr;
+    return true;
+}
+
+bool StmtList::swap(Stmt* stmt, Stmt* to) {
+    GDML_SWAP_CHILDREN(statements);
+    return false;
+}
+    
 // ClassDeclStmt
 
 void ClassDeclStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
@@ -908,17 +1063,16 @@ void EmbedCodeStmt::codegen(Instance& instance, std::ostream& stream) const noex
 
 // AST
 
-void AST::codegen(Instance& instance, std::ostream& stream) const noexcept {
-    bool first = true;
-    for (auto& stmt : m_tree) {
-        if (!first) {
-            NEW_LINE();
-            NEW_LINE();
-        }
-        first = false;
+AST::AST(
+    SourceFile const* src,
+    Position const& start,
+    Position const& end
+) : StmtList(src, start, end, {}) {}
 
-        stmt->codegen(instance, stream);
-        instance.getCompiler().getFormatter().semiColon(stream);
+AST::~AST() {
+    for (auto& g : m_garbage) {
+        delete g;
     }
-    NEW_LINE();
 }
+
+
