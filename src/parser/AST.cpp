@@ -64,7 +64,7 @@ using namespace gdml::ast;
 static bool matchBranchTypes(Option<QualifiedType> const& a, Option<QualifiedType> const& b) {
     // do both branches actually return something?
     if (a.has_value() && b.has_value()) {
-        return a.value().convertibleTo(b.value());
+        return a.value().convertibleTo(b.value(), true);
     }
     return true;
 }
@@ -663,7 +663,13 @@ void VariableDeclExpr::codegen(Instance& instance, std::ostream& stream) const n
     stream << name;
     if (value.has_value()) {
         stream << " = ";
-        value.value()->codegen(instance, stream);
+        if (evalType.type) {
+            evalType.codegenConvert(
+                value.value()->evalType, value.value(), stream
+            );
+        } else {
+            value.value()->codegen(instance, stream);
+        }
     }
 }
 
@@ -867,6 +873,27 @@ TypeCheckResult CallExpr::compile(Instance& instance) noexcept {
     return Ok();
 }
 
+void CallExpr::codegen(Instance& com, std::ostream& stream) const noexcept {
+    stream << "(";
+    target->codegen(com, stream);
+    stream << ")(";
+    bool firstArg = true;
+
+    auto targetType = std::static_pointer_cast<FunctionType>(target->evalType.type);
+
+    size_t i = 0;
+    for (auto const& arg : args) {
+        if (!firstArg) {
+            stream << ", ";
+        }
+        firstArg = false;
+        arg->evalType.codegenConvert(
+            targetType->getParameters().at(i++), arg, stream
+        );
+    }
+    stream << ")";
+}
+
 // BlockStmt
 
 BranchInferResult BlockStmt::inferBranchReturnType(Instance& instance) {
@@ -946,13 +973,29 @@ TypeCheckResult IfStmt::compile(Instance& instance) noexcept {
     GDML_TYPECHECK_CHILD_O(elseBranch);
     POP_SCOPE();
 
+    if (condition && !condition.value()->evalType.convertibleTo(
+        QualifiedType {
+            instance.getCompiler().getBuiltInType(types::DataType::Bool)
+        }
+    )) {
+        THROW_TYPE_ERR_AT(
+            "Condition for if statement does not evaluate to bool",
+            "",
+            "",
+            condition.value()->start, condition.value()->end
+        );
+    }
+
     return Ok();
 }
 
 void IfStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
     if (condition.has_value()) {
         stream << "if (";
-        condition.value()->codegen(instance, stream);
+        condition.value()->evalType.codegenConvert(
+        QualifiedType {
+            instance.getCompiler().getBuiltInType(types::DataType::Bool)
+        }, condition.value(), stream);
         stream << ") ";
     }
     stream << "{";

@@ -25,7 +25,12 @@ namespace gdml {
 
         // typecasts
 
-        virtual bool convertibleTo(std::shared_ptr<Type> other) const = 0;
+        virtual bool convertibleTo(std::shared_ptr<Type> other, bool strict) const = 0;
+        virtual bool codegenConvert(
+            std::shared_ptr<Type> other,
+            ast::ValueExpr* target,
+            std::ostream& stream
+        ) const;
         virtual bool castableTo(std::shared_ptr<Type> other) const;
         virtual bool codegenCast(
             std::shared_ptr<Type> other,
@@ -90,9 +95,17 @@ namespace gdml {
             );
         }
 
-        bool convertibleTo(TQualifiedType<T> const& other) const {
+        bool convertibleTo(TQualifiedType<T> const& other, bool strict = false) const {
             if (!type) return false;
-            return type->convertibleTo(other.type);
+            return type->convertibleTo(other.type, strict);
+        }
+
+        bool codegenConvert(
+            TQualifiedType<T> const& other,
+            ast::ValueExpr* target,
+            std::ostream& stream
+        ) const {
+            return type->codegenConvert(other.type, target, stream);
         }
 
         bool castableTo(TQualifiedType<T> const& other) const {
@@ -131,7 +144,12 @@ namespace gdml {
 
         const types::DataType getType() const;
 
-        bool convertibleTo(std::shared_ptr<Type> other) const override;
+        bool convertibleTo(std::shared_ptr<Type> other, bool strict) const override;
+        bool codegenConvert(
+            std::shared_ptr<Type> other,
+            ast::ValueExpr* target,
+            std::ostream& stream
+        ) const override;
         bool castableTo(std::shared_ptr<Type> other) const override;
         bool codegenCast(
             std::shared_ptr<Type> other,
@@ -190,7 +208,7 @@ namespace gdml {
 
         bool matchParameters(std::vector<QualifiedType> const& parameters) const;
 
-        bool convertibleTo(std::shared_ptr<Type> other) const override;
+        bool convertibleTo(std::shared_ptr<Type> other, bool strict) const override;
         
         std::string codegenName() const override;
         std::string toString() const override;
@@ -245,7 +263,7 @@ namespace gdml {
 
         QualifiedType const& getInnerType();
 
-        bool convertibleTo(std::shared_ptr<Type> other) const override;
+        bool convertibleTo(std::shared_ptr<Type> other, bool strict) const override;
 
         std::string codegenName() const override;
         std::string toString() const override;

@@ -760,20 +760,7 @@ namespace gdml::ast {
 
         TypeCheckResult compile(Instance& instance) noexcept override;
     
-        void codegen(Instance& com, std::ostream& stream) const noexcept override {
-            stream << "(";
-            target->codegen(com, stream);
-            stream << ")(";
-            bool firstArg = true;
-            for (auto const& arg : args) {
-                if (!firstArg) {
-                    stream << ", ";
-                }
-                firstArg = false;
-                arg->codegen(com, stream);
-            }
-            stream << ")";
-        }
+        void codegen(Instance& com, std::ostream& stream) const noexcept override;
 
         bool swap(Stmt* stmt, Stmt* to) override {
             GDML_SWAP_CHILD(target);

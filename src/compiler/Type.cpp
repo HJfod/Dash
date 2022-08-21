@@ -18,28 +18,15 @@ const types::TypeClass Type::getTypeClass() const {
     return m_class;
 }
 
-// std::shared_ptr<Value> Type::instantiate() {
-//     #define INSTANTIATE_TYPE(t) \
-//         case types::DataType::t: return new BuiltInValue<types::t>(\
-//             m_compiler, types::t()\
-//         )
-//     switch (m_type) {
-//         default: return nullptr;
-//         INSTANTIATE_TYPE(Bool);
-//         INSTANTIATE_TYPE(I8);
-//         INSTANTIATE_TYPE(I16);
-//         INSTANTIATE_TYPE(I32);
-//         INSTANTIATE_TYPE(I64);
-//         INSTANTIATE_TYPE(U8);
-//         INSTANTIATE_TYPE(U16);
-//         INSTANTIATE_TYPE(U32);
-//         INSTANTIATE_TYPE(U64);
-//         INSTANTIATE_TYPE(F32);
-//         INSTANTIATE_TYPE(F64);
-//         INSTANTIATE_TYPE(Char);
-//         INSTANTIATE_TYPE(String);
-//     }
-// }
+bool Type::codegenConvert(
+    std::shared_ptr<Type> other,
+    ast::ValueExpr* target,
+    std::ostream& stream
+) const {
+    // for most of these C++ is the exact same
+    target->codegen(m_compiler.getInstance(), stream);
+    return true;
+}
 
 bool Type::castableTo(std::shared_ptr<Type> other) const {
     // todo: global cast definitions
@@ -103,11 +90,34 @@ std::string BuiltInType::toString() const {
     return types::dataTypeToString(m_type);
 }
 
-bool BuiltInType::convertibleTo(std::shared_ptr<Type> other) const {
+bool BuiltInType::convertibleTo(std::shared_ptr<Type> other, bool strict) const {
     if (other->getTypeClass() == types::TypeClass::BuiltIn) {
-        return m_type == std::static_pointer_cast<BuiltInType>(other)->m_type;
+        auto otherAsB = std::static_pointer_cast<BuiltInType>(other);
+        return
+            m_type == otherAsB->m_type ||
+            (!strict && otherAsB->m_type == types::DataType::Bool);
     }
     return false;
+}
+
+bool BuiltInType::codegenConvert(
+    std::shared_ptr<Type> other,
+    ast::ValueExpr* target,
+    std::ostream& stream
+) const {
+    // only special one is string to bool
+    if (
+        m_type == types::DataType::String && 
+        std::static_pointer_cast<BuiltInType>(other)->m_type == types::DataType::Bool
+    ) {
+        // users can't add implicit conversions 
+        // so we know this one's a bool
+        stream << "(";
+        target->codegen(m_compiler.getInstance(), stream);
+        stream << ").size()";
+        return true;
+    }
+    return Type::codegenConvert(other, target, stream);
 }
 
 bool BuiltInType::castableTo(std::shared_ptr<Type> other) const {
@@ -115,6 +125,19 @@ bool BuiltInType::castableTo(std::shared_ptr<Type> other) const {
         return true;
     }
     return other->getTypeClass() == types::TypeClass::BuiltIn;
+}
+
+bool BuiltInType::codegenCast(
+    std::shared_ptr<Type> other,
+    ast::ValueExpr* target,
+    std::ostream& stream
+) {
+    if (!Type::codegenCast(other, target, stream)) {
+        stream << "static_cast<" << other->codegenName() << ">(";
+        target->codegen(m_compiler.getInstance(), stream);
+        stream << ")";
+    }
+    return true;
 }
 
 ImplStatus BuiltInType::implementsUnaryOperator(
@@ -243,19 +266,6 @@ bool BuiltInType::codegenBinary(
     return true;
 }
 
-bool BuiltInType::codegenCast(
-    std::shared_ptr<Type> other,
-    ast::ValueExpr* target,
-    std::ostream& stream
-) {
-    if (!Type::codegenCast(other, target, stream)) {
-        stream << "static_cast<" << other->codegenName() << ">(";
-        target->codegen(m_compiler.getInstance(), stream);
-        stream << ")";
-    }
-    return true;
-}
-
 
 FunctionType::FunctionType(
     Compiler& compiler,
@@ -289,7 +299,7 @@ bool FunctionType::matchParameters(
     return true;
 }
 
-bool FunctionType::convertibleTo(std::shared_ptr<Type> other) const {
+bool FunctionType::convertibleTo(std::shared_ptr<Type> other, bool strict) const {
     return false;
 }
 
@@ -382,8 +392,13 @@ QualifiedType const& PointerType::getInnerType() {
     return m_inner;
 }
 
-bool PointerType::convertibleTo(std::shared_ptr<Type> other) const {
-    return other->getTypeClass() == types::TypeClass::Pointer;
+bool PointerType::convertibleTo(std::shared_ptr<Type> other, bool strict) const {
+    return
+        (other->getTypeClass() == types::TypeClass::Pointer) ||
+        (
+            other->getTypeClass() == types::TypeClass::BuiltIn && 
+            std::static_pointer_cast<BuiltInType>(other)->getType() == types::DataType::Bool
+        );
 }
 
 std::string PointerType::codegenName() const {
