@@ -97,41 +97,36 @@ namespace gdml {
         bool hasEntity(
             std::string const& name,
             Option<EntityType> type,
-            Option<std::vector<QualifiedType>> const& parameters
+            Option<std::vector<QualifiedType>> const& parameters,
+            bool checkAllScopes = true
         ) const;
         template<class T>
         bool hasEntity(
             std::string const& name,
-            Option<std::vector<QualifiedType>> const& parameters = None
+            Option<std::vector<QualifiedType>> const& parameters = None,
+            bool checkAllScopes = true
         ) {
             if constexpr (std::is_same_v<T, Variable>) {
-                return hasEntityAs<T>(name, EntityType::Variable, None);
+                return hasEntity(name, EntityType::Variable, None, checkAllScopes);
             }
             else if constexpr (std::is_same_v<T, FunctionEntity>) {
-                return hasEntityAs<T>(name, EntityType::Function, parameters);
+                return hasEntity(name, EntityType::Function, parameters, checkAllScopes);
             }
             else if constexpr (std::is_same_v<T, TypeEntity>) {
-                return hasEntityAs<T>(name, EntityType::Type, None);
+                return hasEntity(name, EntityType::Type, None, checkAllScopes);
             }
             else if constexpr (std::is_same_v<T, Namespace>) {
-                return hasEntityAs<T>(name, EntityType::Namespace, None);
+                return hasEntity(name, EntityType::Namespace, None, checkAllScopes);
+            }
+            else if constexpr (std::is_same_v<T, Class>) {
+                return hasEntity(name, EntityType::Class, None, checkAllScopes);
             }
             else if constexpr (std::is_same_v<T, ValueEntity>) {
-                return hasEntityAs<T>(name, None, None);
+                return hasEntity(name, None, None, checkAllScopes);
             }
             else {
                 static_assert(!std::is_same_v<T, T>, "Invalid type to check entity as");
             }
-        }
-        template<class T>
-        bool hasEntityAs(
-            std::string const& name,
-            Option<EntityType> type,
-            Option<std::vector<QualifiedType>> const& parameters
-        ) const {
-            return hasEntity(
-                name, type, parameters
-            );
         }
 
         std::shared_ptr<Entity> getEntity(
@@ -155,6 +150,9 @@ namespace gdml {
             }
             else if constexpr (std::is_same_v<T, Namespace>) {
                 return getEntityAs<T>(name, EntityType::Namespace, None);
+            }
+            else if constexpr (std::is_same_v<T, Class>) {
+                return getEntityAs<T>(name, EntityType::Class, None);
             }
             else if constexpr (std::is_same_v<T, ValueEntity>) {
                 return getEntityAs<T>(name, None, None);

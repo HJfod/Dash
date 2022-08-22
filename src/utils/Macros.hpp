@@ -24,7 +24,7 @@
         msg, hint, note, start, end, source }
 
 #define PROPAGATE_ERROR(err) \
-    if (!err) return err.unwrapErr()
+    {auto err__ = err; if (!err__) return err__.unwrapErr(); }
 #define PROPAGATE_VALUE(val) \
     {auto val__ = val; PROPAGATE_ERROR(val__); return val__.unwrap();}
 #define PROPAGATE_ASSIGN(to, expr) \

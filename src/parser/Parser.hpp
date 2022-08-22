@@ -23,7 +23,7 @@ namespace gdml {
         ExprResult<ast::NameExpr> parseName(bool checkGlobal = true) noexcept;
         ExprResult<ast::InterpolatedLiteralExpr> parseInterpolated() noexcept;
         ExprResult<ast::Expr> parseParenthesis(bool expectType = false) noexcept;
-        ExprResult<ast::VariableDeclExpr> parseVarDeclaration() noexcept;
+        ExprResult<ast::VariableDeclExpr> parseVarDeclaration(bool allowThis = false) noexcept;
         ExprResult<ast::ValueExpr> parseValue() noexcept;
         ExprResult<ast::ValueExpr> parseBinary(
             ast::ValueExpr* lhs, int precedence = 0
@@ -31,6 +31,7 @@ namespace gdml {
         ExprResult<ast::ValueExpr> parseUnary() noexcept;
         ExprResult<ast::ValueExpr> parseExpression() noexcept;
 
+        ExprResult<ast::Stmt> parseClass() noexcept;
         ExprResult<ast::FunctionDeclStmt> parseFunDeclaration() noexcept;
         ExprResult<ast::IfStmt> parseIfChain() noexcept;
         ExprResult<ast::StmtList> parseBlock(bool topLevel = false) noexcept;

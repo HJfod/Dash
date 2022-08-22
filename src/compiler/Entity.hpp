@@ -10,6 +10,12 @@ namespace gdml {
         std::string m_name;
         EntityType m_type;
 
+        virtual void applyTypeDefinition() {}
+
+        friend struct Namespace;
+
+        std::string getFullName(std::string const& name) const;
+
     public:
         Entity(
             std::shared_ptr<Namespace> container,
@@ -18,7 +24,8 @@ namespace gdml {
         );
 
         EntityType getType() const;
-        std::string getFullName() const;
+        virtual std::string getFullName() const;
+        std::string getName() const;
         bool hasParentNamespace() const;
 
         virtual bool isValue() const {
@@ -76,6 +83,8 @@ namespace gdml {
         QualifiedFunType type;
         ast::FunctionDeclStmt* declaration = nullptr;
 
+        std::string getFullName() const override;
+
         QualifiedType getValueType() const override {
             return type.into<Type>();
         }
@@ -123,6 +132,7 @@ namespace gdml {
             Option<EntityType> const& type,
             Option<std::vector<QualifiedType>> const& parameters
         ) const;
+
         std::shared_ptr<Entity> getEntity(
             std::string const& name,
             NamespaceParts const& currentNamespace,
@@ -130,8 +140,58 @@ namespace gdml {
             Option<EntityType> const& type,
             Option<std::vector<QualifiedType>> const& parameters
         ) const;
+
         template<class T, class... Args>
         std::shared_ptr<T> makeEntity(
+            std::string const& name, Args&&... args
+        ) {
+            auto entity = std::make_shared<T>(
+                shared_from_this(),
+                name, std::forward<Args>(args)...
+            );
+            // apply type definition to entities that 
+            // need to do that (like classes)
+            // it can't be done in the constructor 
+            // because shared_from_this isn't valid yet
+            entity->applyTypeDefinition();
+            pushEntity(name, entity);
+            return entity;
+        }
+    };
+
+    struct Class : public Namespace
+    {
+    protected:
+        std::shared_ptr<ClassType> m_classType;
+
+        void applyTypeDefinition() override;
+
+        friend struct Namespace;
+
+    public:
+        Class(
+            std::shared_ptr<Namespace> container,
+            std::string const& name,
+            std::shared_ptr<ClassType> classType
+        );
+
+        std::shared_ptr<ClassType> getClassType() const;
+        std::shared_ptr<PointerType> getClassTypePointer() const;
+
+        bool hasMember(std::string const& name) const;
+        std::shared_ptr<Variable> getMember(std::string const& name) const;
+
+        bool hasMemberFunction(
+            std::string const& name,
+            Option<std::vector<QualifiedType>> const& parameters
+        ) const;
+        std::shared_ptr<FunctionEntity> getMemberFunction(
+            std::string const& name,
+            Option<std::vector<QualifiedType>> const& parameters
+        ) const;
+
+        template<class T, class... Args>
+        std::shared_ptr<T> makeMember(
             std::string const& name, Args&&... args
         ) {
             auto entity = std::make_shared<T>(

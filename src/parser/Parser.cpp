@@ -255,7 +255,7 @@ ExprResult<TypeExpr> Parser::parseTypeExpression() noexcept {
     return res;
 }
 
-ExprResult<VariableDeclExpr> Parser::parseVarDeclaration() noexcept {
+ExprResult<VariableDeclExpr> Parser::parseVarDeclaration(bool allowThis) noexcept {
     // 'let' or 'auto' has already been consumed since this 
     // function is used for implicit declarations like 
     // function parameters aswell
@@ -265,13 +265,26 @@ ExprResult<VariableDeclExpr> Parser::parseVarDeclaration() noexcept {
     auto startPos = token.start;
 
     if (token.type != TokenType::Identifier) {
-        THROW_SYNTAX_ERR(
-            token,
-            "Expected " + TOKEN_STR(Identifier) + " for "
-            "variable declaration",
-            "Give your variable a good & descriptive name",
-            ""
-        );
+        if (token.type == TokenType::This) {
+            if (!allowThis) {
+                THROW_SYNTAX_ERR(
+                    token,
+                    "Expected " + TOKEN_STR(Identifier) + " for "
+                    "variable declaration, found " + TOKEN_STR(This),
+                    TOKEN_STR(This) + " is only allowed as the first "
+                    "parameter in a function",
+                    ""
+                );
+            }
+        } else {
+            THROW_SYNTAX_ERR(
+                token,
+                "Expected " + TOKEN_STR(Identifier) + " for "
+                "variable declaration",
+                "Give your variable a good & descriptive name",
+                ""
+            );
+        }
     }
 
     auto name = token.data;
@@ -371,6 +384,20 @@ ExprResult<ValueExpr> Parser::parseValue() noexcept {
         PROPAGATE_ASSIGN(name, parseName());
         return m_ast->make<VariableExpr>(
             m_source, name->start, name->end, name
+        );
+    }
+
+    // special identifiers
+    if (
+        token.type == TokenType::This ||
+        token.type == TokenType::Super
+    ) {
+        // consume identifier
+        m_index++;
+        return m_ast->make<VariableExpr>(
+            m_source, token.start, token.end, m_ast->make<NameExpr>(
+                m_source, token.start, token.end, tokenTypeToString(token.type)
+            )
         );
     }
 
@@ -512,6 +539,18 @@ ExprResult<ValueExpr> Parser::parseUnary() noexcept {
 
     auto prefixEnd = token.end;
 
+    // members
+    while (isMemberOperator(token.type)) {
+        m_index++;
+        NameExpr* name;
+        PROPAGATE_ASSIGN(name, parseName());
+        res = m_ast->make<MemberExpr>(
+            m_source, start, PREV_TOKEN().end,
+            MemberExpr::tokenTypeToKind(token.type), res, name
+        );
+        UPDATE_TOKEN();
+    }
+
     // function calls
     if (token.type == TokenType::LeftParen) {
         PROPAGATE_ASSIGN(res, parseCall(res));
@@ -571,7 +610,7 @@ ExprResult<ValueExpr> Parser::parseBinary(ValueExpr* lhs, int precedence) noexce
         // if the current token is not an operator, 
         // this will always be truthy since -1 < 0
         if (currentPrec < precedence) {
-            return Ok(lhs);
+            return lhs;
         }
 
         // save operator
@@ -677,6 +716,8 @@ ExprResult<FunctionDeclStmt> Parser::parseFunDeclaration() noexcept {
 
     std::vector<VariableDeclExpr*> params;
 
+    bool allowThis = true;
+    
     // is it just '()'
     if (token.type == TokenType::RightParen) {
         // ooooo! goto! evil code! bad code!
@@ -684,9 +725,11 @@ ExprResult<FunctionDeclStmt> Parser::parseFunDeclaration() noexcept {
     }
 
     while (m_index < m_tokens.size()) {
-        auto var = parseVarDeclaration();
+        auto var = parseVarDeclaration(allowThis);
         PROPAGATE_ERROR(var);
         params.push_back(var.unwrap());
+
+        allowThis = false;
 
         UPDATE_TOKEN();
         if (token.type == TokenType::Comma) {
@@ -790,6 +833,98 @@ no_params:
             types::TypeQualifiers(isConst)
         ),
         funName.unwrap(), body, impl
+    );
+}
+
+ExprResult<Stmt> Parser::parseClass() noexcept {
+    INIT_TOKEN();
+
+    auto start = token.start;
+    auto isStruct = token.type == TokenType::Struct;
+
+    // consume class keyword
+    m_index++;
+
+    NameExpr* name;
+    PROPAGATE_ASSIGN(name, parseName());
+
+    UPDATE_TOKEN();
+
+    // forward declaration
+    if (token.type == TokenType::SemiColon) {
+        return m_ast->make<ClassFwdDeclStmt>(
+            m_source, start, PREV_TOKEN().end,
+            name, isStruct
+        );
+    }
+    
+    // body
+    if (token.type != TokenType::LeftBrace) {
+        THROW_SYNTAX_ERR(
+            token,
+            "Expected " + TOKEN_STR(LeftBrace) + " for "
+            "class body",
+            "",
+            ""
+        );
+    }
+
+    // consume left brace
+    m_index++;
+
+    std::vector<VariableDeclExpr*> members;
+    std::vector<FunctionDeclStmt*> functions;
+    while (m_index < m_tokens.size()) {
+        // is this a member function?
+        if (
+            token.type == TokenType::Function ||
+            token.type == TokenType::Implement
+        ) {
+            FunctionDeclStmt* fun;
+            PROPAGATE_ASSIGN(fun, parseFunDeclaration());
+            functions.push_back(fun);
+            UPDATE_TOKEN();
+        }
+        // otherwise must be variable
+        else {
+            VariableDeclExpr* var;
+            PROPAGATE_ASSIGN(var, parseVarDeclaration());
+            members.push_back(var);
+
+            UPDATE_TOKEN();
+            if (token.type != TokenType::SemiColon) {
+                THROW_SYNTAX_ERR(
+                    token,
+                    "Expected " + TOKEN_STR(SemiColon) + " to conclude class "
+                    "member variable declaration",
+                    "",
+                    ""
+                );
+            }
+            NEXT_TOKEN();
+        }
+
+        if (token.type == TokenType::RightBrace) {
+            break;
+        }
+    }
+
+    UPDATE_TOKEN();
+    if (token.type != TokenType::RightBrace) {
+        THROW_SYNTAX_ERR(
+            token,
+            "Expected " + TOKEN_STR(RightBrace) + " to conclude "
+            "class declaration",
+            "",
+            ""
+        );
+    }
+    // consume right brace
+    m_index++;
+
+    return m_ast->make<ClassDeclStmt>(
+        m_source, start, PREV_TOKEN().end,
+        name, members, functions, isStruct
     );
 }
 
@@ -1083,6 +1218,11 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
                 m_source, body->start, body->end, body
             );
             // no need to conclude blocks with semicolons
+        } break;
+
+        case TokenType::Struct:
+        case TokenType::Class: {
+            PROPAGATE_VALUE(parseClass());
         } break;
 
         case TokenType::If: {

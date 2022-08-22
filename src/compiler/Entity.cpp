@@ -1,6 +1,7 @@
 #include "Entity.hpp"
 #include <parser/AST.hpp>
 #include <ranges>
+#include <compiler/Compiler.hpp>
 
 using namespace gdml;
 
@@ -18,8 +19,7 @@ bool Entity::hasParentNamespace() const {
     return m_namespace != nullptr;
 }
 
-std::string Entity::getFullName() const {
-    auto name = m_name.size() ? m_name : "`anonymous`";
+std::string Entity::getFullName(std::string const& name) const {
     if (m_namespace) {
         if (m_namespace->isGlobal()) {
             return "::" + name;
@@ -29,6 +29,14 @@ std::string Entity::getFullName() const {
         }
     }
     return name;
+}
+
+std::string Entity::getFullName() const {
+    return getFullName(m_name.size() ? m_name : "`anonymous`");
+}
+
+std::string Entity::getName() const {
+    return m_name;
 }
 
 TypeEntity::TypeEntity(
@@ -59,6 +67,13 @@ FunctionEntity::FunctionEntity(
     ast::FunctionDeclStmt* decl
 ) : ValueEntity(container, name, EntityType::Function),
     type(type), declaration(decl) {}
+
+std::string FunctionEntity::getFullName() const {
+    if (type.type->getFunType() == FunctionType::Constructor) {
+        return Entity::getFullName(m_namespace->getName());
+    }
+    return Entity::getFullName();
+}
 
 std::shared_ptr<Value> FunctionEntity::eval(Instance& instance) {
     if (!declaration->body.has_value()) {
@@ -195,13 +210,25 @@ std::shared_ptr<Entity> Namespace::getEntity(
     }
     // match overload
     for (auto& ent : m_entities.at(name)) {
-        if (ent->getType() != EntityType::Function) {
-            continue;
-        }
-        if (auto fun = std::static_pointer_cast<FunctionEntity>(ent)) {
-            if (fun->type.type->matchParameters(parameters.value())) {
-                return fun;
-            }
+        switch (ent->getType()) {
+            case EntityType::Function: {
+                auto fun = std::static_pointer_cast<FunctionEntity>(ent);
+                if (fun->type.type->matchParameters(parameters.value())) {
+                    return fun;
+                }
+            } break;
+
+            case EntityType::Class: {
+                auto cls = std::static_pointer_cast<Class>(ent);
+                std::vector<QualifiedType> parametersWithThis = parameters.value();
+                parametersWithThis.insert(
+                    parametersWithThis.begin(),
+                    QualifiedType(cls->getClassTypePointer())
+                );
+                return cls->getMemberFunction("constructor", parametersWithThis);
+            } break;
+
+            default: break;
         }
     }
     // none found then
@@ -249,3 +276,59 @@ std::shared_ptr<Entity> Namespace::getEntity(
     // none found
     return nullptr;
 }
+
+
+Class::Class(
+    std::shared_ptr<Namespace> container,
+    std::string const& name,
+    std::shared_ptr<ClassType> classType
+) : Namespace(container, name), m_classType(classType) {
+    m_type = EntityType::Class;
+}
+
+void Class::applyTypeDefinition() {
+    m_classType->m_entity = std::static_pointer_cast<Class>(shared_from_this());
+}
+
+std::shared_ptr<ClassType> Class::getClassType() const {
+    return m_classType;
+}
+
+std::shared_ptr<PointerType> Class::getClassTypePointer() const {
+    return m_classType->m_compiler.makeType<PointerType>(
+        QualifiedType(m_classType),
+        types::PointerType::Pointer
+    );
+}
+
+bool Class::hasMember(std::string const& name) const {
+    return hasEntity(name, {}, {}, EntityType::Variable, None);
+}
+
+bool Class::hasMemberFunction(
+    std::string const& name,
+    Option<std::vector<QualifiedType>> const& parameters
+) const {
+    return hasEntity(name, {}, {}, EntityType::Function, parameters);
+}
+
+std::shared_ptr<Variable> Class::getMember(std::string const& name) const {
+    return std::static_pointer_cast<Variable>(
+        getEntity(name, {}, {}, EntityType::Variable, None)
+    );
+}
+
+std::shared_ptr<FunctionEntity> Class::getMemberFunction(
+    std::string const& name,
+    Option<std::vector<QualifiedType>> const& parameters
+) const {
+    if (parameters) {
+        for (auto& param : parameters.value()) {
+        }
+    }
+    return std::static_pointer_cast<FunctionEntity>(
+        getEntity(name, {}, {}, EntityType::Function, parameters)
+    );
+}
+
+

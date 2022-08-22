@@ -11,6 +11,66 @@ namespace gdml {
         Constexpr,
     };
 
+    template<class T>
+    struct TQualifiedType {
+        std::shared_ptr<T> type = nullptr;
+        types::TypeQualifiers qualifiers = types::NON_CONST_QUALIFIED;
+
+        TQualifiedType() = default;
+        TQualifiedType(
+            std::shared_ptr<T> type,
+            types::TypeQualifiers qualifiers = types::NON_CONST_QUALIFIED
+        ) : type(type), qualifiers(qualifiers) {}
+
+        template<class T2>
+        TQualifiedType<T2> into() const {
+            return TQualifiedType<T2>(
+                std::static_pointer_cast<T2>(type),
+                qualifiers
+            );
+        }
+
+        bool convertibleTo(TQualifiedType<T> const& other, bool strict = false) const {
+            if (!type) return false;
+            return type->convertibleTo(other.type, strict);
+        }
+
+        bool codegenConvert(
+            TQualifiedType<T> const& other,
+            ast::ValueExpr* target,
+            std::ostream& stream
+        ) const {
+            return type->codegenConvert(other.type, target, stream);
+        }
+
+        bool castableTo(TQualifiedType<T> const& other) const {
+            if (qualifiers.isConst && !other.qualifiers.isConst) {
+                return false;
+            }
+            return type->castableTo(other.type);
+        }
+
+        std::string codegenName() const {
+            std::string res {};
+            res += type ? type->codegenName() : "auto";
+            if (qualifiers.isConst) {
+                res += " const";
+            }
+            return res;
+        }
+
+        std::string toString() const {
+            std::string res {};
+            res += type ? type->toString() : "auto";
+            if (qualifiers.isConst) {
+                res += " const";
+            }
+            return res;
+        }
+    
+        static TQualifiedType<T> NO_TYPE;
+    };
+
     class Type {
     protected:
         Compiler& m_compiler;
@@ -70,68 +130,18 @@ namespace gdml {
             std::ostream& stream
         ) const;
 
+        virtual bool implementsMemberOperator() const;
+        virtual TQualifiedType<Type> typeOfMember(
+            std::string const& name,
+            Option<std::vector<TQualifiedType<Type>>> const& args
+        ) const;
+        
+        virtual bool hasDefinition() const;
+
         virtual std::string codegenName() const = 0;
         virtual std::string toString() const = 0;
 
         virtual ~Type() = default;
-    };
-
-    template<class T>
-    struct TQualifiedType {
-        std::shared_ptr<T> type = nullptr;
-        types::TypeQualifiers qualifiers = types::NON_CONST_QUALIFIED;
-
-        TQualifiedType() = default;
-        TQualifiedType(
-            std::shared_ptr<T> type,
-            types::TypeQualifiers qualifiers = types::NON_CONST_QUALIFIED
-        ) : type(type), qualifiers(qualifiers) {}
-
-        template<class T2>
-        TQualifiedType<T2> into() const {
-            return TQualifiedType<T2>(
-                std::static_pointer_cast<T2>(type),
-                qualifiers
-            );
-        }
-
-        bool convertibleTo(TQualifiedType<T> const& other, bool strict = false) const {
-            if (!type) return false;
-            return type->convertibleTo(other.type, strict);
-        }
-
-        bool codegenConvert(
-            TQualifiedType<T> const& other,
-            ast::ValueExpr* target,
-            std::ostream& stream
-        ) const {
-            return type->codegenConvert(other.type, target, stream);
-        }
-
-        bool castableTo(TQualifiedType<T> const& other) const {
-            if (qualifiers.isConst && !other.qualifiers.isConst) {
-                return false;
-            }
-            return type->castableTo(other.type);
-        }
-
-        std::string codegenName() const {
-            std::string res {};
-            res += type ? type->codegenName() : "auto";
-            if (qualifiers.isConst) {
-                res += " const";
-            }
-            return res;
-        }
-
-        std::string toString() const {
-            std::string res {};
-            res += type ? type->toString() : "auto";
-            if (qualifiers.isConst) {
-                res += " const";
-            }
-            return res;
-        }
     };
     using QualifiedType = TQualifiedType<Type>;
 
@@ -185,34 +195,50 @@ namespace gdml {
             std::ostream& stream
         ) const override;
 
+        bool implementsMemberOperator() const override;
+
         std::string codegenName() const override;
         std::string toString() const override;
     };
 
     class FunctionType : public Type {
+    public:
+        enum FunType {
+            Normal,
+            Member,
+            Constructor,
+        };
+
     protected:
         QualifiedType m_returnType;
         std::vector<QualifiedType> m_parameters;
+        FunType m_funType;
 
     public:
         FunctionType(
             Compiler& compiler,
             QualifiedType const& returnType,
-            std::vector<QualifiedType> const& parameters
+            std::vector<QualifiedType> const& parameters,
+            FunType funType = FunType::Normal
         );
+
+        FunType getFunType() const;
 
         QualifiedType const& getReturnType();
         void setReturnType(QualifiedType const& type);
-        
-        std::vector<QualifiedType> const& getParameters();
 
+        std::vector<QualifiedType>& getParameters();
+        void insertParameter(size_t index, QualifiedType const& parameter);
         bool matchParameters(std::vector<QualifiedType> const& parameters) const;
 
         bool convertibleTo(std::shared_ptr<Type> other, bool strict) const override;
-        
+
+        bool implementsMemberOperator() const override;
+
         std::string codegenName() const override;
         std::string toString() const override;
     };
+    using QualifiedFunType = TQualifiedType<FunctionType>;
 
     class ArrayType : public Type {
     protected:
@@ -233,23 +259,30 @@ namespace gdml {
     class ClassType : public Type {
     protected:
         std::string m_name;
-        std::unordered_map<std::string, std::shared_ptr<Type>> m_members;
-
-        ClassType(Compiler& compiler, std::string const& name);
+        std::shared_ptr<Class> m_entity = nullptr;
 
         friend class Compiler;
+        friend struct Class;
 
     public:
-        inline void addMember(std::string const& name, std::shared_ptr<Type> type) {
-            m_members.insert({ name, type });
-        }
+        ClassType(Compiler& compiler, std::string const& name);
 
         std::string const& getName() const;
-        std::unordered_map<std::string, std::shared_ptr<Type>> const& getMembers() const;
+
+        std::shared_ptr<Class> getEntity();
+
+        bool convertibleTo(std::shared_ptr<Type> other, bool strict) const override;
+
+        QualifiedType typeOfMember(
+            std::string const& name,
+            Option<std::vector<QualifiedType>> const& args
+        ) const override;
+        bool hasDefinition() const override;
 
         std::string codegenName() const override;
         std::string toString() const override;
     };
+    using QualifiedClassType = TQualifiedType<ClassType>;
 
     class PointerType : public Type {
     protected:
@@ -262,12 +295,20 @@ namespace gdml {
         PointerType(Compiler& compiler, QualifiedType const& inner, types::PointerType pointerType);
 
         QualifiedType const& getInnerType();
+        types::PointerType getPointerType() const;
 
         bool convertibleTo(std::shared_ptr<Type> other, bool strict) const override;
+
+        bool implementsMemberOperator() const override;
 
         std::string codegenName() const override;
         std::string toString() const override;
     };
 
-    using QualifiedFunType = TQualifiedType<FunctionType>;
+    // define TQualifiedType<T>::NO_TYPE
+    template<class T>
+    TQualifiedType<T> TQualifiedType<T>::NO_TYPE = {};
+
+    // convenience function
+    bool typeIsVoid(std::shared_ptr<Type> type);
 }

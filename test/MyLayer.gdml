@@ -1,13 +1,23 @@
 
 import "MyLayer.hpp"
 
-fun addTwo(x: i32, y: i32) => x + y;
+class MyAwesome {
+    name: string;
 
-fun test() {
+    impl constructor(this) {
+        this->name = "hi";
+    }
+    impl destructor(this) {}
 
-    let str = "bruh dawg";
-
-    if str {
+    fun memberFun(this, value: string const&) -> void {
+        this->name = value;
     }
 
+    fun staticFun() {
+    }
+}
+
+fun test() {
+    let x = MyAwesome();
+    x.memberFun("hi mom");
 }

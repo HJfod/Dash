@@ -39,6 +39,7 @@ namespace gdml {
     struct ValueEntity;
     struct Variable;
     struct FunctionEntity;
+    struct Class;
     struct TypeEntity;
     struct Namespace;
     struct Scope;
@@ -56,6 +57,7 @@ namespace gdml {
         Variable,
         Function,
         Namespace,
+        Class,
     };
 
     namespace ast {
@@ -63,6 +65,7 @@ namespace gdml {
         struct ValueExpr;
         struct VariableDeclExpr;
         struct FunctionDeclStmt;
+        struct ClassDeclStmt;
         struct UnaryExpr;
         struct BinaryExpr;
         class AST;

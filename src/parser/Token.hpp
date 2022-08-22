@@ -62,6 +62,7 @@ namespace gdml {
         False,      // false
         None,       // none
         Null,       // null
+        Default,    // default
         As,         // as
         Is,         // is
         From,       // from
@@ -127,7 +128,7 @@ namespace gdml {
 
         // separators
         Dot,        // .
-        OptionalDot,// ?.
+        OptionalArrow,// ?->
         Comma,      // ,
         At,         // @
         Space,      // \s
@@ -172,6 +173,7 @@ namespace gdml {
     // token categorization
     bool isTernaryOperator(TokenType type);
     bool isBinaryOperator(TokenType type);
+    bool isMemberOperator(TokenType type);
     bool isUnaryPrefixOperator(TokenType type);
     bool isUnarySuffixOperator(TokenType type);
     bool isLiteralPrefixOperator(TokenType type);

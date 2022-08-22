@@ -55,6 +55,8 @@ static const std::unordered_map<std::string, TokenType> TOKEN_STRINGS = {
     { "true", TokenType::True },
     { "false", TokenType::False },
     { "none", TokenType::None },
+    { "null", TokenType::Null },
+    { "default", TokenType::Default },
     { "as", TokenType::As },
     { "is", TokenType::Is },
     { "from", TokenType::From },
@@ -109,7 +111,7 @@ static const std::unordered_map<std::string, TokenType> TOKEN_STRINGS = {
     { "...", TokenType::DotDotDot },
 
     { ".", TokenType::Dot },
-    { "?.", TokenType::OptionalDot },
+    { "?->", TokenType::OptionalArrow },
     { ",", TokenType::Comma },
     { "@", TokenType::At },
     { "<SPACE>", TokenType::Space },
@@ -144,6 +146,8 @@ static const std::unordered_map<TokenType, int> OPERATOR_PRESEDENCE {
     { TokenType::LeftParen, 140 },
     { TokenType::LeftBracket, 140 },
     { TokenType::Dot, 140 },
+    { TokenType::Arrow, 140 },
+    { TokenType::OptionalArrow, 140 },
 
     { TokenType::BitNot, 130 },
     { TokenType::Not, 130 },
@@ -254,10 +258,14 @@ bool gdml::isBinaryOperator(TokenType type) {
         IS_BETWEEN(And, GreaterThanOrEqual) ||
         IS_BETWEEN(BitAnd, BitShiftRight) ||
         type == TokenType::DoubleQuestion ||
-        type == TokenType::QuestionAssign ||
+        type == TokenType::QuestionAssign;
+}
+
+bool gdml::isMemberOperator(TokenType type) {
+    return
         type == TokenType::Dot ||
-        type == TokenType::OptionalDot ||
-        type == TokenType::Scope;
+        type == TokenType::Arrow ||
+        type == TokenType::OptionalArrow;
 }
 
 bool gdml::isUnaryPrefixOperator(TokenType type) {

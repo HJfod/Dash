@@ -78,7 +78,8 @@ Scope& Compiler::getScope(size_t offset) {
 bool Compiler::hasEntity(
     std::string const& name,
     Option<EntityType> type,
-    Option<std::vector<QualifiedType>> const& parameters
+    Option<std::vector<QualifiedType>> const& parameters,
+    bool checkAllScopes
 ) const {
     // if the name is a full path then 
     // search only global namespace
@@ -90,6 +91,7 @@ bool Compiler::hasEntity(
         if (scope.hasEntity(name, type, parameters)) {
             return true;
         }
+        if (!checkAllScopes) break;
     }
     return false;
 }
