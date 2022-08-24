@@ -43,6 +43,10 @@ namespace gdml {
     struct TypeEntity;
     struct Namespace;
     struct Scope;
+    struct Parameter;
+
+    constexpr auto CONSTRUCTOR_FUN_NAME = "@constructor";
+    constexpr auto DESTRUCTOR_FUN_NAME = "@destructor";
 
     enum class TokenType;
 
@@ -64,6 +68,7 @@ namespace gdml {
         struct Stmt;
         struct ValueExpr;
         struct VariableDeclExpr;
+        struct AFunctionDeclStmt;
         struct FunctionDeclStmt;
         struct ClassDeclStmt;
         struct UnaryExpr;
@@ -79,6 +84,17 @@ namespace gdml {
         for (auto it = vec.begin(); it != vec.end(); it++) {
             if (*it == from) {
                 *it = to;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    template<class T, class V>
+    bool replaceOneInMap(std::unordered_map<T, V>& map, V const& from, V const& to) {
+        for (auto& [_, v] : map) {
+            if (v == from) {
+                v = to;
                 return true;
             }
         }
@@ -137,7 +153,7 @@ namespace gdml {
             "uint8_t", "uint16_t", "uint32_t", "uint64_t",
             "float", "double",
             "bool",
-            "char", "gd::string",
+            "char", "std::string",
         };
 
         using I8  = int8_t;
@@ -193,15 +209,25 @@ namespace gdml {
         bool dataTypeIsUnsigned(DataType type);
         bool dataTypeIsInteger(DataType type);
         
+        enum class ReferenceType {
+            Value,
+            Reference,
+            Move,
+        };
+
         struct TypeQualifiers {
             bool isConst = false;
             bool isConstexpr = false;
+            ReferenceType refType = ReferenceType::Value;
             
             constexpr TypeQualifiers() = default;
             constexpr TypeQualifiers(
                 bool isConst,
-                bool isConstexpr = false
-            ) : isConst(isConst), isConstexpr(isConstexpr) {}
+                bool isConstexpr = false,
+                ReferenceType refType = ReferenceType::Value
+            ) : isConst(isConst),
+                isConstexpr(isConstexpr),
+                refType(refType) {}
 
             constexpr TypeQualifiers operator|(TypeQualifiers const& other) const {
                 return TypeQualifiers(
@@ -215,12 +241,6 @@ namespace gdml {
         constexpr TypeQualifiers CONST_QUALIFIED = { true, false };
         constexpr TypeQualifiers CONSTEXPR_QUALIFIED = { false, true };
         constexpr TypeQualifiers LITERAL_QUALIFIED = { true, true };
-
-        enum class PointerType {
-            Pointer,
-            Reference,
-            Move,
-        };
     }
 
     template<class T>

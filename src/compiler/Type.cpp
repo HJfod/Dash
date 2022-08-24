@@ -11,6 +11,16 @@
 
 using namespace gdml;
 
+Parameter::Parameter(QualifiedType const& type) : type(type) {}
+Parameter::Parameter(std::string const& name, QualifiedType const& type)
+  : name(name), type(type) {}
+Parameter::Parameter(ast::VariableDeclExpr* decl)
+  : name(decl->name), type(decl->evalType) {}
+
+std::string Parameter::toString() const {
+    return (name ? name.value() + ": " : "") + type.toString();
+}
+
 Type::Type(Compiler& compiler, const types::TypeClass type)
  : m_compiler(compiler), m_class(type) {}
 
@@ -80,7 +90,7 @@ bool Type::implementsMemberOperator() const {
 
 QualifiedType Type::typeOfMember(
     std::string const& name,
-    Option<std::vector<QualifiedType>> const& args
+    Option<std::vector<Parameter>> const& args
 ) const {
     return QualifiedType::NO_TYPE;
 }
@@ -107,13 +117,6 @@ std::string BuiltInType::toString() const {
 }
 
 bool BuiltInType::convertibleTo(std::shared_ptr<Type> other, bool strict) const {
-    // i hate references
-    if (other && other->getTypeClass() == types::TypeClass::Pointer) {
-        auto otherAsP = std::static_pointer_cast<PointerType>(other);
-        if (otherAsP->getPointerType() != types::PointerType::Pointer) {
-            other = otherAsP->getInnerType().type;
-        }
-    }
     if (other && other->getTypeClass() == types::TypeClass::BuiltIn) {
         auto otherAsB = std::static_pointer_cast<BuiltInType>(other);
         return
@@ -208,15 +211,6 @@ ImplStatus BuiltInType::implementsBinaryOperator(
     if (userImpl != ImplStatus::None) {
         return userImpl;
     }
-    // allow assigning references
-    if (other->getTypeClass() == types::TypeClass::Pointer) {
-        auto asPtr = std::static_pointer_cast<PointerType>(other);
-        // no pointers tho
-        if (asPtr->getPointerType() == types::PointerType::Pointer) {
-            return ImplStatus::None;
-        }
-        other = asPtr->getInnerType().type;
-    }
     // only built-in operators remain
     if (other->getTypeClass() != types::TypeClass::BuiltIn) {
         return ImplStatus::None;
@@ -306,7 +300,7 @@ bool BuiltInType::implementsMemberOperator() const {
 FunctionType::FunctionType(
     Compiler& compiler,
     QualifiedType const& returnType,
-    std::vector<QualifiedType> const& parameters,
+    std::vector<Parameter> const& parameters,
     FunType funType
 ) : Type(compiler, types::TypeClass::Function),
     m_returnType(returnType), m_parameters(parameters),
@@ -324,23 +318,39 @@ void FunctionType::setReturnType(QualifiedType const& type) {
     m_returnType = type;
 }
 
-std::vector<QualifiedType>& FunctionType::getParameters() {
+std::vector<Parameter>& FunctionType::getParameters() {
     return m_parameters;
 }
 
-void FunctionType::insertParameter(size_t index, QualifiedType const& parameter) {
+void FunctionType::insertParameter(size_t index, Parameter const& parameter) {
     m_parameters.insert(m_parameters.begin() + index, parameter);
 }
 
 bool FunctionType::matchParameters(
-    std::vector<QualifiedType> const& parameters
+    std::vector<Parameter> const& parameters
 ) const {
     if (parameters.size() != m_parameters.size()) {
         return false;
     }
     size_t i = 0;
-    for (auto& param : m_parameters) {
-        if (!parameters.at(i).convertibleTo(param)) {
+    for (auto& param : parameters) {
+        // default to positional matching
+        auto toMatch = m_parameters.at(i);
+        
+        // if named, match by name
+        if (param.name) {
+            bool found = false;
+            for (auto& arg : m_parameters) {
+                if (arg.name && arg.name.value() == param.name) {
+                    found = true;
+                    toMatch = arg;
+                }
+            }
+            if (!found) {
+                return false;
+            }
+        }
+        if (!toMatch.type.convertibleTo(param.type)) {
             return false;
         }
         i++;
@@ -364,7 +374,7 @@ std::string FunctionType::codegenName() const {
             res += ", ";
         }
         first = false;
-        res += param.codegenName();
+        res += param.type.codegenName();
     }
     res += ")";
     return res;
@@ -430,7 +440,7 @@ std::shared_ptr<Class> ClassType::getEntity() {
 
 QualifiedType ClassType::typeOfMember(
     std::string const& name,
-    Option<std::vector<QualifiedType>> const& args
+    Option<std::vector<Parameter>> const& args
 ) const {
     if (!m_entity) {
         return QualifiedType::NO_TYPE;
@@ -458,18 +468,12 @@ std::string ClassType::toString() const {
 
 PointerType::PointerType(
     Compiler& compiler,
-    QualifiedType const& inner,
-    types::PointerType pointerType
+    QualifiedType const& inner
 ) : Type(compiler, types::TypeClass::Pointer),
-    m_inner(inner),
-    m_pointerType(pointerType) {}
+    m_inner(inner) {}
 
 QualifiedType const& PointerType::getInnerType() {
     return m_inner;
-}
-
-types::PointerType PointerType::getPointerType() const {
-    return m_pointerType;
 }
 
 bool PointerType::convertibleTo(std::shared_ptr<Type> other, bool strict) const {
@@ -486,13 +490,7 @@ bool PointerType::implementsMemberOperator() const {
 }
 
 std::string PointerType::codegenName() const {
-    std::string res = m_inner.codegenName();
-    switch (m_pointerType) {
-        case types::PointerType::Pointer:   return res + "*";
-        case types::PointerType::Reference: return res + "&";
-        case types::PointerType::Move:      return res + "&&";
-        default: return "something_has_gone_terribly_wrong_in_the_gdml_compiler";
-    }
+    return m_inner.codegenName() + "*";
 }
 
 std::string PointerType::toString() const {

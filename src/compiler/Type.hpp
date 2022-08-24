@@ -56,6 +56,12 @@ namespace gdml {
             if (qualifiers.isConst) {
                 res += " const";
             }
+            if (qualifiers.refType == types::ReferenceType::Reference) {
+                res += "&";
+            }
+            if (qualifiers.refType == types::ReferenceType::Move) {
+                res += "&&";
+            }
             return res;
         }
 
@@ -64,6 +70,12 @@ namespace gdml {
             res += type ? type->toString() : "auto";
             if (qualifiers.isConst) {
                 res += " const";
+            }
+            if (qualifiers.refType == types::ReferenceType::Reference) {
+                res += "&";
+            }
+            if (qualifiers.refType == types::ReferenceType::Move) {
+                res += "&&";
             }
             return res;
         }
@@ -133,7 +145,7 @@ namespace gdml {
         virtual bool implementsMemberOperator() const;
         virtual TQualifiedType<Type> typeOfMember(
             std::string const& name,
-            Option<std::vector<TQualifiedType<Type>>> const& args
+            Option<std::vector<Parameter>> const& args
         ) const;
         
         virtual bool hasDefinition() const;
@@ -144,6 +156,18 @@ namespace gdml {
         virtual ~Type() = default;
     };
     using QualifiedType = TQualifiedType<Type>;
+
+    struct Parameter {
+        Option<std::string> name = None;
+        QualifiedType type;
+
+        Parameter() = default;
+        Parameter(QualifiedType const& type);
+        Parameter(std::string const& name, QualifiedType const& type);
+        Parameter(ast::VariableDeclExpr* decl);
+
+        std::string toString() const;
+    };
 
     class BuiltInType : public Type {
     protected:
@@ -206,19 +230,18 @@ namespace gdml {
         enum FunType {
             Normal,
             Member,
-            Constructor,
         };
 
     protected:
         QualifiedType m_returnType;
-        std::vector<QualifiedType> m_parameters;
+        std::vector<Parameter> m_parameters;
         FunType m_funType;
 
     public:
         FunctionType(
             Compiler& compiler,
             QualifiedType const& returnType,
-            std::vector<QualifiedType> const& parameters,
+            std::vector<Parameter> const& parameters,
             FunType funType = FunType::Normal
         );
 
@@ -227,9 +250,9 @@ namespace gdml {
         QualifiedType const& getReturnType();
         void setReturnType(QualifiedType const& type);
 
-        std::vector<QualifiedType>& getParameters();
-        void insertParameter(size_t index, QualifiedType const& parameter);
-        bool matchParameters(std::vector<QualifiedType> const& parameters) const;
+        std::vector<Parameter>& getParameters();
+        void insertParameter(size_t index, Parameter const& parameter);
+        bool matchParameters(std::vector<Parameter> const& parameters) const;
 
         bool convertibleTo(std::shared_ptr<Type> other, bool strict) const override;
 
@@ -275,7 +298,7 @@ namespace gdml {
 
         QualifiedType typeOfMember(
             std::string const& name,
-            Option<std::vector<QualifiedType>> const& args
+            Option<std::vector<Parameter>> const& args
         ) const override;
         bool hasDefinition() const override;
 
@@ -287,15 +310,13 @@ namespace gdml {
     class PointerType : public Type {
     protected:
         QualifiedType m_inner;
-        types::PointerType m_pointerType;
     
         friend class Compiler;
 
     public:
-        PointerType(Compiler& compiler, QualifiedType const& inner, types::PointerType pointerType);
+        PointerType(Compiler& compiler, QualifiedType const& inner);
 
         QualifiedType const& getInnerType();
-        types::PointerType getPointerType() const;
 
         bool convertibleTo(std::shared_ptr<Type> other, bool strict) const override;
 

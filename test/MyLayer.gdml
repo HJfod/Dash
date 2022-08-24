@@ -1,16 +1,27 @@
 
 import "MyLayer.hpp"
 
-class MyAwesome {
+fun print(text: string const&) {
+    ```cpp
+    std::cout << text << "\n";
+    ```
+}
+
+class Something {
     name: string;
+    value: i32;
 
-    impl constructor(this) {
-        this->name = "hi";
+    construct = {
+        this->name = "ball man";
+        this->value = 0;
     }
-    impl destructor(this) {}
+    construct { name: string const&, value: i32 } = default;
 
-    fun memberFun(this, value: string const&) -> void {
-        this->name = value;
+    destruct = {
+    }
+
+    fun getName(this) {
+        return this->name;
     }
 
     fun staticFun() {
@@ -18,6 +29,13 @@ class MyAwesome {
 }
 
 fun test() {
-    let x = MyAwesome();
-    x.memberFun("hi mom");
+    
+    let x = Something {
+        value: 0,
+        name: "hi mom",
+    };
+
+    x.staticFun();
+    print(x.getName());
+
 }

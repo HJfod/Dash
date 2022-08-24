@@ -6,8 +6,8 @@ USE_GEODE_NAMESPACE();
 
 class MyLayer : public CCLayer {
 protected:
-    bool init(gd::string const& title);
+    bool init(std::string const& title);
 
 public:
-    static MyLayer* create(gd::string const& title);
+    static MyLayer* create(std::string const& title);
 };

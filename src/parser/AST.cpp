@@ -37,7 +37,7 @@ using namespace gdml::ast;
 
 #define EXPECT_TYPE(from) \
     if (!from->evalType.type) {\
-        THROW_TYPE_ERR(\
+        THROW_COMPILE_ERR(\
             "Internal compiler error: Expected " #from " to have a type, "\
             "but it was undefined",\
             "It was probably VariableDeclExpr. Make sure to "\
@@ -53,8 +53,28 @@ using namespace gdml::ast;
         );\
     }
 
+#define EXPECT_VARIABLE(var) \
+    if (!var) {\
+        THROW_COMPILE_ERR(\
+            "Internal compiler error: Expected " #var " to not be null, "\
+            "but it was",\
+            "",\
+            "In " __FUNCTION__ ":" STRING(__LINE__)\
+        );\
+    }
+
+#define EXPECT_VARIABLE_CG(var) \
+    if (!var) {\
+        stream << "static_assert(false, \"Internal GDML transpiler error: Expected " #var \
+            " not to be null in " __FUNCTION__ ":" STRING(__LINE__) "\")";\
+        return;\
+    }
+
 #define DEBUG_LOG_TYPE() \
     instance.getShared().logDebug(__FUNCTION__ " -> " + evalType.toString())
+
+#define DEBUG_LOG_TYPE_S() \
+    instance.getShared().logDebug(__FUNCTION__ " -> Stmt (`void`)")
 
 #define DATA_TYPE_CHECK(typeName) \
     case types::DataType::typeName:\
@@ -232,8 +252,7 @@ TypeCheckResult NullLiteralExpr::compile(Instance& instance) noexcept {
         instance.getCompiler().makeType<PointerType>(
             QualifiedType(
                 instance.getCompiler().getBuiltInType(types::DataType::Void)
-            ),
-            types::PointerType::Pointer
+            )
         ),
         types::LITERAL_QUALIFIED
     };
@@ -263,6 +282,7 @@ TypeCheckResult UnaryExpr::compile(Instance& instance) noexcept {
 
     evalType = value->evalType;
 
+    DEBUG_LOG_TYPE();
     return Ok();
 }
 
@@ -409,6 +429,7 @@ TypeCheckResult BinaryExpr::compile(Instance& instance) noexcept {
         }
     }
 
+    DEBUG_LOG_TYPE();
     return Ok();
 }
 
@@ -460,8 +481,7 @@ TypeCheckResult PointerExpr::compile(Instance& instance) noexcept {
 
     evalType = QualifiedType(
         instance.getCompiler().makeType<PointerType>(
-            to->evalType,
-            type
+            to->evalType
         )
     );
 
@@ -481,7 +501,7 @@ TypeCheckResult VariableExpr::compile(Instance& instance) noexcept {
 
 TypeCheckResult VariableExpr::compileWithParams(
     Instance& instance, 
-    Option<std::vector<QualifiedType>> const& args
+    Option<std::vector<Parameter>> const& args
 ) noexcept {
     auto var = instance.getCompiler().getEntity(name->fullName(), None, args);
     if (!var) {
@@ -508,7 +528,6 @@ TypeCheckResult VariableExpr::compileWithParams(
     entity = var;
 
     DEBUG_LOG_TYPE();
-    
     return Ok();
 }
 
@@ -533,6 +552,7 @@ TypeCheckResult ScopeExpr::compile(Instance& instance) noexcept {
     GDML_TYPECHECK_CHILD(item);
     POP_NAMESPACE();
 
+    DEBUG_LOG_TYPE();
     return Ok();
 }
 
@@ -544,8 +564,8 @@ void ScopeExpr::codegen(Instance& com, std::ostream& stream) const noexcept {
 // TypeNameExpr
 
 TypeCheckResult TypeNameExpr::compile(Instance& instance) noexcept {
-    auto entity = instance.getCompiler().getEntity<TypeEntity>(name->fullName());
-    if (!entity) {
+    auto entity = instance.getCompiler().getEntity(name->fullName(), None, None);
+    if (!entity || !entity->isType()) {
         THROW_TYPE_ERR(
             "Unknown type \"" + name->fullName() + "\"",
             "Not all C++ types are supported yet, sorry!",
@@ -553,9 +573,10 @@ TypeCheckResult TypeNameExpr::compile(Instance& instance) noexcept {
         );
     }
 
-    evalType = QualifiedType { entity->type, qualifiers };
+    evalType = QualifiedType { entity->getValueType().type, qualifiers };
     DEBUG_LOG_TYPE();
 
+    DEBUG_LOG_TYPE();
     return Ok();
 }
 
@@ -580,7 +601,7 @@ TypeCheckResult MemberExpr::compile(Instance& instance) noexcept {
 
 TypeCheckResult MemberExpr::compileWithParams(
     Instance& instance, 
-    Option<std::vector<QualifiedType>> const& args
+    Option<std::vector<Parameter>> const& args
 ) noexcept {
     GDML_TYPECHECK_CHILD(object);
     GDML_TYPECHECK_CHILD(member);
@@ -627,13 +648,15 @@ TypeCheckResult MemberExpr::compileWithParams(
 
         objectType = object->evalType;
 
-        Option<std::vector<QualifiedType>> trueArgs = None;
-        // add 'this' argument to args
-        if (args) {
-            trueArgs = args.value();
-            trueArgs.value().insert(trueArgs.value().begin(), object->evalType);
+        evalType = innerType->typeOfMember(member->fullName(), args);
+        
+        if (!evalType.type) {
+            THROW_TYPE_ERR(
+                "Matching member for \"" + member->fullName() + "\" not found",
+                "",
+                ""
+            );
         }
-        evalType = innerType->typeOfMember(member->fullName(), trueArgs);
     }
     // otherwise 
     else {
@@ -667,18 +690,19 @@ TypeCheckResult MemberExpr::compileWithParams(
         
         objectType = QualifiedType(
             instance.getCompiler().makeType<PointerType>(
-                object->evalType,
-                types::PointerType::Pointer
+                object->evalType
             )
         );
 
-        Option<std::vector<QualifiedType>> trueArgs = None;
-        if (args) {
-            trueArgs = args.value();
-            trueArgs.value().insert(trueArgs.value().begin(), objectType);
-        }
+        evalType = object->evalType.type->typeOfMember(member->fullName(), args);
 
-        evalType = object->evalType.type->typeOfMember(member->fullName(), trueArgs);
+        if (!evalType.type) {
+            THROW_TYPE_ERR(
+                "Matching member for \"" + member->fullName() + "\" not found",
+                "",
+                ""
+            );
+        }
     }
 
     // unwrap ?->
@@ -737,6 +761,7 @@ TypeCheckResult MemberExpr::compileWithParams(
         }
     }
 
+    DEBUG_LOG_TYPE();
     return Ok();
 }
 
@@ -746,13 +771,52 @@ std::shared_ptr<Value> MemberExpr::eval(Instance& instance) {
 }
 
 void MemberExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    stream << "(";
     object->codegen(instance, stream);
+    stream << ")";
     switch (kind) {
         case Kind::Object:  stream << ".";  break;
         case Kind::Pointer: stream << "->"; break;
         case Kind::Optional:stream << "->"; break;
     }
     member->codegen(instance, stream);
+}
+
+// PointerToExpr
+
+TypeCheckResult PointerToExpr::compile(Instance& instance) noexcept {
+    GDML_TYPECHECK_CHILD(value);
+
+    EXPECT_TYPE(value);
+
+    // is this dereference?
+    if (deref) {
+        if (value->evalType.type->getTypeClass() != types::TypeClass::Pointer) {
+            THROW_TYPE_ERR(
+                "Dereference operator used on a non-pointer type `" + 
+                value->evalType.toString() + "`",
+                "",
+                ""
+            );
+        }
+        evalType = value->evalType.into<PointerType>().type->getInnerType();
+    }
+    // otherwise take address of type
+    else {
+        evalType = QualifiedType(
+            instance.getCompiler().makeType<PointerType>(value->evalType)
+        );
+    }
+
+    return Ok();
+}
+
+void PointerToExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    std::cout << __FUNCTION__ << "\n";
+    stream << (deref ? "*" : "&");
+    stream << "(";
+    value->codegen(instance, stream);
+    stream << ")";
 }
 
 // NameSpaceStmt
@@ -774,6 +838,7 @@ TypeCheckResult NameSpaceStmt::compile(Instance& instance) noexcept {
         }
     }
     
+    DEBUG_LOG_TYPE_S();
     return Ok();
 }
 
@@ -803,6 +868,7 @@ TypeCheckResult UsingNameSpaceStmt::compile(Instance& instance) noexcept {
 
     instance.getCompiler().getScope().useNamespace(name->fullNameList());
 
+    DEBUG_LOG_TYPE_S();
     return Ok();
 }
 
@@ -822,7 +888,32 @@ TypeCheckResult VariableDeclExpr::inferType(Instance& instance, bool isMember) n
 
         // does value match
         if (value.has_value()) {
-            if (!evalType.convertibleTo(value.value()->evalType)) {
+            bool doMatch = true;
+            // handle constructors specially
+            if (auto asCtor = dynamic_cast<ConstructExpr*>(value.value())) {
+                // if no name defined, check constructor
+                if (!asCtor->name) {
+                    doMatch = false;
+
+                    // type must be a class
+                    if (evalType.type->getTypeClass() != types::TypeClass::Class) {
+                        THROW_TYPE_ERR(
+                            "Type `" + evalType.type->toString() + "` is not a "
+                            "class",
+                            "",
+                            ""
+                        );
+                    }
+
+                    // check initializer list
+                    PROPAGATE_ERROR(asCtor->checkInitializer(
+                        evalType.into<ClassType>().type->getEntity(),
+                        instance
+                    ));
+                }
+            }
+            // match type
+            if (doMatch && !evalType.convertibleTo(value.value()->evalType)) {
                 THROW_TYPE_ERR(
                     "Declared type `" + evalType.toString() + 
                     "` does not match inferred type `" + 
@@ -837,6 +928,19 @@ TypeCheckResult VariableDeclExpr::inferType(Instance& instance, bool isMember) n
     // otherwise type is just inferred from value
     else {
         if (value.has_value()) {
+            // initializer list must have a type
+            if (auto asCtor = dynamic_cast<ConstructExpr*>(value.value())) {
+                if (!asCtor->name) {
+                    THROW_TYPE_ERR(
+                        "No type for initializer list provided or "
+                        "inferrable",
+                        "Annotate which class you are instantiating "
+                        "by adding the class name before the initializer "
+                        "list",
+                        ""
+                    );
+                }
+            }
             evalType = value.value()->evalType;
         }
         // class members must have types
@@ -858,6 +962,7 @@ TypeCheckResult VariableDeclExpr::inferType(Instance& instance, bool isMember) n
             ""
         );
     }
+    DEBUG_LOG_TYPE();
     return Ok();
 }
 
@@ -878,8 +983,8 @@ TypeCheckResult VariableDeclExpr::compile(Instance& instance) noexcept {
     variable = instance.getCompiler().getScope().makeEntity<Variable>(
         name, evalType, nullptr, this
     );
-    DEBUG_LOG_TYPE();
     
+    DEBUG_LOG_TYPE();
     return Ok();
 }
 
@@ -898,8 +1003,7 @@ TypeCheckResult VariableDeclExpr::compile(
                     entity->getClassType(),
                     // todo: figure out const-qualification
                     types::CONST_QUALIFIED
-                ),
-                types::PointerType::Pointer
+                )
             )
         );
     }
@@ -917,8 +1021,8 @@ TypeCheckResult VariableDeclExpr::compile(
     variable = instance.getCompiler().getScope().makeEntity<Variable>(
         name, evalType, nullptr, this
     );
-    DEBUG_LOG_TYPE();
     
+    DEBUG_LOG_TYPE();
     return Ok();
 }
 
@@ -940,8 +1044,8 @@ TypeCheckResult VariableDeclExpr::compileAsMember(
     }
     variable = classEntity->makeMember<Variable>(name, evalType, nullptr, this);
 
-    DEBUG_LOG_TYPE();
     
+    DEBUG_LOG_TYPE();
     return Ok();
 }
 
@@ -994,6 +1098,7 @@ TypeCheckResult CastTypeExpr::compile(Instance& instance) noexcept {
 
     evalType = intoType->evalType;
 
+    DEBUG_LOG_TYPE();
     return Ok();
 }
 
@@ -1016,9 +1121,9 @@ TypeCheckResult FunctionTypeExpr::compile(Instance& instance) noexcept {
         evalRetType = returnType.value()->evalType;
     }
 
-    std::vector<QualifiedType> evalParamTypes {};
+    std::vector<Parameter> evalParamTypes {};
     for (auto& param : parameters) {
-        evalParamTypes.push_back(param->evalType);
+        evalParamTypes.emplace_back(param);
     }
 
     evalType = QualifiedType {
@@ -1030,12 +1135,12 @@ TypeCheckResult FunctionTypeExpr::compile(Instance& instance) noexcept {
 
     DEBUG_LOG_TYPE();
 
+    DEBUG_LOG_TYPE();
     return Ok();
 }
 
 TypeCheckResult FunctionTypeExpr::compileAsMember(
     std::shared_ptr<Class> classEntity,
-    bool isConstructor,
     Instance& instance
 ) noexcept {
     for (auto& param : parameters) {
@@ -1050,15 +1155,12 @@ TypeCheckResult FunctionTypeExpr::compileAsMember(
     }
 
     auto funType = FunctionType::Normal;
-    std::vector<QualifiedType> evalParamTypes {};
+    std::vector<Parameter> evalParamTypes {};
     for (auto& param : parameters) {
-        evalParamTypes.push_back(param->evalType);
+        evalParamTypes.push_back(param);
         if (param->name == "this") {
             funType = FunctionType::Member;
         }
-    }
-    if (isConstructor) {
-        funType = FunctionType::Constructor;
     }
 
     evalType = QualifiedType {
@@ -1070,6 +1172,7 @@ TypeCheckResult FunctionTypeExpr::compileAsMember(
 
     DEBUG_LOG_TYPE();
 
+    DEBUG_LOG_TYPE();
     return Ok();
 }
 
@@ -1086,6 +1189,7 @@ TypeCheckResult FunctionDeclStmt::inferReturnType(Instance& instance) {
 
         auto inferredType = infer.unwrap();
         if (inferredType.has_value()) {
+            // check if inferred matches explicit type
             if (
                 explicitType.type &&
                 !inferredType.value().convertibleTo(explicitType)
@@ -1098,7 +1202,10 @@ TypeCheckResult FunctionDeclStmt::inferReturnType(Instance& instance) {
                     ""
                 );
             }
-            entity->type.type->setReturnType(inferredType.value());
+            // only replace if explicit type is not provided
+            if (!explicitType.type) {
+                entity->type.type->setReturnType(inferredType.value());
+            }
         } else {
             if (!explicitType.type) {
                 entity->type.type->setReturnType(QualifiedType(
@@ -1107,6 +1214,7 @@ TypeCheckResult FunctionDeclStmt::inferReturnType(Instance& instance) {
             }
         }
     }
+    DEBUG_LOG_TYPE_S();
     return Ok();
 }
 
@@ -1138,6 +1246,7 @@ TypeCheckResult FunctionDeclStmt::compile(Instance& instance) noexcept {
 
     PROPAGATE_ERROR(inferReturnType(instance));
     
+    DEBUG_LOG_TYPE_S();
     return Ok();
 }
 
@@ -1151,67 +1260,12 @@ TypeCheckResult FunctionDeclStmt::compileAsMember(
 
     PROPAGATE_ERROR(type->compileAsMember(
         classEntity,
-        name->fullName() == "constructor" ||
-        name->fullName() == "destructor",
         instance
     ));
     GDML_TYPECHECK_CHILD(name);
 
     auto funType = type->evalType.into<FunctionType>();
 
-    // infer return type for constructor and check parameters
-    if (name->fullName() == "constructor") {
-        auto retType = funType.type->getReturnType();
-        // check if return type has been provided
-        if (retType.type) {
-            // verify it's valid for a constructor
-            if (!retType.convertibleTo(QualifiedType(classEntity->getClassType()), false)) {
-                THROW_COMPILE_ERR(
-                    "Invalid return type `" + retType.toString() + "` for class constructor",
-                    "",
-                    ""
-                ); 
-            }
-        }
-        // otherwise infer return type to class
-        else {
-            funType.type->setReturnType(
-                QualifiedType(classEntity->getClassType())
-            );
-        }
-        if (
-            !type->parameters.size() ||
-            type->parameters.front()->name != "this"
-        ) {
-            THROW_COMPILE_ERR(
-                "Class constructor must have 'this' as its "
-                "first parameter",
-                "",
-                ""
-            );
-        }
-    }
-    // check destructor
-    else if (name->fullName() == "destructor") {
-        if (funType.type->getReturnType().type) {
-            THROW_COMPILE_ERR(
-                "Class destructor may not have a return type",
-                "",
-                ""
-            );
-        }
-        if (
-            type->parameters.size() != 1 ||
-            type->parameters.front()->name != "this"
-        ) {
-            THROW_COMPILE_ERR(
-                "Class destructor must have a 'this' parameter",
-                "",
-                ""
-            );
-        }
-    }
-    
     if (classEntity->hasMemberFunction(
         name->fullName(),
         funType.type->getParameters()
@@ -1232,6 +1286,7 @@ TypeCheckResult FunctionDeclStmt::compileAsMember(
 
     PROPAGATE_ERROR(inferReturnType(instance));
     
+    DEBUG_LOG_TYPE_S();
     return Ok();
 }
 
@@ -1264,25 +1319,13 @@ void FunctionDeclStmt::codegen(Instance& instance, std::ostream& stream) const n
         }
     }
 
-    // special functions
-    if (name->fullName() == "constructor") {
-
-        stream << parentClass->getName();
-
-    } else if (name->fullName() == "destructor") {
-
-        stream << "~" << parentClass->getName();
-
-    }
     // otherwise return type as normal
-    else {
-        if (funType->getReturnType().type) {
-            stream << funType->getReturnType().codegenName() << " ";
-        } else {
-            stream << "auto ";
-        }
-        name->codegen(instance, stream);
+    if (funType->getReturnType().type) {
+        stream << funType->getReturnType().codegenName() << " ";
+    } else {
+        stream << "auto ";
     }
+    name->codegen(instance, stream);
 
     stream << "(";
     bool firstArg = true;
@@ -1317,7 +1360,7 @@ TypeCheckResult CallExpr::compile(Instance& instance) noexcept {
     // account for overloads
     if (auto asVar = dynamic_cast<VariableExpr*>(target)) {
 
-        std::vector<QualifiedType> argTypes;
+        std::vector<Parameter> argTypes;
         for (auto& arg : args) {
             argTypes.push_back(arg->evalType);
         }
@@ -1328,7 +1371,7 @@ TypeCheckResult CallExpr::compile(Instance& instance) noexcept {
     // pass in 'this' context
     else if (auto asMem = dynamic_cast<MemberExpr*>(target)) {
 
-        std::vector<QualifiedType> argTypes;
+        std::vector<Parameter> argTypes;
         for (auto& arg : args) {
             argTypes.push_back(arg->evalType);
         }
@@ -1383,31 +1426,24 @@ TypeCheckResult CallExpr::compile(Instance& instance) noexcept {
                 ""
             );
         }
-        if (targetType->getFunType() != FunctionType::Constructor) {
-            if (!memberContext) {
-                THROW_TYPE_ERR(
-                    "Non-static member function called without a 'this' parameter",
-                    "Apply this function call to some class instance, i.e. `inst.fun()`",
-                    ""
-                );
-            }
-            args.insert(args.begin(), memberContext.value()->object);
+        if (!memberContext) {
+            THROW_TYPE_ERR(
+                "Non-static member function called without a 'this' parameter",
+                "Apply this function call to some class instance, i.e. `inst.fun()`",
+                ""
+            );
         }
+        args.insert(args.begin(), memberContext.value()->object);
     }
 
     size_t i = 0;
     for (auto& arg : args) {
-        // skip 'this' for constructors
-        if (targetType->getFunType() == FunctionType::Constructor && !i) {
-            i++;
-            continue;
-        }
         auto argType = arg->evalType;
         // dumb way to coerce 'this' arg type to always be a pointer
         if (targetType->getFunType() == FunctionType::Member && !i) {
             argType = memberContext.value()->objectType;
         }
-        auto targetParam = targetType->getParameters().at(i);
+        auto targetParam = targetType->getParameters().at(i).type;
         if (!argType.convertibleTo(targetParam)) {
             THROW_TYPE_ERR_AT(
                 "Argument of type `" + argType.toString() + "` cannot "
@@ -1429,6 +1465,7 @@ TypeCheckResult CallExpr::compile(Instance& instance) noexcept {
 
     DEBUG_LOG_TYPE();
 
+    DEBUG_LOG_TYPE();
     return Ok();
 }
 
@@ -1452,10 +1489,172 @@ void CallExpr::codegen(Instance& com, std::ostream& stream) const noexcept {
         }
         firstArg = false;
         arg->evalType.codegenConvert(
-            targetType->getParameters().at(i), arg, stream
+            targetType->getParameters().at(i).type, arg, stream
         );
         i++;
     }
+    stream << ")";
+}
+
+// ConstructorDeclStmt
+
+TypeCheckResult ConstructorDeclStmt::compile(Instance&) noexcept {
+    THROW_COMPILE_ERR(
+        "Internal compiler error: " __FUNCTION__ " called, but "
+        "the specific overload should've been used instead.",
+        "",
+        ""
+    );
+}
+
+TypeCheckResult ConstructorDeclStmt::compile(
+    std::shared_ptr<Class> classEntity, 
+    Instance& instance
+) noexcept {
+    PUSH_SCOPE();
+
+    parentClass = classEntity;
+
+    GDML_TYPECHECK_CHILDREN(parameters);
+    std::vector<Parameter> evalParamTypes {};
+    for (auto& param : parameters) {
+        evalParamTypes.emplace_back(param);
+    }
+
+    auto funName = isDestructor ? DESTRUCTOR_FUN_NAME : CONSTRUCTOR_FUN_NAME;
+    if (classEntity->hasMemberFunction(funName, evalParamTypes)) {
+        THROW_TYPE_ERR(
+            "Class already has a constructor with these parameters",
+            "",
+            ""
+        );
+    }
+
+    auto funType = instance.getCompiler().makeType<FunctionType>(
+        QualifiedType(classEntity->getClassTypePointer()), evalParamTypes
+    );
+    entity = classEntity->makeMember<FunctionEntity>(funName, funType, this);
+
+    instance.getCompiler().getScope().makeEntity<Variable>(
+        "this", QualifiedType(classEntity->getClassTypePointer()),
+        nullptr, nullptr
+    );
+
+    GDML_TYPECHECK_CHILD_O(body);
+    POP_SCOPE();
+
+    DEBUG_LOG_TYPE_S();
+    return Ok();
+}
+
+void ConstructorDeclStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    stream << "public: ";
+    if (isDestructor) {
+        stream << "~";
+    }
+    stream << parentClass->getName() << "(";
+    bool firstArg = true;
+    for (auto& param : parameters) {
+        if (!firstArg) {
+            stream << ", ";
+        }
+        firstArg = false;
+        param->codegen(instance, stream);
+    }
+    stream << ")";
+    if (body) {
+        stream << " {";
+        PUSH_INDENT();
+        body.value()->codegen(instance, stream);
+        POP_INDENT();
+        stream << "}";
+        instance.getCompiler().getFormatter().skipSemiColon();
+    }
+}
+
+// ConstructExpr
+
+TypeCheckResult ConstructExpr::checkInitializer(
+    std::shared_ptr<Class> entity,
+    Instance& instance
+) noexcept {
+    classEntity = entity;
+
+    std::vector<Parameter> params;
+    for (auto& [pName, pValue] : namedValues) {
+        params.emplace_back(pName, pValue->evalType);
+    }
+    funEntity = entity->getMemberFunction(CONSTRUCTOR_FUN_NAME, params);
+    if (!funEntity) {
+        THROW_TYPE_ERR(
+            "No matching constructor for `" + entity->getFullName() + "` "
+            "found",
+            "",
+            ""
+        );
+    }
+    return Ok();
+}
+
+TypeCheckResult ConstructExpr::compile(Instance& instance) noexcept {
+    GDML_TYPECHECK_CHILD_O(name);
+    GDML_TYPECHECK_CHILDREN(values);
+    GDML_TYPECHECK_CHILDREN_M(namedValues);
+
+    if (name) {
+        auto cls = instance.getCompiler().getEntity<Class>(name.value()->fullName());
+        if (!cls) {
+            THROW_TYPE_ERR(
+                "Unknown class \"" + name.value()->fullName() + "\"",
+                "",
+                ""
+            );
+        }
+        // check initializer list
+        PROPAGATE_ERROR(checkInitializer(cls, instance));
+        evalType = isNew ?
+            QualifiedType(cls->getClassTypePointer()) :
+            QualifiedType(cls->getClassType());
+    }
+
+    DEBUG_LOG_TYPE();
+    return Ok();
+}
+
+void ConstructExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    std::vector<ValueExpr*> paramsOrdered = values;
+
+    EXPECT_VARIABLE_CG(classEntity);
+    EXPECT_VARIABLE_CG(funEntity);
+
+    // order parameters for C++
+    for (auto& param : funEntity->type.type->getParameters()) {
+        // this should not happen
+        if (!param.name) {
+            stream << "something_has_gone_very_wrong_inside_the_gdml_compiler";
+            continue;
+        }
+        for (auto& [argName, arg] : namedValues) {
+            if (argName == param.name.value()) {
+                paramsOrdered.push_back(arg);
+            }
+        }
+    }
+
+    stream << classEntity->getFullName() << "(";
+    PUSH_INDENT();
+
+    bool firstArg = true;
+    for (auto& param : paramsOrdered) {
+        if (!firstArg) {
+            stream << ",";
+            NEW_LINE();
+        }
+        firstArg = false;
+        param->codegen(instance, stream);
+    }
+
+    POP_INDENT();
     stream << ")";
 }
 
@@ -1470,6 +1669,7 @@ TypeCheckResult BlockStmt::compile(Instance& instance) noexcept {
     GDML_TYPECHECK_CHILD(body);
     POP_SCOPE();
 
+    DEBUG_LOG_TYPE_S();
     return Ok();
 }
 
@@ -1551,6 +1751,7 @@ TypeCheckResult IfStmt::compile(Instance& instance) noexcept {
         );
     }
 
+    DEBUG_LOG_TYPE_S();
     return Ok();
 }
 
@@ -1655,6 +1856,7 @@ bool StmtList::swap(Stmt* stmt, Stmt* to) {
 
 TypeCheckResult ClassFwdDeclStmt::compile(Instance& instance) noexcept {
     GDML_TYPECHECK_CHILD(name);
+    DEBUG_LOG_TYPE_S();
     return Ok();
 }
 
@@ -1693,6 +1895,11 @@ TypeCheckResult ClassDeclStmt::compile(Instance& instance) noexcept {
         PROPAGATE_ERROR(function->compileAsMember(entity, instance));
     }
 
+    for (auto& constructor : constructors) {
+        PROPAGATE_ERROR(constructor->compile(entity, instance));
+    }
+
+    DEBUG_LOG_TYPE_S();
     return Ok();
 }
 
@@ -1709,6 +1916,11 @@ void ClassDeclStmt::codegen(Instance& instance, std::ostream& stream) const noex
         member->codegen(instance, stream);
         instance.getCompiler().getFormatter().semiColon(stream);
         NEW_LINE();
+    }
+    for (auto const& constructor : constructors) {
+        NEW_LINE();
+        constructor->codegen(instance, stream);
+        instance.getCompiler().getFormatter().semiColon(stream);
     }
     for (auto const& function : functions) {
         NEW_LINE();

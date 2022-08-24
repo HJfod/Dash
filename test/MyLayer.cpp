@@ -2,7 +2,7 @@
 
 // MyLayer::init defined in MyLayer.gdml
 
-MyLayer* MyLayer::create(gd::string const& title) {
+MyLayer* MyLayer::create(std::string const& title) {
     auto ret = new MyLayer();
     if (ret && ret->init(title)) {
         ret->autorelease();

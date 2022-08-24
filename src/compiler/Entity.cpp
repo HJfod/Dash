@@ -19,7 +19,8 @@ bool Entity::hasParentNamespace() const {
     return m_namespace != nullptr;
 }
 
-std::string Entity::getFullName(std::string const& name) const {
+std::string Entity::getFullName() const {
+    auto name = m_name.size() ? m_name : "`anonymous`";
     if (m_namespace) {
         if (m_namespace->isGlobal()) {
             return "::" + name;
@@ -29,10 +30,6 @@ std::string Entity::getFullName(std::string const& name) const {
         }
     }
     return name;
-}
-
-std::string Entity::getFullName() const {
-    return getFullName(m_name.size() ? m_name : "`anonymous`");
 }
 
 std::string Entity::getName() const {
@@ -64,16 +61,9 @@ FunctionEntity::FunctionEntity(
     std::shared_ptr<Namespace> container,
     std::string const& name,
     QualifiedFunType const& type,
-    ast::FunctionDeclStmt* decl
+    ast::AFunctionDeclStmt* decl
 ) : ValueEntity(container, name, EntityType::Function),
     type(type), declaration(decl) {}
-
-std::string FunctionEntity::getFullName() const {
-    if (type.type->getFunType() == FunctionType::Constructor) {
-        return Entity::getFullName(m_namespace->getName());
-    }
-    return Entity::getFullName();
-}
 
 std::shared_ptr<Value> FunctionEntity::eval(Instance& instance) {
     if (!declaration->body.has_value()) {
@@ -99,23 +89,15 @@ void Namespace::pushEntity(
 ) {
     // does the provided name contain scope information?
     if (name.find("::") != std::string::npos) {
-        auto ns = name.substr(0, name.find("::"));
+        auto nsName = name.substr(0, name.find("::"));
         auto descopedName = name.substr(name.find("::") + 2);
 
-        // does provided namespace exist?
-        if (m_entities.count(ns)) {
-            for (auto& ent : m_entities.at(ns)) {
-                // todo: classes
-                if (ent->getType() != EntityType::Namespace) {
-                    continue;
-                }
-                return std::static_pointer_cast<Namespace>(ent)->pushEntity(
-                    descopedName, entity
-                );
-            }
+        // does provided namespace already exist?
+        if (auto ns = getNamespaceMut(nsName)) {
+            return ns->pushEntity(descopedName, entity);
         }
         // make it then
-        return makeEntity<Namespace>(ns)->pushEntity(descopedName, entity);
+        return makeEntity<Namespace>(nsName)->pushEntity(descopedName, entity);
     }
 
     if (m_entities.count(name)) {
@@ -130,11 +112,28 @@ bool Namespace::hasEntity(
     NamespaceParts const& currentNamespace,
     std::vector<NamespaceParts> const& testNamespaces,
     Option<EntityType> const& type,
-    Option<std::vector<QualifiedType>> const& parameters
+    Option<std::vector<Parameter>> const& parameters
 ) const {
     return getEntity(
         name, currentNamespace, testNamespaces, type, parameters
     ) != nullptr;
+}
+
+std::shared_ptr<Namespace> Namespace::getNamespaceMut(std::string const& name) {
+    // does provided namespace exist?
+    if (!m_entities.count(name)) {
+        return nullptr;
+    }
+    // find entity that is a namespace
+    for (auto& ent : m_entities.at(name)) {
+        if (
+            ent->getType() == EntityType::Namespace ||
+            ent->getType() == EntityType::Class
+        ) {
+            return std::static_pointer_cast<Namespace>(ent);
+        }
+    }
+    return nullptr;
 }
 
 std::shared_ptr<const Namespace> Namespace::getNamespace(
@@ -146,8 +145,10 @@ std::shared_ptr<const Namespace> Namespace::getNamespace(
     }
     // find entity that is a namespace
     for (auto& ent : m_entities.at(name)) {
-        // todo: classes
-        if (ent->getType() == EntityType::Namespace) {
+        if (
+            ent->getType() == EntityType::Namespace ||
+            ent->getType() == EntityType::Class
+        ) {
             return std::static_pointer_cast<Namespace>(ent);
         }
     }
@@ -168,7 +169,7 @@ std::shared_ptr<const Namespace> Namespace::getNamespace(
 std::shared_ptr<Entity> Namespace::getEntity(
     std::string const& rawName,
     Option<EntityType> const& type,
-    Option<std::vector<QualifiedType>> const& parameters
+    Option<std::vector<Parameter>> const& parameters
 ) const {
     auto name = rawName;
     // remove explicit namespace identifier
@@ -189,11 +190,12 @@ std::shared_ptr<Entity> Namespace::getEntity(
         }
         return nullptr;
     }
-    
+
     // are there any entities with this name?
     if (!m_entities.count(name)) {
         return nullptr;
     }
+    
     // if no parameters to figure out overload were 
     // provided, then it's the first matching item for 
     // this name
@@ -218,16 +220,6 @@ std::shared_ptr<Entity> Namespace::getEntity(
                 }
             } break;
 
-            case EntityType::Class: {
-                auto cls = std::static_pointer_cast<Class>(ent);
-                std::vector<QualifiedType> parametersWithThis = parameters.value();
-                parametersWithThis.insert(
-                    parametersWithThis.begin(),
-                    QualifiedType(cls->getClassTypePointer())
-                );
-                return cls->getMemberFunction("constructor", parametersWithThis);
-            } break;
-
             default: break;
         }
     }
@@ -240,7 +232,7 @@ std::shared_ptr<Entity> Namespace::getEntity(
     NamespaceParts const& currentNamespace,
     std::vector<NamespaceParts> const& testNamespaces,
     Option<EntityType> const& type,
-    Option<std::vector<QualifiedType>> const& parameters
+    Option<std::vector<Parameter>> const& parameters
 ) const {
     // is this in current scope?
     if (auto e = getEntity(name, type, parameters)) {
@@ -296,8 +288,7 @@ std::shared_ptr<ClassType> Class::getClassType() const {
 
 std::shared_ptr<PointerType> Class::getClassTypePointer() const {
     return m_classType->m_compiler.makeType<PointerType>(
-        QualifiedType(m_classType),
-        types::PointerType::Pointer
+        QualifiedType(m_classType)
     );
 }
 
@@ -307,7 +298,7 @@ bool Class::hasMember(std::string const& name) const {
 
 bool Class::hasMemberFunction(
     std::string const& name,
-    Option<std::vector<QualifiedType>> const& parameters
+    Option<std::vector<Parameter>> const& parameters
 ) const {
     return hasEntity(name, {}, {}, EntityType::Function, parameters);
 }
@@ -320,10 +311,21 @@ std::shared_ptr<Variable> Class::getMember(std::string const& name) const {
 
 std::shared_ptr<FunctionEntity> Class::getMemberFunction(
     std::string const& name,
-    Option<std::vector<QualifiedType>> const& parameters
+    Option<std::vector<Parameter>> const& parameters
 ) const {
     if (parameters) {
-        for (auto& param : parameters.value()) {
+        std::vector<Parameter> paramsWithThis {
+            { "this", QualifiedType(this->getClassTypePointer()) }
+        };
+        paramsWithThis.insert(
+            paramsWithThis.end(),
+            parameters.value().begin(),
+            parameters.value().end()
+        );
+        if (auto memberFun = std::static_pointer_cast<FunctionEntity>(
+            getEntity(name, {}, {}, EntityType::Function, paramsWithThis)
+        )) {
+            return memberFun;
         }
     }
     return std::static_pointer_cast<FunctionEntity>(

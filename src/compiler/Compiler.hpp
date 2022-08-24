@@ -51,12 +51,12 @@ namespace gdml {
         bool hasEntity(
             std::string const& name,
             Option<EntityType> type,
-            Option<std::vector<QualifiedType>> const& parameters
+            Option<std::vector<Parameter>> const& parameters
         ) const;
         std::shared_ptr<Entity> getEntity(
             std::string const& name,
             Option<EntityType> type,
-            Option<std::vector<QualifiedType>> const& parameters
+            Option<std::vector<Parameter>> const& parameters
         ) const;
         template<class T, class... Args>
         std::shared_ptr<T> makeEntity(
@@ -97,13 +97,13 @@ namespace gdml {
         bool hasEntity(
             std::string const& name,
             Option<EntityType> type,
-            Option<std::vector<QualifiedType>> const& parameters,
+            Option<std::vector<Parameter>> const& parameters,
             bool checkAllScopes = true
         ) const;
         template<class T>
         bool hasEntity(
             std::string const& name,
-            Option<std::vector<QualifiedType>> const& parameters = None,
+            Option<std::vector<Parameter>> const& parameters = None,
             bool checkAllScopes = true
         ) {
             if constexpr (std::is_same_v<T, Variable>) {
@@ -132,12 +132,12 @@ namespace gdml {
         std::shared_ptr<Entity> getEntity(
             std::string const& name,
             Option<EntityType> type,
-            Option<std::vector<QualifiedType>> const& parameters
+            Option<std::vector<Parameter>> const& parameters
         ) const;
         template<class T>
         std::shared_ptr<T> getEntity(
             std::string const& name,
-            Option<std::vector<QualifiedType>> const& parameters = None
+            Option<std::vector<Parameter>> const& parameters = None
         ) {
             if constexpr (std::is_same_v<T, Variable>) {
                 return getEntityAs<T>(name, EntityType::Variable, None);
@@ -165,7 +165,7 @@ namespace gdml {
         std::shared_ptr<T> getEntityAs(
             std::string const& name,
             Option<EntityType> type,
-            Option<std::vector<QualifiedType>> const& parameters
+            Option<std::vector<Parameter>> const& parameters
         ) const {
             return std::static_pointer_cast<T>(getEntity(
                 name, type, parameters

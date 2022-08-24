@@ -14,8 +14,6 @@ namespace gdml {
 
         friend struct Namespace;
 
-        std::string getFullName(std::string const& name) const;
-
     public:
         Entity(
             std::shared_ptr<Namespace> container,
@@ -24,28 +22,24 @@ namespace gdml {
         );
 
         EntityType getType() const;
-        virtual std::string getFullName() const;
+        std::string getFullName() const;
         std::string getName() const;
         bool hasParentNamespace() const;
 
         virtual bool isValue() const {
             return false;
         }
+        virtual bool isType() const {
+            return false;
+        }
+        virtual QualifiedType getValueType() const {
+            return QualifiedType::NO_TYPE;
+        }
+
         virtual ~Entity() = default;
     };
 
-    struct TypeEntity : public Entity {
-        std::shared_ptr<Type> type;
-
-        TypeEntity(
-            std::shared_ptr<Namespace> container,
-            std::string const& name,
-            std::shared_ptr<Type> type
-        );
-    };
-
     struct ValueEntity : public Entity {
-        virtual QualifiedType getValueType() const = 0;
         virtual std::shared_ptr<Value> eval(Instance& instance) = 0;
 
         bool isValue() const override {
@@ -55,6 +49,23 @@ namespace gdml {
             std::shared_ptr<Namespace> container, 
             std::string const& name,
             EntityType type
+        );
+    };
+
+    struct TypeEntity : public Entity {
+        std::shared_ptr<Type> type;
+
+        bool isType() const override {
+            return true;
+        }
+        QualifiedType getValueType() const override {
+            return QualifiedType(type);
+        }
+
+        TypeEntity(
+            std::shared_ptr<Namespace> container,
+            std::string const& name,
+            std::shared_ptr<Type> type
         );
     };
 
@@ -81,9 +92,7 @@ namespace gdml {
 
     struct FunctionEntity : public ValueEntity {
         QualifiedFunType type;
-        ast::FunctionDeclStmt* declaration = nullptr;
-
-        std::string getFullName() const override;
+        ast::AFunctionDeclStmt* declaration = nullptr;
 
         QualifiedType getValueType() const override {
             return type.into<Type>();
@@ -94,7 +103,7 @@ namespace gdml {
             std::shared_ptr<Namespace> container,
             std::string const& name,
             QualifiedFunType const& type,
-            ast::FunctionDeclStmt* decl
+            ast::AFunctionDeclStmt* decl
         );
     };
 
@@ -111,8 +120,9 @@ namespace gdml {
         std::shared_ptr<Entity> getEntity(
             std::string const& name,
             Option<EntityType> const& type,
-            Option<std::vector<QualifiedType>> const& parameters
+            Option<std::vector<Parameter>> const& parameters
         ) const;
+        std::shared_ptr<Namespace> getNamespaceMut(std::string const& name);
         std::shared_ptr<const Namespace> getNamespace(std::string const& name) const;
         std::shared_ptr<const Namespace> getNamespace(NamespaceParts const& name) const;
 
@@ -130,7 +140,7 @@ namespace gdml {
             NamespaceParts const& currentNamespace,
             std::vector<NamespaceParts> const& testNamespaces,
             Option<EntityType> const& type,
-            Option<std::vector<QualifiedType>> const& parameters
+            Option<std::vector<Parameter>> const& parameters
         ) const;
 
         std::shared_ptr<Entity> getEntity(
@@ -138,7 +148,7 @@ namespace gdml {
             NamespaceParts const& currentNamespace,
             std::vector<NamespaceParts> const& testNamespaces,
             Option<EntityType> const& type,
-            Option<std::vector<QualifiedType>> const& parameters
+            Option<std::vector<Parameter>> const& parameters
         ) const;
 
         template<class T, class... Args>
@@ -175,6 +185,13 @@ namespace gdml {
             std::shared_ptr<ClassType> classType
         );
 
+        bool isType() const override {
+            return true;
+        }
+        QualifiedType getValueType() const override {
+            return QualifiedType(m_classType);
+        }
+
         std::shared_ptr<ClassType> getClassType() const;
         std::shared_ptr<PointerType> getClassTypePointer() const;
 
@@ -183,11 +200,11 @@ namespace gdml {
 
         bool hasMemberFunction(
             std::string const& name,
-            Option<std::vector<QualifiedType>> const& parameters
+            Option<std::vector<Parameter>> const& parameters
         ) const;
         std::shared_ptr<FunctionEntity> getMemberFunction(
             std::string const& name,
-            Option<std::vector<QualifiedType>> const& parameters
+            Option<std::vector<Parameter>> const& parameters
         ) const;
 
         template<class T, class... Args>

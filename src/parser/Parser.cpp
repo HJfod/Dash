@@ -218,7 +218,7 @@ ExprResult<TypeExpr> Parser::parseTypeExpression() noexcept {
             }
             res = m_ast->make<PointerExpr>(
                 m_source, start, PREV_TOKEN().end,
-                res, types::PointerType::Pointer,
+                res,
                 types::TypeQualifiers(isConst)
             );
         }
@@ -226,20 +226,12 @@ ExprResult<TypeExpr> Parser::parseTypeExpression() noexcept {
 
     // references
     if (token.type == TokenType::BitAnd) {
-        res = m_ast->make<PointerExpr>(
-            m_source, start, PREV_TOKEN().end,
-            res, types::PointerType::Reference,
-            types::TypeQualifiers(isConst)
-        );
+        res->qualifiers.refType = types::ReferenceType::Reference;
         NEXT_TOKEN();
     }
     // move thingies
     else if (token.type == TokenType::And) {
-        res = m_ast->make<PointerExpr>(
-            m_source, start, PREV_TOKEN().end,
-            res, types::PointerType::Move,
-            types::TypeQualifiers(isConst)
-        );
+        res->qualifiers.refType = types::ReferenceType::Move;
         NEXT_TOKEN();
     }
 
@@ -370,6 +362,134 @@ ExprResult<CallExpr> Parser::parseCall(ValueExpr* value) noexcept {
     );
 }
 
+ExprResult<ValueExpr> Parser::parseConstructOrVariable() noexcept {
+    INIT_TOKEN();
+
+    auto start = token.start;
+
+    // new
+    bool isNew = false;
+    if (token.type == TokenType::New) {
+        isNew = true;
+        // consume (vore) 'new'
+        NEXT_TOKEN();
+    }
+
+    // parse name if there is one
+    Option<NameExpr*> name = None;
+    if (isNameComingUp(token.type)) {
+        PROPAGATE_ASSIGN(name, parseName());
+    }
+
+    UPDATE_TOKEN();
+
+    // is this a variable?
+    if (name && token.type != TokenType::LeftBrace && !isNew) {
+        return m_ast->make<VariableExpr>(
+            m_source, name.value()->start, name.value()->end, name.value()
+        );
+    }
+
+    // if there's no name, no parameters, and no 'new', 
+    // something has gone wrong
+    if (!name && token.type != TokenType::LeftBrace && !isNew) {
+        THROW_SYNTAX_ERR(
+            token,
+            "Expected " + TOKEN_STR(Identifier) + ", initializer list or " +
+            TOKEN_STR(New) + ", found " + TOKEN_STR_V(token.type),
+            "",
+            "Attempted to parse a variable name or constructor"
+        );
+    }
+
+    std::vector<ValueExpr*> values;
+    std::unordered_map<std::string, ValueExpr*> namedValues;
+
+    // does the constructor come with parameters?
+    if (token.type == TokenType::LeftBrace) {
+        // consume right brace
+        NEXT_TOKEN();
+
+        bool hasNamedParameters = false;
+        while (m_index < m_tokens.size()) {
+            // did parameter list conclude?
+            if (token.type == TokenType::RightBrace) {
+                // consume right brace
+                m_index++;
+                break;
+            }
+            // named parameter
+            if (
+                token.type == TokenType::Identifier &&
+                next.type == TokenType::Colon
+            ) {
+                hasNamedParameters = true;
+                auto paramName = token.data;
+                if (namedValues.count(paramName)) {
+                    THROW_SYNTAX_ERR(
+                        token,
+                        "Duplicate parameter name \"" + paramName + "\" "
+                        "found",
+                        "You probably just accidentally assigned the same "
+                        "parameter twice",
+                        "All parameter names in constructor calls must be "
+                        "unique"
+                    );
+                }
+                // consume `<iden>:`
+                m_index += 2;
+                ValueExpr* paramValue;
+                PROPAGATE_ASSIGN(paramValue, parseExpression());
+                namedValues.insert({ paramName, paramValue });
+            }
+            // if there is one named parameter already 
+            // provided, rest must be aswell
+            else if (hasNamedParameters) {
+                THROW_SYNTAX_ERR(
+                    token,
+                    "Expected " + TOKEN_STR(Identifier) + " "
+                    "for parameter name",
+                    "If a constructor call has one named parameter, "
+                    "all parameters must be provided with names",
+                    ""
+                );
+            }
+            // otherwise just pass to unnamed parameter 
+            // list
+            else {
+                ValueExpr* paramValue;
+                PROPAGATE_ASSIGN(paramValue, parseExpression());
+                values.push_back(paramValue);
+            }
+            UPDATE_TOKEN();
+            // did parameter list conclude?
+            if (token.type == TokenType::RightBrace) {
+                // consume right brace
+                m_index++;
+                break;
+            }
+            // need comma then to separate items
+            if (token.type != TokenType::Comma) {
+                THROW_SYNTAX_ERR(
+                    token,
+                    "Expected " + TOKEN_STR(Comma) + " to separate "
+                    "parameter list arguments, found " + TOKEN_STR_V(token.type),
+                    "",
+                    ""
+                );
+            }
+            // consume comma
+            NEXT_TOKEN();
+        }
+    }
+
+    // we're done here
+    return m_ast->make<ConstructExpr>(
+        m_source, start, PREV_TOKEN().end,
+        name, isNew, values, namedValues
+    );
+}
+
 ExprResult<ValueExpr> Parser::parseValue() noexcept {
     INIT_TOKEN();
 
@@ -379,12 +499,18 @@ ExprResult<ValueExpr> Parser::parseValue() noexcept {
         return static_cast<ValueExpr*>(expr.unwrap());
     }
 
+    if (token.type == TokenType::LeftBrace) {
+        // `let x: Type = { ... }`
+        PROPAGATE_VALUE(parseConstructOrVariable());
+    }
+
+    if (token.type == TokenType::New) {
+        // `let x[: Type] = new [Type] { ... }`
+        PROPAGATE_VALUE(parseConstructOrVariable());
+    }
+
     if (isNameComingUp(token.type)) {
-        NameExpr* name;
-        PROPAGATE_ASSIGN(name, parseName());
-        return m_ast->make<VariableExpr>(
-            m_source, name->start, name->end, name
-        );
+        PROPAGATE_VALUE(parseConstructOrVariable());
     }
 
     // special identifiers
@@ -522,6 +648,22 @@ ExprResult<ValueExpr> Parser::parseUnary() noexcept {
 
     auto start = token.start;
 
+    // * count
+    int derefCount = 0;
+
+    size_t takerefs = 0;
+    size_t derefs = 0;
+
+    while (
+        // we are to agree there will never be a symbol with both '*' and '&'
+        (takerefs = extractSymbolCount(token.type, '&', true)) || 
+        (derefs   = extractSymbolCount(token.type, '*', true))
+    ) {
+        derefCount -= takerefs;
+        derefCount += derefs;
+        NEXT_TOKEN();
+    }
+
     // get prefix if there's one
     TokenType prefixOp = TokenType::Invalid;
     if (isUnaryPrefixOperator(token.type)) {
@@ -575,6 +717,16 @@ ExprResult<ValueExpr> Parser::parseUnary() noexcept {
             m_source, start, token.end,
             suffixOp, res, UnaryExpr::Suffix
         );
+    }
+
+    // indirection and address-of operators
+    if (derefCount) {
+        for (auto i = 0; i < std::abs(derefCount); i++) {
+            res = m_ast->make<PointerToExpr>(
+                m_source, start, prefixEnd,
+                res, derefCount > 0
+            );
+        }
     }
 
     UPDATE_TOKEN();
@@ -684,6 +836,143 @@ ExprResult<Stmt> Parser::parseUsing() noexcept {
         "Invalid token for an " + TOKEN_STR(Using) + " declaration",
         "",
         ""
+    );
+}
+
+ExprResult<ConstructorDeclStmt> Parser::parseConstructor() noexcept {
+    INIT_TOKEN();
+
+    auto start = token.start;
+    auto isDestructor = token.data == "destruct";
+
+    // consume "construct" or "destruct"
+    NEXT_TOKEN();
+
+    std::vector<VariableDeclExpr*> parameters;
+
+    // parameters
+    if (token.type == TokenType::LeftBrace) {
+        if (isDestructor) {
+            THROW_SYNTAX_ERR(
+                token,
+                "Destructors may not have parameters",
+                "You probably meant to define the destructor body - use "
+                "the `destruct = { ... }` syntax",
+                ""
+            );
+        }
+
+        // consume left brace
+        NEXT_TOKEN();
+
+        while (m_index < m_tokens.size()) {
+            // did parameter list end?
+            if (token.type == TokenType::RightBrace) {
+                break;
+            }
+
+            // parse parameter
+            VariableDeclExpr* param;
+            PROPAGATE_ASSIGN(param, parseVarDeclaration());
+            parameters.push_back(param);
+
+            UPDATE_TOKEN();
+
+            // did parameter list end?
+            if (token.type == TokenType::RightBrace) {
+                break;
+            }
+
+            // otherwise items must be separated by commas
+            if (token.type != TokenType::Comma) {
+                THROW_SYNTAX_ERR(
+                    token,
+                    "Expected " + TOKEN_STR(Comma) + " to separate "
+                    "constructor parameter list",
+                    "Add a " + TOKEN_STR(Comma) + " here",
+                    ""
+                );
+            }
+
+            // consume comma
+            NEXT_TOKEN();
+        }
+        // make sure parameter list was ended properly
+        if (token.type != TokenType::RightBrace) {
+            THROW_SYNTAX_ERR(
+                token,
+                "Expected " + TOKEN_STR(RightBrace) + " to conclude "
+                "constructor parameter list, found " + TOKEN_STR_V(token.type),
+                "",
+                ""
+            );
+        }
+
+        // consume right brace
+        NEXT_TOKEN();
+    }
+
+    Option<StmtList*> body = None;
+    bool isDefault = false;
+
+    // assign body?
+    if (token.type == TokenType::Assign) {
+        // consume '='
+        NEXT_TOKEN();
+
+        // `construct = default`
+        if (token.type == TokenType::Default) {
+            isDefault = true;
+
+            // must conclude with semicolon
+            if (next.type != TokenType::SemiColon) {
+                THROW_SYNTAX_ERR(
+                    next,
+                    "Expected " + TOKEN_STR(SemiColon) + " after " +
+                    TOKEN_STR(Default) + ", found" + TOKEN_STR_V(next.type),
+                    "Add a " + TOKEN_STR(SemiColon) + " here",
+                    ""
+                );
+            }
+            
+            // consume both 'default' and ';'
+            m_index += 2;
+        }
+        // otherwise must be body
+        else if (token.type == TokenType::LeftBrace) {
+            PROPAGATE_ASSIGN(body, parseBlock());
+        }
+        // otherwise fail
+        else {
+            THROW_SYNTAX_ERR(
+                token,
+                "Expected " + TOKEN_STR(Default) + " or " +
+                TOKEN_STR(LeftBrace) + " for constructor body"
+                ", found" + TOKEN_STR_V(next.type),
+                "",
+                ""
+            );
+        }
+    }
+    // declaration only?
+    else if (token.type == TokenType::SemiColon) {
+        m_index++;
+    }
+    // fail...
+    else {
+        THROW_SYNTAX_ERR(
+            token,
+            "Expected " + TOKEN_STR(SemiColon) + " or " +
+            TOKEN_STR(Assign) + " for constructor declaration "
+            "or body assignment, found " + TOKEN_STR_V(token.type),
+            "",
+            ""
+        );
+    }
+
+    return m_ast->make<ConstructorDeclStmt>(
+        m_source, start, PREV_TOKEN().end,
+        isDestructor, parameters, body, isDefault
     );
 }
 
@@ -870,10 +1159,11 @@ ExprResult<Stmt> Parser::parseClass() noexcept {
     }
 
     // consume left brace
-    m_index++;
+    NEXT_TOKEN();
 
     std::vector<VariableDeclExpr*> members;
     std::vector<FunctionDeclStmt*> functions;
+    std::vector<ConstructorDeclStmt*> constructors;
     while (m_index < m_tokens.size()) {
         // is this a member function?
         if (
@@ -883,6 +1173,19 @@ ExprResult<Stmt> Parser::parseClass() noexcept {
             FunctionDeclStmt* fun;
             PROPAGATE_ASSIGN(fun, parseFunDeclaration());
             functions.push_back(fun);
+            UPDATE_TOKEN();
+        }
+        // constructors and destructors
+        else if (
+            token.type == TokenType::Identifier &&
+            (
+                token.data == "construct" ||
+                token.data == "destruct"
+            )
+        ) {
+            ConstructorDeclStmt* param;
+            PROPAGATE_ASSIGN(param, parseConstructor());
+            constructors.push_back(param);
             UPDATE_TOKEN();
         }
         // otherwise must be variable
@@ -924,7 +1227,7 @@ ExprResult<Stmt> Parser::parseClass() noexcept {
 
     return m_ast->make<ClassDeclStmt>(
         m_source, start, PREV_TOKEN().end,
-        name, members, functions, isStruct
+        name, members, functions, constructors, isStruct
     );
 }
 
@@ -1127,7 +1430,10 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
 
         case TokenType::Let: {
             m_index++;
-            PROPAGATE_VALUE(parseVarDeclaration());
+            ValueExpr* decl;
+            PROPAGATE_ASSIGN(decl, parseVarDeclaration());
+            CHECK_SEMICOLON();
+            return decl;
         } break;
 
         case TokenType::EmbedLanguageIdentifier: {

@@ -13,6 +13,9 @@ namespace gdml::ast {
         #define GDML_DEBUG_FMT(class) \
             debug::indent(i) + #class "\n"
 
+        #define GDML_DEBUG_FMT_R(text) \
+            debug::indent(i + debug::IND_LVL) + text + "\n"
+
         #define GDML_DEBUG_FMT_PROP(prop) \
             debug::indent(i + debug::IND_LVL) + \
             "[" #prop ": " + std::to_string(prop) + "]\n"
@@ -58,6 +61,9 @@ namespace gdml::ast {
         #define GDML_TYPECHECK_CHILDREN(children) \
             for (auto& child : children) { GDML_TYPECHECK_CHILD(child); }
         
+        #define GDML_TYPECHECK_CHILDREN_M(children) \
+            for (auto& [_, child] : children) { GDML_TYPECHECK_CHILD(child); }
+        
         #define GDML_APPLY_PARENT(child) \
             child->parent = this
             
@@ -66,6 +72,9 @@ namespace gdml::ast {
             
         #define GDML_APPLY_PARENTS(children) \
             for (auto& child : children) GDML_APPLY_PARENT(child)
+            
+        #define GDML_APPLY_PARENTS_M(children) \
+            for (auto& [_, child] : children) GDML_APPLY_PARENT(child)
         
         #define GDML_SWAP_CHILD(child) \
             if (child == static_cast<decltype(child)>(stmt)) {\
@@ -91,6 +100,17 @@ namespace gdml::ast {
                 to->parent = this;\
                 return true;\
             }
+        
+        #define GDML_SWAP_CHILDREN_M(children) \
+            if (replaceOneInMap(\
+                children,\
+                static_cast<decltype(children)::mapped_type>(stmt),\
+                static_cast<decltype(children)::mapped_type>(to)\
+            )) {\
+                to->parent = this;\
+                return true;\
+            }
+            
 
         static std::string indent(size_t amount) {
             return std::string(amount, ' ');
@@ -423,7 +443,7 @@ namespace gdml::ast {
         std::shared_ptr<Value> eval(Instance& instance) override;
         TypeCheckResult compile(Instance& instance) noexcept override;
     
-        void codegen(Instance& com, std::ostream& stream) const noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
         bool swap(Stmt* stmt, Stmt* to) override {
             GDML_SWAP_CHILDREN(components);
             return false;
@@ -506,7 +526,7 @@ namespace gdml::ast {
         TypeCheckResult compile(std::shared_ptr<Class> entity, Instance& instance) noexcept;
         TypeCheckResult compileAsMember(std::shared_ptr<Class> entity, Instance& instance) noexcept;
     
-        void codegen(Instance& com, std::ostream& stream) const noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
         bool swap(Stmt* stmt, Stmt* to) override {
             GDML_SWAP_CHILD_O(type);
             GDML_SWAP_CHILD_O(value);
@@ -584,7 +604,7 @@ namespace gdml::ast {
 
         TypeCheckResult compile(Instance& instance) noexcept override;
     
-        void codegen(Instance& com, std::ostream& stream) const noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
 
         bool swap(Stmt* stmt, Stmt* to) override {
             GDML_SWAP_CHILD(item);
@@ -628,7 +648,7 @@ namespace gdml::ast {
         TypeCheckResult compile(Instance& instance) noexcept override;
         TypeCheckResult compileWithParams(
             Instance& instance, 
-            Option<std::vector<QualifiedType>> const& args
+            Option<std::vector<Parameter>> const& args
         ) noexcept;
         std::shared_ptr<Value> eval(Instance& instance) override;
         void codegen(Instance&, std::ostream& stream) const noexcept override;
@@ -663,7 +683,7 @@ namespace gdml::ast {
         TypeCheckResult compile(Instance& instance) noexcept override;
         TypeCheckResult compileWithParams(
             Instance& instance, 
-            Option<std::vector<QualifiedType>> const& args
+            Option<std::vector<Parameter>> const& args
         ) noexcept;
         void codegen(Instance&, std::ostream& stream) const noexcept override;
 
@@ -706,7 +726,7 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_CHILD(value);
         }
 
-        void codegen(Instance& com, std::ostream& stream) const noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
 
         bool swap(Stmt* stmt, Stmt* to) override {
             GDML_SWAP_CHILD(value);
@@ -744,7 +764,7 @@ namespace gdml::ast {
         
         std::shared_ptr<Value> eval(Instance& instance) override;
         TypeCheckResult compile(Instance& instance) noexcept override;
-        void codegen(Instance& com, std::ostream& stream) const noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
 
         bool swap(Stmt* stmt, Stmt* to) override {
             GDML_SWAP_CHILD(LHS);
@@ -788,7 +808,7 @@ namespace gdml::ast {
             return Ok();
         }
     
-        void codegen(Instance& com, std::ostream& stream) const noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
 
         bool swap(Stmt* stmt, Stmt* to) override {
             GDML_SWAP_CHILD(condition);
@@ -825,8 +845,7 @@ namespace gdml::ast {
         }
 
         TypeCheckResult compile(Instance& instance) noexcept override;
-    
-        void codegen(Instance& com, std::ostream& stream) const noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
 
         bool swap(Stmt* stmt, Stmt* to) override {
             GDML_SWAP_CHILD(target);
@@ -861,12 +880,101 @@ namespace gdml::ast {
         }
 
         TypeCheckResult compile(Instance& instance) noexcept override;
-    
         void codegen(Instance&, std::ostream& stream) const noexcept override;
 
         bool swap(Stmt* stmt, Stmt* to) override {
             GDML_SWAP_CHILD(target);
             GDML_SWAP_CHILD(intoType);
+            return false;
+        }
+    };
+
+    struct ConstructExpr : ValueExpr {
+        Option<NameExpr*> name;
+        bool isNew;
+        std::vector<ValueExpr*> values;
+        std::unordered_map<std::string, ValueExpr*> namedValues;
+        std::shared_ptr<Class> classEntity = nullptr;
+        std::shared_ptr<FunctionEntity> funEntity = nullptr;
+
+        ConstructExpr(
+            SourceFile const* src,
+            Position const& start,
+            Position const& end,
+            Option<NameExpr*> const& name,
+            bool isNew,
+            std::vector<ValueExpr*> const& values,
+            std::unordered_map<std::string, ValueExpr*> const& namedValues
+        ) : ValueExpr(src, start, end),
+            name(name), isNew(isNew), values(values),
+            namedValues(namedValues)
+        {
+            GDML_APPLY_PARENT_O(name);
+            GDML_APPLY_PARENTS(values);
+            GDML_APPLY_PARENTS_M(namedValues);
+        }
+
+        std::string debugPrintAST(size_t i) const override {
+            auto str = GDML_DEBUG_FMT(ConstructExpr) +
+                GDML_DEBUG_FMT_CHILD_O(name) + 
+                GDML_DEBUG_FMT_PROP(isNew);
+
+            str += GDML_DEBUG_FMT_R("(values)");
+            i += debug::IND_LVL;
+            for (auto& expr : values) {
+                str += GDML_DEBUG_FMT_CHILD(expr);
+            }
+            i -= debug::IND_LVL;
+
+            str += GDML_DEBUG_FMT_R("(namedValues)");
+            i += debug::IND_LVL;
+            for (auto& [name, val] : namedValues) {
+                str += GDML_DEBUG_FMT_R("name: " + name);
+                str += GDML_DEBUG_FMT_CHILD(val);
+            }
+            i -= debug::IND_LVL;
+
+            return str;
+        }
+
+        TypeCheckResult checkInitializer(std::shared_ptr<Class> entity, Instance& instance) noexcept;
+        TypeCheckResult compile(Instance& instance) noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
+
+        bool swap(Stmt* stmt, Stmt* to) override {
+            GDML_SWAP_CHILD_O(name);
+            GDML_SWAP_CHILDREN(values);
+            GDML_SWAP_CHILDREN_M(namedValues);
+            return false;
+        }
+    };
+
+    struct PointerToExpr : ValueExpr {
+        ValueExpr* value;
+        bool deref;
+
+        PointerToExpr(
+            SourceFile const* src,
+            Position const& start,
+            Position const& end,
+            ValueExpr* value,
+            bool deref
+        ) : ValueExpr(src, start, end), value(value), deref(deref) {
+            GDML_APPLY_PARENT(value);
+        }
+
+        std::string debugPrintAST(size_t i) const override {
+            return
+                GDML_DEBUG_FMT(PointerToExpr) +
+                GDML_DEBUG_FMT_CHILD(value) + 
+                GDML_DEBUG_FMT_PROP(deref);
+        }
+
+        TypeCheckResult compile(Instance& instance) noexcept override;
+        void codegen(Instance&, std::ostream& stream) const noexcept override;
+
+        bool swap(Stmt* stmt, Stmt* to) override {
+            GDML_SWAP_CHILD(value);
             return false;
         }
     };
@@ -904,17 +1012,15 @@ namespace gdml::ast {
 
     struct PointerExpr : TypeExpr {
         TypeExpr* to;
-        types::PointerType type;
 
         PointerExpr(
             SourceFile const* src,
             Position const& start,
             Position const& end,
             TypeExpr* to,
-            types::PointerType type,
             types::TypeQualifiers const& qualifiers
         ) : TypeExpr(src, start, end, qualifiers),
-            to(to), type(type)
+            to(to)
         {
             GDML_APPLY_PARENT(to);
         }
@@ -923,7 +1029,6 @@ namespace gdml::ast {
             return
                 GDML_DEBUG_FMT(PointerExpr) +
                 GDML_DEBUG_FMT_CHILD(to) +
-                GDML_DEBUG_FMT_PROP_E(type) +
                 debugPrintASTTypeProps(i);
         }
         
@@ -961,9 +1066,9 @@ namespace gdml::ast {
             return Ok();
         }
 
-        void codegen(Instance& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override {
             stream << "typeof(";
-            value->codegen(com, stream);
+            value->codegen(instance, stream);
             stream << ")";
         }
 
@@ -1005,13 +1110,12 @@ namespace gdml::ast {
         TypeCheckResult compile(Instance& instance) noexcept override;
         TypeCheckResult compileAsMember(
             std::shared_ptr<Class> entity,
-            bool isConstructor,
             Instance& instance
         ) noexcept;
 
-        void codegen(Instance& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override {
             if (returnType.has_value()) {
-                returnType.value()->codegen(com, stream);
+                returnType.value()->codegen(instance, stream);
             } else {
                 stream << "auto";
             }
@@ -1022,7 +1126,7 @@ namespace gdml::ast {
                     stream << ", ";
                 }
                 firstArg = false;
-                param->codegen(com, stream);
+                param->codegen(instance, stream);
             }
             stream << ")";
         }
@@ -1064,14 +1168,14 @@ namespace gdml::ast {
             return Ok();
         }
 
-        void codegen(Instance& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override {
             if (capacity) {
                 stream << "std::array<";
-                memberType->codegen(com, stream);
+                memberType->codegen(instance, stream);
                 stream << ", " << capacity << ">";
             } else {
                 stream << "std::vector<";
-                memberType->codegen(com, stream);
+                memberType->codegen(instance, stream);
                 stream << ">";
             }
         }
@@ -1188,7 +1292,7 @@ namespace gdml::ast {
         TypeCheckResult compile(Instance& instance) noexcept override;
         BranchInferResult inferBranchReturnType(Instance& instance) override;
 
-        void codegen(Instance& com, std::ostream& stream) const noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
 
         bool swap(Stmt* stmt, Stmt* to) override {
             GDML_SWAP_CHILD_O(condition);
@@ -1224,9 +1328,9 @@ namespace gdml::ast {
             return Ok();
         }
 
-        void codegen(Instance& com, std::ostream& stream) const noexcept override {
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override {
             stream << "return ";
-            value->codegen(com, stream);
+            value->codegen(instance, stream);
         }
 
         bool swap(Stmt* stmt, Stmt* to) override {
@@ -1260,7 +1364,7 @@ namespace gdml::ast {
         }
 
         TypeCheckResult compile(Instance& instance) noexcept override;
-        void codegen(Instance& com, std::ostream& stream) const noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
 
         bool swap(Stmt* stmt, Stmt* to) override {
             GDML_SWAP_CHILD_O(name);
@@ -1269,13 +1373,27 @@ namespace gdml::ast {
         }
     };
 
-    struct FunctionDeclStmt : Stmt {
+    struct AFunctionDeclStmt : Stmt {
+        Option<StmtList*> body;
+        std::shared_ptr<Class> parentClass = nullptr;
+        std::shared_ptr<FunctionEntity> entity = nullptr;
+
+        AFunctionDeclStmt(
+            SourceFile const* src,
+            Position const& start,
+            Position const& end,
+            Option<StmtList*> body
+        ) : Stmt(src, start, end),
+            body(body)
+        {
+            GDML_APPLY_PARENT_O(body);
+        }
+    };
+
+    struct FunctionDeclStmt : AFunctionDeclStmt {
         FunctionTypeExpr* type;
         NameExpr* name;
-        Option<StmtList*> body;
         bool isImplementation;
-        std::shared_ptr<FunctionEntity> entity = nullptr;
-        std::shared_ptr<Class> parentClass = nullptr;
     
     protected:
         TypeCheckResult inferReturnType(Instance& instance);
@@ -1290,13 +1408,12 @@ namespace gdml::ast {
             NameExpr* n,
             Option<StmtList*> body,
             bool impl
-        ) : Stmt(src, start, end),
-            type(type), name(n), body(body),
+        ) : AFunctionDeclStmt(src, start, end, body),
+            type(type), name(n), 
             isImplementation(impl)
         {
             GDML_APPLY_PARENT(type);
             GDML_APPLY_PARENT(name);
-            GDML_APPLY_PARENT_O(body);
         }
 
         std::string debugPrintAST(size_t i) const override {
@@ -1311,11 +1428,57 @@ namespace gdml::ast {
         TypeCheckResult compile(Instance&) noexcept override;
         TypeCheckResult compileAsMember(std::shared_ptr<Class> entity, Instance& instance) noexcept;
 
-        void codegen(Instance& com, std::ostream& stream) const noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
 
         bool swap(Stmt* stmt, Stmt* to) override {
             GDML_SWAP_CHILD(type);
             GDML_SWAP_CHILD(name);
+            GDML_SWAP_CHILD_O(body);
+            return false;
+        }
+    };
+
+    struct ConstructorDeclStmt : AFunctionDeclStmt {
+        bool isDestructor;
+        std::vector<VariableDeclExpr*> parameters;
+        bool isDefault;
+
+        ConstructorDeclStmt(
+            SourceFile const* src,
+            Position const& start,
+            Position const& end,
+            bool isDestructor,
+            std::vector<VariableDeclExpr*> const& parameters,
+            Option<StmtList*> const& body,
+            bool isDefault
+        ) : AFunctionDeclStmt(src, start, end, body),
+            isDestructor(isDestructor),
+            parameters(parameters),
+            isDefault(isDefault)
+        {
+            GDML_APPLY_PARENTS(parameters);
+            GDML_APPLY_PARENT_O(body);
+        }
+
+        std::string debugPrintAST(size_t i) const override {
+            auto str = 
+                GDML_DEBUG_FMT(ConstructorDeclStmt) + 
+                GDML_DEBUG_FMT_PROP(isDestructor);
+            for (auto& param : parameters) {
+                str += GDML_DEBUG_FMT_CHILD(param);
+            }
+            str +=
+                GDML_DEBUG_FMT_CHILD_O(body) + 
+                GDML_DEBUG_FMT_PROP(isDefault);
+            return str;
+        }
+
+        TypeCheckResult compile(Instance& instance) noexcept override;
+        TypeCheckResult compile(std::shared_ptr<Class> entity, Instance& instance) noexcept;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
+
+        bool swap(Stmt* stmt, Stmt* to) override {
+            GDML_SWAP_CHILDREN(parameters);
             GDML_SWAP_CHILD_O(body);
             return false;
         }
@@ -1356,6 +1519,7 @@ namespace gdml::ast {
         NameExpr* name;
         std::vector<VariableDeclExpr*> members;
         std::vector<FunctionDeclStmt*> functions;
+        std::vector<ConstructorDeclStmt*> constructors;
         bool isStruct;
         std::shared_ptr<Class> entity;
 
@@ -1364,16 +1528,21 @@ namespace gdml::ast {
             Position const& start,
             Position const& end,
             NameExpr* name,
-            std::vector<VariableDeclExpr*> members,
-            std::vector<FunctionDeclStmt*> functions,
+            std::vector<VariableDeclExpr*> const& members,
+            std::vector<FunctionDeclStmt*> const& functions,
+            std::vector<ConstructorDeclStmt*> const& constructors,
             bool isStruct
         ) : Stmt(src, start, end),
-            name(name), members(members),
-            functions(functions), isStruct(isStruct)
+            name(name),
+            members(members),
+            functions(functions),
+            constructors(constructors),
+            isStruct(isStruct)
         {
             GDML_APPLY_PARENT(name);
             GDML_APPLY_PARENTS(members);
             GDML_APPLY_PARENTS(functions);
+            GDML_APPLY_PARENTS(constructors);
         }
 
         std::string debugPrintAST(size_t i) const override {
@@ -1386,16 +1555,20 @@ namespace gdml::ast {
             for (auto& function : functions) {
                 str += GDML_DEBUG_FMT_CHILD(function);
             }
+            for (auto& constructor : constructors) {
+                str += GDML_DEBUG_FMT_CHILD(constructor);
+            }
             return str;
         }
 
         TypeCheckResult compile(Instance& instance) noexcept override;
-        void codegen(Instance& com, std::ostream& stream) const noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
 
         bool swap(Stmt* stmt, Stmt* to) override {
             GDML_SWAP_CHILD(name);
             GDML_SWAP_CHILDREN(members);
             GDML_SWAP_CHILDREN(functions);
+            GDML_SWAP_CHILDREN(constructors);
             return false;
         }
     };

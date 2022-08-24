@@ -36,7 +36,7 @@ std::string Scope::currentNamespace() const {
 bool Scope::hasEntity(
     std::string const& name,
     Option<EntityType> type,
-    Option<std::vector<QualifiedType>> const& parameters
+    Option<std::vector<Parameter>> const& parameters
 ) const {
     return m_global->hasEntity(name, m_currentNamespace, m_namespaces, type, parameters);
 }
@@ -44,7 +44,7 @@ bool Scope::hasEntity(
 std::shared_ptr<Entity> Scope::getEntity(
     std::string const& name,
     Option<EntityType> type,
-    Option<std::vector<QualifiedType>> const& parameters
+    Option<std::vector<Parameter>> const& parameters
 ) const {
     return m_global->getEntity(name, m_currentNamespace, m_namespaces, type, parameters);
 }
@@ -78,7 +78,7 @@ Scope& Compiler::getScope(size_t offset) {
 bool Compiler::hasEntity(
     std::string const& name,
     Option<EntityType> type,
-    Option<std::vector<QualifiedType>> const& parameters,
+    Option<std::vector<Parameter>> const& parameters,
     bool checkAllScopes
 ) const {
     // if the name is a full path then 
@@ -99,7 +99,7 @@ bool Compiler::hasEntity(
 std::shared_ptr<Entity> Compiler::getEntity(
     std::string const& name,
     Option<EntityType> type,
-    Option<std::vector<QualifiedType>> const& parameters
+    Option<std::vector<Parameter>> const& parameters
 ) const {
     // if the name is a full path then 
     // search only global namespace
