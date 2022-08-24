@@ -1604,6 +1604,38 @@ namespace gdml::ast {
 
     // embed
 
+    struct ExternVarStmt : Stmt {
+        TypeExpr* type;
+        std::string name;
+
+        ExternVarStmt(
+            SourceFile const* src,
+            Position const& start,
+            Position const& end,
+            std::string const& name,
+            TypeExpr* type
+        ) : Stmt(src, start, end),
+            name(name), type(type)
+        {
+            GDML_APPLY_PARENT(type);
+        }
+
+        std::string debugPrintAST(size_t i) const override {
+            return
+                GDML_DEBUG_FMT(ExternVarStmt) + 
+                GDML_DEBUG_FMT_PROP_S(name) + 
+                GDML_DEBUG_FMT_CHILD(type);
+        }
+
+        TypeCheckResult compile(Instance& instance) noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
+
+        bool swap(Stmt* stmt, Stmt* to) override {
+            GDML_SWAP_CHILD(type);
+            return false;
+        }
+    };
+
     struct EmbedCodeStmt : Stmt {
         std::string language;
         std::string data;

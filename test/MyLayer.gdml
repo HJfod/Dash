@@ -7,6 +7,14 @@ fun print(text: string const&) {
     ```
 }
 
+fun toString(i: i32) -> string {
+    extern str: string;
+    ```cpp
+    auto str = std::to_string(i);
+    ```
+    return str;
+}
+
 class Something {
     name: string;
     value: i32;
@@ -29,6 +37,12 @@ class Something {
 }
 
 fun test() {
+
+    extern y: i32;
+    ```cpp
+    int y = 5;
+    ```
+    print(toString(y));
     
     let x = Something {
         value: 0,

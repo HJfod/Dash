@@ -1372,6 +1372,52 @@ ExprResult<StmtList> Parser::parseBlock(bool topLevel) noexcept {
     );
 }
 
+ExprResult<Stmt> Parser::parseExternDeclaration() noexcept {
+    INIT_TOKEN();
+
+    auto start = token.start;
+
+    // consume 'extern'
+    NEXT_TOKEN();
+
+    // extern variable
+    if (token.type == TokenType::Identifier) {
+        if (next.type != TokenType::Colon) {
+            THROW_SYNTAX_ERR(
+                next,
+                "Expected " + TOKEN_STR(Colon) + " for variable type, "
+                "found " + TOKEN_STR_V(next.type),
+                "Extern variable declarations must specify type",
+                ""
+            );
+        }
+
+        auto name = token.data;
+
+        // consume name and colon
+        m_index += 2;
+
+        TypeExpr* type;
+        PROPAGATE_ASSIGN(type, parseTypeExpression());
+
+        return m_ast->make<ExternVarStmt>(
+            m_source, start, PREV_TOKEN().end,
+            name, type
+        );
+    }
+    // todo: types, functions, classes
+    else {
+        THROW_SYNTAX_ERR(
+            token,
+            "Expected " + TOKEN_STR(Identifier) + " for extern "
+            "variable declaration",
+            "",
+            "Only variables are currently supported for extern "
+            "declarations, sorry!"
+        );
+    }
+}
+
 ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
     INIT_TOKEN();
 
@@ -1432,6 +1478,13 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
             m_index++;
             ValueExpr* decl;
             PROPAGATE_ASSIGN(decl, parseVarDeclaration());
+            CHECK_SEMICOLON();
+            return decl;
+        } break;
+
+        case TokenType::Extern: {
+            Stmt* decl;
+            PROPAGATE_ASSIGN(decl, parseExternDeclaration());
             CHECK_SEMICOLON();
             return decl;
         } break;

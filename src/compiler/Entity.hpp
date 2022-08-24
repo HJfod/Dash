@@ -126,6 +126,11 @@ namespace gdml {
         std::shared_ptr<const Namespace> getNamespace(std::string const& name) const;
         std::shared_ptr<const Namespace> getNamespace(NamespaceParts const& name) const;
 
+        std::vector<std::shared_ptr<Entity>> getEntities(
+            std::string const& name,
+            Option<EntityType> const& type
+        ) const;
+
     public:
         Namespace(
             std::shared_ptr<Namespace> container,
@@ -149,6 +154,13 @@ namespace gdml {
             std::vector<NamespaceParts> const& testNamespaces,
             Option<EntityType> const& type,
             Option<std::vector<Parameter>> const& parameters
+        ) const;
+
+        std::vector<std::shared_ptr<Entity>> getEntities(
+            std::string const& name,
+            NamespaceParts const& currentNamespace,
+            std::vector<NamespaceParts> const& testNamespaces,
+            Option<EntityType> const& type
         ) const;
 
         template<class T, class... Args>

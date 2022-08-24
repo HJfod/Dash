@@ -166,6 +166,46 @@ std::shared_ptr<const Namespace> Namespace::getNamespace(
     return descoped;
 }
 
+std::vector<std::shared_ptr<Entity>> Namespace::getEntities(
+    std::string const& rawName,
+    Option<EntityType> const& type
+) const {
+    std::vector<std::shared_ptr<Entity>> res;
+
+    auto name = rawName;
+    // remove explicit namespace identifier
+    if (name.starts_with("::")) {
+        name.erase(0, 2);
+    }
+
+    // does the provided name contain scope information?
+    if (name.find("::") != std::string::npos) {
+        auto ns = name.substr(0, name.find("::"));
+        auto descopedName = name.substr(name.find("::") + 2);
+
+        // does provided namespace exist?
+        if (auto space = getNamespace(ns)) {
+            auto e = space->getEntities(descopedName, type);
+            res.insert(res.end(), e.begin(), e.end());
+        }
+        return res;
+    }
+
+    // are there any entities with this name?
+    if (!m_entities.count(name)) {
+        return res;
+    }
+    
+    // get all of them that match the possibly 
+    // provided type
+    for (auto& ent : m_entities.at(name)) {
+        if (!type.has_value() || ent->getType() == type) {
+            res.push_back(ent);
+        }
+    }
+    return res;
+}
+
 std::shared_ptr<Entity> Namespace::getEntity(
     std::string const& rawName,
     Option<EntityType> const& type,
@@ -227,6 +267,47 @@ std::shared_ptr<Entity> Namespace::getEntity(
     return nullptr;
 }
 
+std::vector<std::shared_ptr<Entity>> Namespace::getEntities(
+    std::string const& name,
+    NamespaceParts const& currentNamespace,
+    std::vector<NamespaceParts> const& testNamespaces,
+    Option<EntityType> const& type
+) const {
+    std::vector<std::shared_ptr<Entity>> entities;
+
+    // is this in current scope?
+    auto e = getEntities(name, type);
+    entities.insert(entities.end(), e.begin(), e.end());
+
+    // if the name is a full path, then do no other 
+    // namespace resolution
+    if (name.starts_with("::")) {
+        return entities;
+    }
+
+    // check current namespaces
+    auto descoped = shared_from_this();
+    for (auto& ns : currentNamespace) {
+        // check if namespace exists
+        while (descoped = descoped->getNamespace(ns)) {
+            // look for entity in descoped namespace
+            auto e = descoped->getEntities(name, type);
+            entities.insert(entities.end(), e.begin(), e.end());
+        }
+    }
+    
+    // what about extra using namespaces?
+    for (auto& test : testNamespaces) {
+        if (auto space = getNamespace(test)) {
+            auto e = space->getEntities(name, type);
+            entities.insert(entities.end(), e.begin(), e.end());
+        }
+    }
+
+    // none found
+    return entities;
+}
+
 std::shared_ptr<Entity> Namespace::getEntity(
     std::string const& name,
     NamespaceParts const& currentNamespace,
@@ -248,7 +329,7 @@ std::shared_ptr<Entity> Namespace::getEntity(
     auto descoped = shared_from_this();
     for (auto& ns : currentNamespace) {
         // check if namespace exists
-        if (descoped = descoped->getNamespace(ns)) {
+        while (descoped = descoped->getNamespace(ns)) {
             // look for entity in descoped namespace
             if (auto e = descoped->getEntity(name, type, parameters)) {
                 return e;

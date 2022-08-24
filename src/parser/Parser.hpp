@@ -33,6 +33,7 @@ namespace gdml {
         ExprResult<ast::ValueExpr> parseConstructOrVariable() noexcept;
         ExprResult<ast::ConstructorDeclStmt> parseConstructor() noexcept;
 
+        ExprResult<ast::Stmt> parseExternDeclaration() noexcept;
         ExprResult<ast::Stmt> parseClass() noexcept;
         ExprResult<ast::FunctionDeclStmt> parseFunDeclaration() noexcept;
         ExprResult<ast::IfStmt> parseIfChain() noexcept;

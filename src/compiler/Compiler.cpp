@@ -49,6 +49,13 @@ std::shared_ptr<Entity> Scope::getEntity(
     return m_global->getEntity(name, m_currentNamespace, m_namespaces, type, parameters);
 }
 
+std::vector<std::shared_ptr<Entity>> Scope::getEntities(
+    std::string const& name,
+    Option<EntityType> type
+) const {
+    return m_global->getEntities(name, m_currentNamespace, m_namespaces, type);
+}
+
 
 Error Compiler::compile() {
     auto tres = m_ast->compile(m_instance);
@@ -113,6 +120,25 @@ std::shared_ptr<Entity> Compiler::getEntity(
         }
     }
     return nullptr;
+}
+
+std::vector<std::shared_ptr<Entity>> Compiler::getEntities(
+    std::string const& name,
+    Option<EntityType> type
+) const {
+    // if the name is a full path then 
+    // search only global namespace
+    if (name.starts_with("::")) {
+        return m_scope.front().getEntities(name, type);
+    }
+
+    std::vector<std::shared_ptr<Entity>> entities;
+    // otherwise prioritize innermost namespace
+    for (auto& scope : std::ranges::reverse_view(m_scope)) {
+        auto get = scope.getEntities(name, type);
+        entities.insert(entities.end(), get.begin(), get.end());
+    }
+    return entities;
 }
 
 std::shared_ptr<BuiltInType> Compiler::getBuiltInType(types::DataType type) const {

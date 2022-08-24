@@ -101,6 +101,63 @@ namespace gdml {
         return false;
     }
 
+    template<class T>
+    std::string join(
+        std::vector<T> const& vec,
+        std::string const& separator,
+        std::string (* convert)(T const&)
+    ) {
+        std::string res = "";
+        bool isFirst = true;
+        for (auto& item : vec) {
+            if (!isFirst) {
+                res += separator;
+            }
+            isFirst = false;
+            res += convert(item);
+        }
+        return res;
+    }
+
+    template<auto Convert, class T> requires (
+        std::is_member_function_pointer_v<decltype(Convert)>
+    )
+    std::string join(
+        std::vector<T> const& vec,
+        std::string const& separator
+    ) {
+        std::string res = "";
+        bool isFirst = true;
+        for (auto& item : vec) {
+            if (!isFirst) {
+                res += separator;
+            }
+            isFirst = false;
+            res += (item.*Convert)();
+        }
+        return res;
+    }
+
+    template<auto Convert, class T> requires (
+        std::is_function_v<decltype(Convert)> && 
+        !std::is_member_function_pointer_v<decltype(Convert)>
+    )
+    std::string join(
+        std::vector<T> const& vec,
+        std::string const& separator
+    ) {
+        std::string res = "";
+        bool isFirst = true;
+        for (auto& item : vec) {
+            if (!isFirst) {
+                res += separator;
+            }
+            isFirst = false;
+            res += Convert(item);
+        }
+        return res;
+    }
+
     constexpr unsigned int hash(const char* str, int h = 0) {
         return !str[h] ? 5381 : (hash(str, h+1) * 33) ^ str[h];
     }

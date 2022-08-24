@@ -66,6 +66,11 @@ namespace gdml {
                 currentNamespace() + name, std::forward<Args>(args)...
             );
         }
+
+        std::vector<std::shared_ptr<Entity>> getEntities(
+            std::string const& name,
+            Option<EntityType> type
+        ) const;
     };
 
     class Compiler {
@@ -171,6 +176,11 @@ namespace gdml {
                 name, type, parameters
             ));
         }
+
+        std::vector<std::shared_ptr<Entity>> getEntities(
+            std::string const& name,
+            Option<EntityType> type
+        ) const;
 
         template<class T = Type, class... Args>
         std::shared_ptr<T> makeType(Args... args) {

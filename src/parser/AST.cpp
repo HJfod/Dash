@@ -505,6 +505,29 @@ TypeCheckResult VariableExpr::compileWithParams(
 ) noexcept {
     auto var = instance.getCompiler().getEntity(name->fullName(), None, args);
     if (!var) {
+        if (args) {
+            // mfw readable code
+            THROW_COMPILE_ERR(
+                "No matching overload for \"" + name->fullName() + "\" found",
+                "Possible overloads: \n\t" +
+                    join(
+                        instance.getCompiler().getEntities(
+                            name->fullName(), EntityType::Function
+                        ),
+                        "\n\t",
+                        +[](std::shared_ptr<Entity> const& ent) {
+                            return "(" + join<&Parameter::toString>(
+                                std::static_pointer_cast<FunctionEntity>(
+                                    ent
+                                )->type.type->getParameters(),
+                                ", "
+                            ) + ")";
+                        }
+                    ),
+                "Tried to match overload " + name->fullName() +
+                "(" + join<&Parameter::toString>(args.value(), ", ") + ")"
+            );
+        }
         THROW_COMPILE_ERR(
            "Identifier \"" + name->fullName() + "\" is undefined",
             "",
@@ -1936,6 +1959,28 @@ void ClassDeclStmt::codegen(Instance& instance, std::ostream& stream) const noex
 BranchInferResult ReturnStmt::inferBranchReturnType(Instance& instance) {
     return Option<QualifiedType>(value->evalType);
 }
+
+// ExternVarStmt
+
+TypeCheckResult ExternVarStmt::compile(Instance& instance) noexcept {
+    GDML_TYPECHECK_CHILD(type);
+
+    if (instance.getCompiler().hasEntity<Variable>(name, None, false)) {
+        THROW_COMPILE_ERR(
+            "Variable named \"" + name + "\" already exists "
+            "in this scope",
+            "",
+            ""
+        );
+    }
+    instance.getCompiler().getScope().makeEntity<Variable>(
+        name, type->evalType, nullptr, nullptr
+    );
+
+    return Ok();
+}
+
+void ExternVarStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {}
 
 // EmbedCodeStmt
 
