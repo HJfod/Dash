@@ -10,8 +10,11 @@
 using namespace gdml;
 using namespace gdml::io;
 
-Scope::Scope(bool isGlobal)
-  : m_global(std::make_shared<Namespace>(nullptr, "", isGlobal)) {}
+Scope::Scope(Compiler& compiler, bool isGlobal)
+  : m_compiler(compiler),
+    m_global(std::make_shared<Namespace>(
+        compiler.getInstance(), nullptr, "", isGlobal
+    )) {}
 
 void Scope::useNamespace(NamespaceParts const& space) {
     m_namespaces.push_back(space);
@@ -68,7 +71,7 @@ Error Compiler::compile() {
 }
 
 void Compiler::pushScope() {
-    m_scope.emplace_back(false);
+    m_scope.emplace_back(*this, false);
 }
 
 void Compiler::popScope() {
@@ -156,7 +159,7 @@ Compiler::Compiler(Instance& shared, ast::AST* ast)
   : m_instance(shared), m_ast(ast),
     m_formatter(*this), m_scope()
 {
-    m_scope.emplace_back(true);
+    m_scope.emplace_back(*this, true);
     loadBuiltinTypes();
     loadConstValues();
 }

@@ -171,6 +171,7 @@ namespace gdml {
             Function,
             Array,
             Class,
+            Extern,
         };
 
         enum class DataType {

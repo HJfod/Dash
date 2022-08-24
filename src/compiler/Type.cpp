@@ -499,6 +499,27 @@ std::string PointerType::toString() const {
 }
 
 
+ExternType::ExternType(
+    Compiler& compiler
+) : Type(compiler, types::TypeClass::Extern) {}
+
+bool ExternType::convertibleTo(std::shared_ptr<Type> other, bool strict) const {
+    return true;
+}
+
+bool ExternType::implementsMemberOperator() const {
+    return true;
+}
+
+std::string ExternType::codegenName() const {
+    return "extern";
+}
+
+std::string ExternType::toString() const {
+    return "extern";
+}
+
+
 bool gdml::typeIsVoid(std::shared_ptr<Type> type) {
     return
         type.get() && (

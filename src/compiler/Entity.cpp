@@ -2,14 +2,21 @@
 #include <parser/AST.hpp>
 #include <ranges>
 #include <compiler/Compiler.hpp>
+#include <compiler/Instance.hpp>
 
 using namespace gdml;
 
 Entity::Entity(
+    Instance& instance,
     std::shared_ptr<Namespace> container,
     std::string const& name,
-    EntityType type
-) : m_namespace(container), m_name(name), m_type(type) {}
+    EntityType type,
+    bool isExtern
+) : m_instance(instance),
+    m_namespace(container),
+    m_name(name),
+    m_type(type),
+    m_isExtern(isExtern) {}
 
 EntityType Entity::getType() const {
     return m_type;
@@ -36,33 +43,46 @@ std::string Entity::getName() const {
     return m_name;
 }
 
+bool Entity::isExtern() const {
+    return m_isExtern;
+}
+
+
 TypeEntity::TypeEntity(
+    Instance& instance,
     std::shared_ptr<Namespace> container,
     std::string const& name,
-    std::shared_ptr<Type> type
-) : Entity(container, name, EntityType::Type), type(type) {}
+    std::shared_ptr<Type> type,
+    bool isExtern
+) : Entity(instance, container, name, EntityType::Type, isExtern), type(type) {}
 
 ValueEntity::ValueEntity(
+    Instance& instance,
     std::shared_ptr<Namespace> container, 
     std::string const& name,
-    EntityType type
-) : Entity(container, name, type) {}
+    EntityType type,
+    bool isExtern
+) : Entity(instance, container, name, type, isExtern) {}
 
 Variable::Variable(
+    Instance& instance,
     std::shared_ptr<Namespace> container,
     std::string const& name,
     QualifiedType const& type,
     std::shared_ptr<Value> value,
-    ast::VariableDeclExpr* decl
-) : ValueEntity(container, name, EntityType::Variable),
+    ast::VariableDeclExpr* decl,
+    bool isExtern
+) : ValueEntity(instance, container, name, EntityType::Variable, isExtern),
     type(type), value(value), declaration(decl) {}
 
 FunctionEntity::FunctionEntity(
+    Instance& instance,
     std::shared_ptr<Namespace> container,
     std::string const& name,
     QualifiedFunType const& type,
-    ast::AFunctionDeclStmt* decl
-) : ValueEntity(container, name, EntityType::Function),
+    ast::AFunctionDeclStmt* decl,
+    bool isExtern
+) : ValueEntity(instance, container, name, EntityType::Function, isExtern),
     type(type), declaration(decl) {}
 
 std::shared_ptr<Value> FunctionEntity::eval(Instance& instance) {
@@ -73,10 +93,12 @@ std::shared_ptr<Value> FunctionEntity::eval(Instance& instance) {
 }
 
 Namespace::Namespace(
+    Instance& instance,
     std::shared_ptr<Namespace> container,
     std::string const& name,
-    bool isGlobal
-) : Entity(container, name, EntityType::Namespace),
+    bool isGlobal,
+    bool isExtern
+) : Entity(instance, container, name, EntityType::Namespace, isExtern),
     m_isGlobal(isGlobal) {}
 
 bool Namespace::isGlobal() const {
@@ -141,6 +163,13 @@ std::shared_ptr<const Namespace> Namespace::getNamespace(
 ) const {
     // does provided namespace exist?
     if (!m_entities.count(name)) {
+        if (m_isExtern) {
+            return std::static_pointer_cast<Namespace>(
+                std::const_pointer_cast<Namespace>(
+                    shared_from_this()
+                )->makeExtern(name, EntityType::Namespace, None)
+            );
+        }
         return nullptr;
     }
     // find entity that is a namespace
@@ -151,6 +180,13 @@ std::shared_ptr<const Namespace> Namespace::getNamespace(
         ) {
             return std::static_pointer_cast<Namespace>(ent);
         }
+    }
+    if (m_isExtern) {
+        return std::static_pointer_cast<Namespace>(
+            std::const_pointer_cast<Namespace>(
+                shared_from_this()
+            )->makeExtern(name, EntityType::Namespace, None)
+        );
     }
     return nullptr;
 }
@@ -233,6 +269,11 @@ std::shared_ptr<Entity> Namespace::getEntity(
 
     // are there any entities with this name?
     if (!m_entities.count(name)) {
+        if (m_isExtern) {
+            return std::const_pointer_cast<Namespace>(
+                shared_from_this()
+            )->makeExtern(name, type, parameters);
+        }
         return nullptr;
     }
     
@@ -245,6 +286,11 @@ std::shared_ptr<Entity> Namespace::getEntity(
                 if (ent->getType() == type) {
                     return ent;
                 }
+            }
+            if (m_isExtern) {
+                return std::const_pointer_cast<Namespace>(
+                    shared_from_this()
+                )->makeExtern(name, type, parameters);
             }
             return nullptr;
         }
@@ -263,6 +309,13 @@ std::shared_ptr<Entity> Namespace::getEntity(
             default: break;
         }
     }
+
+    if (m_isExtern) {
+        return std::const_pointer_cast<Namespace>(
+            shared_from_this()
+        )->makeExtern(name, type, parameters);
+    }
+    
     // none found then
     return nullptr;
 }
@@ -350,12 +403,64 @@ std::shared_ptr<Entity> Namespace::getEntity(
     return nullptr;
 }
 
+std::shared_ptr<Entity> Namespace::makeExtern(
+    std::string const& name,
+    Option<EntityType> const& type,
+    Option<std::vector<Parameter>> const& parameters
+) {
+    if (parameters || (type && type.value() == EntityType::Function)) {
+        return makeEntity<FunctionEntity>(
+            name, QualifiedFunType(
+                m_instance.getCompiler().makeType<FunctionType>(
+                    QualifiedType(
+                        m_instance.getCompiler().makeType<ExternType>()
+                    ),
+                    (parameters ?
+                        parameters.value() :
+                        std::vector<Parameter>()
+                    )
+                )
+            ), nullptr, true
+        );
+    }
+    if (!type) {
+        return nullptr;
+    }
+
+    switch (type.value()) {
+        case EntityType::Class: return makeEntity<Class>(
+            name, m_instance.getCompiler().makeType<ClassType>(name), true
+        );
+
+        case EntityType::Variable: return makeEntity<Variable>(
+            name, 
+            QualifiedType(
+                m_instance.getCompiler().makeType<ExternType>()
+            ),
+            nullptr, nullptr, true
+        );
+
+        case EntityType::Type: return makeEntity<TypeEntity>(
+            name, m_instance.getCompiler().makeType<BuiltInType>(types::DataType::Void)
+        );
+
+        case EntityType::Namespace: return makeEntity<Namespace>(
+            name, false, true
+        );
+
+        default: break;
+    }
+    return nullptr;
+}
+
 
 Class::Class(
+    Instance& instance,
     std::shared_ptr<Namespace> container,
     std::string const& name,
-    std::shared_ptr<ClassType> classType
-) : Namespace(container, name), m_classType(classType) {
+    std::shared_ptr<ClassType> classType,
+    bool isExtern
+) : Namespace(instance, container, name, false, isExtern), m_classType(classType) {
     m_type = EntityType::Class;
 }
 
@@ -374,6 +479,7 @@ std::shared_ptr<PointerType> Class::getClassTypePointer() const {
 }
 
 bool Class::hasMember(std::string const& name) const {
+    if (m_isExtern) return true;
     return hasEntity(name, {}, {}, EntityType::Variable, None);
 }
 
@@ -381,6 +487,7 @@ bool Class::hasMemberFunction(
     std::string const& name,
     Option<std::vector<Parameter>> const& parameters
 ) const {
+    if (m_isExtern) return true;
     return hasEntity(name, {}, {}, EntityType::Function, parameters);
 }
 
@@ -413,5 +520,4 @@ std::shared_ptr<FunctionEntity> Class::getMemberFunction(
         getEntity(name, {}, {}, EntityType::Function, parameters)
     );
 }
-
 

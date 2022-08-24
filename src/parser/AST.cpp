@@ -287,7 +287,15 @@ TypeCheckResult UnaryExpr::compile(Instance& instance) noexcept {
 }
 
 void UnaryExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
-    value->evalType.type->codegenUnary(this, stream);
+    if (!value->evalType.type->codegenUnary(this, stream)) {
+        if (type == Prefix) {
+            stream << tokenTypeToString(op);
+        }
+        value->codegen(instance, stream);
+        if (type == Suffix) {
+            stream << tokenTypeToString(op);
+        }
+    }
 }
 
 // BinaryExpr
@@ -448,7 +456,11 @@ std::shared_ptr<Value> BinaryExpr::eval(Instance& instance) {
 }
 
 void BinaryExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
-    LHS->evalType.type->codegenBinary(this, stream);
+    if (!LHS->evalType.type->codegenBinary(this, stream)) {
+        LHS->codegen(instance, stream);
+        stream << tokenTypeToString(op);
+        RHS->codegen(instance, stream);
+    }
 }
 
 // TernaryExpr
@@ -505,15 +517,19 @@ TypeCheckResult VariableExpr::compileWithParams(
 ) noexcept {
     auto var = instance.getCompiler().getEntity(name->fullName(), None, args);
     if (!var) {
-        if (args) {
+        auto overloads = 
+            instance.getCompiler().getEntities(
+                name->fullName(), EntityType::Function
+            );
+
+        if (args && overloads.size()) {
+
             // mfw readable code
             THROW_COMPILE_ERR(
                 "No matching overload for \"" + name->fullName() + "\" found",
                 "Possible overloads: \n\t" +
                     join(
-                        instance.getCompiler().getEntities(
-                            name->fullName(), EntityType::Function
-                        ),
+                        overloads,
                         "\n\t",
                         +[](std::shared_ptr<Entity> const& ent) {
                             return "(" + join<&Parameter::toString>(
@@ -1767,7 +1783,9 @@ TypeCheckResult IfStmt::compile(Instance& instance) noexcept {
         }
     )) {
         THROW_TYPE_ERR_AT(
-            "Condition for if statement does not evaluate to bool",
+            "Condition for if statement does not evaluate to `bool`, "
+            "but instead evaluates to `" + condition.value()->evalType.toString() +
+            "`",
             "",
             "",
             condition.value()->start, condition.value()->end
@@ -1781,10 +1799,13 @@ TypeCheckResult IfStmt::compile(Instance& instance) noexcept {
 void IfStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
     if (condition.has_value()) {
         stream << "if (";
-        condition.value()->evalType.codegenConvert(
-        QualifiedType {
-            instance.getCompiler().getBuiltInType(types::DataType::Bool)
-        }, condition.value(), stream);
+        if (!condition.value()->evalType.codegenConvert(
+            QualifiedType {
+                instance.getCompiler().getBuiltInType(types::DataType::Bool)
+            }, condition.value(), stream
+        )) {
+            condition.value()->codegen(instance, stream);
+        }
         stream << ") ";
     }
     stream << "{";
@@ -1804,14 +1825,6 @@ void IfStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
 BranchInferResult StmtList::inferBranchReturnType(Instance& instance) {
     Option<QualifiedType> value = None;
     for (auto& stmt : statements) {
-        if (value) {
-            THROW_COMPILE_ERR(
-                "Found unreachable code",
-                "",
-                ""
-            );
-            break;
-        }
         PROPAGATE_ASSIGN(value, stmt->inferBranchReturnType(instance));
     }
     return value;
@@ -1933,7 +1946,7 @@ void ClassDeclStmt::codegen(Instance& instance, std::ostream& stream) const noex
         stream << "class ";
     }
     name->codegen(instance, stream);
-    stream << "{";
+    stream << " {";
     PUSH_INDENT();
     for (auto const& member : members) {
         member->codegen(instance, stream);
@@ -1981,6 +1994,50 @@ TypeCheckResult ExternVarStmt::compile(Instance& instance) noexcept {
 }
 
 void ExternVarStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {}
+
+// ExternClassStmt
+
+TypeCheckResult ExternClassStmt::compile(Instance& instance) noexcept {
+    if (instance.getCompiler().getScope().hasEntity(name, EntityType::Class, None)) {
+        THROW_COMPILE_ERR(
+            "Class named \"" + name + "\" already exists "
+            "in this scope",
+            "",
+            ""
+        );
+    }
+    instance.getCompiler().getScope().makeEntity<Class>(
+        name, 
+        instance.getCompiler().makeType<ClassType>(name),
+        true
+    );
+
+    return Ok();
+}
+
+void ExternClassStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {}
+
+// ExternNamespaceStmt
+
+TypeCheckResult ExternNamespaceStmt::compile(Instance& instance) noexcept {
+    if (instance.getCompiler().getScope().hasEntity(name, EntityType::Namespace, None)) {
+        THROW_COMPILE_ERR(
+            "Namespace named \"" + name + "\" already exists "
+            "in this scope",
+            "",
+            ""
+        );
+    }
+    instance.getCompiler().getScope().makeEntity<Namespace>(
+        name,
+        false,
+        true
+    );
+
+    return Ok();
+}
+
+void ExternNamespaceStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {}
 
 // EmbedCodeStmt
 

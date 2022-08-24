@@ -1636,6 +1636,46 @@ namespace gdml::ast {
         }
     };
 
+    struct ExternClassStmt : Stmt {
+        std::string name;
+
+        ExternClassStmt(
+            SourceFile const* src,
+            Position const& start,
+            Position const& end,
+            std::string const& name
+        ) : Stmt(src, start, end), name(name) {}
+
+        std::string debugPrintAST(size_t i) const override {
+            return
+                GDML_DEBUG_FMT(ExternClassStmt) + 
+                GDML_DEBUG_FMT_PROP_S(name);
+        }
+
+        TypeCheckResult compile(Instance& instance) noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
+    };
+
+    struct ExternNamespaceStmt : Stmt {
+        std::string name;
+
+        ExternNamespaceStmt(
+            SourceFile const* src,
+            Position const& start,
+            Position const& end,
+            std::string const& name
+        ) : Stmt(src, start, end), name(name) {}
+
+        std::string debugPrintAST(size_t i) const override {
+            return
+                GDML_DEBUG_FMT(ExternNamespaceStmt) + 
+                GDML_DEBUG_FMT_PROP_S(name);
+        }
+
+        TypeCheckResult compile(Instance& instance) noexcept override;
+        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
+    };
+
     struct EmbedCodeStmt : Stmt {
         std::string language;
         std::string data;

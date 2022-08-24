@@ -325,6 +325,19 @@ namespace gdml {
         std::string codegenName() const override;
         std::string toString() const override;
     };
+    using QualifiedPointerType = TQualifiedType<PointerType>;
+
+    class ExternType : public Type {
+    public:
+        ExternType(Compiler& compiler);
+
+        bool convertibleTo(std::shared_ptr<Type> other, bool strict) const override;
+        bool implementsMemberOperator() const override;
+
+        std::string codegenName() const override;
+        std::string toString() const override;
+    };
+    using QualifiedExternType = TQualifiedType<ExternType>;
 
     // define TQualifiedType<T>::NO_TYPE
     template<class T>

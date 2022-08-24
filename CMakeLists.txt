@@ -8,6 +8,15 @@ find_package(LibClang REQUIRED)
 project(GDMLv4 VERSION 0.0.1)
 set(BINARY_NAME "gmdbrew")
 
+configure_file(src/utils/about.hpp.in ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/about.hpp)
+
+file(GLOB HEADERS
+    src/*.hpp
+    src/compiler/*.hpp
+    src/parser/*.hpp
+    src/utils/*.hpp
+    src/cli/*.hpp
+)
 file(GLOB SOURCES
     src/*.cpp
     src/compiler/*.cpp
@@ -15,12 +24,13 @@ file(GLOB SOURCES
     src/utils/*.cpp
     src/cli/*.cpp
 )
-configure_file(src/utils/about.hpp.in ${CMAKE_CURRENT_SOURCE_DIR}/src/utils/about.hpp)
 
 add_compile_definitions(GDML_DEBUG)
 
 add_executable(${PROJECT_NAME} ${SOURCES})
 set_target_properties(${PROJECT_NAME} PROPERTIES OUTPUT_NAME ${BINARY_NAME})
+
+target_precompile_headers(${PROJECT_NAME} PUBLIC ${HEADERS})
 
 target_include_directories(${PROJECT_NAME} PUBLIC
     src

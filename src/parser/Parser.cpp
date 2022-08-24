@@ -1380,41 +1380,83 @@ ExprResult<Stmt> Parser::parseExternDeclaration() noexcept {
     // consume 'extern'
     NEXT_TOKEN();
 
-    // extern variable
-    if (token.type == TokenType::Identifier) {
-        if (next.type != TokenType::Colon) {
-            THROW_SYNTAX_ERR(
-                next,
-                "Expected " + TOKEN_STR(Colon) + " for variable type, "
-                "found " + TOKEN_STR_V(next.type),
-                "Extern variable declarations must specify type",
-                ""
+    switch (token.type) {
+        // extern variable
+        case TokenType::Identifier: {
+            if (next.type != TokenType::Colon) {
+                THROW_SYNTAX_ERR(
+                    next,
+                    "Expected " + TOKEN_STR(Colon) + " for variable type, "
+                    "found " + TOKEN_STR_V(next.type),
+                    "Extern variable declarations must specify type",
+                    ""
+                );
+            }
+
+            auto name = token.data;
+
+            // consume name and colon
+            m_index += 2;
+
+            TypeExpr* type;
+            PROPAGATE_ASSIGN(type, parseTypeExpression());
+
+            return m_ast->make<ExternVarStmt>(
+                m_source, start, PREV_TOKEN().end,
+                name, type
             );
-        }
+        } break;
 
-        auto name = token.data;
+        // extern class
+        case TokenType::Class: {
+            if (next.type != TokenType::Identifier) {
+                THROW_SYNTAX_ERR(
+                    next,
+                    "Expected " + TOKEN_STR(Identifier) + " for class name, "
+                    "found " + TOKEN_STR_V(next.type),
+                    "",
+                    ""
+                );
+            }
 
-        // consume name and colon
-        m_index += 2;
+            // consume 'class' and name
+            m_index += 2;
 
-        TypeExpr* type;
-        PROPAGATE_ASSIGN(type, parseTypeExpression());
+            return m_ast->make<ExternClassStmt>(
+                m_source, start, PREV_TOKEN().end, next.data
+            );
+        } break;
 
-        return m_ast->make<ExternVarStmt>(
-            m_source, start, PREV_TOKEN().end,
-            name, type
-        );
-    }
-    // todo: types, functions, classes
-    else {
-        THROW_SYNTAX_ERR(
-            token,
-            "Expected " + TOKEN_STR(Identifier) + " for extern "
-            "variable declaration",
-            "",
-            "Only variables are currently supported for extern "
-            "declarations, sorry!"
-        );
+        // extern namespace
+        case TokenType::Namespace: {
+            if (next.type != TokenType::Identifier) {
+                THROW_SYNTAX_ERR(
+                    next,
+                    "Expected " + TOKEN_STR(Identifier) + " for namespace name, "
+                    "found " + TOKEN_STR_V(next.type),
+                    "",
+                    ""
+                );
+            }
+
+            // consume 'class' and name
+            m_index += 2;
+
+            return m_ast->make<ExternNamespaceStmt>(
+                m_source, start, PREV_TOKEN().end, next.data
+            );
+        } break;
+
+        default: {
+            THROW_SYNTAX_ERR(
+                token,
+                "Expected " + TOKEN_STR(Identifier) + " for extern "
+                "variable declaration",
+                "",
+                "Only variables are currently supported for extern "
+                "declarations, sorry!"
+            );
+        } break;
     }
 }
 

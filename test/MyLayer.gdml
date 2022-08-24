@@ -1,55 +1,12 @@
 
 import "MyLayer.hpp"
 
-fun print(text: string const&) {
-    ```cpp
-    std::cout << text << "\n";
-    ```
-}
+extern class CCLayer;
 
-fun toString(i: i32) -> string {
-    extern str: string;
-    ```cpp
-    auto str = std::to_string(i);
-    ```
-    return str;
-}
-
-class Something {
-    name: string;
-    value: i32;
-
-    construct = {
-        this->name = "ball man";
-        this->value = 0;
-    }
-    construct { name: string const&, value: i32 } = default;
-
-    destruct = {
+impl MyLayer::init(title: string const&) -> bool {
+    if !CCLayer::init() {
+        false
     }
 
-    fun getName(this) {
-        return this->name;
-    }
-
-    fun staticFun() {
-    }
-}
-
-fun test() {
-
-    extern y: i32;
-    ```cpp
-    int y = 5;
-    ```
-    print(toString(y));
-    
-    let x = Something {
-        value: 0,
-        name: "hi mom",
-    };
-
-    x.staticFun();
-    print(x.getName());
-
+    true
 }

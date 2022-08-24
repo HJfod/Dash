@@ -6,20 +6,27 @@
 namespace gdml {
     struct Entity {
     protected:
+        Instance& m_instance;
         std::shared_ptr<Namespace> m_namespace;
         std::string m_name;
         EntityType m_type;
+        bool m_isExtern;
 
         virtual void applyTypeDefinition() {}
 
         friend struct Namespace;
+        friend struct Class;
 
     public:
         Entity(
+            Instance& instance,
             std::shared_ptr<Namespace> container,
             std::string const& name,
-            EntityType type
+            EntityType type,
+            bool isExtern
         );
+
+        bool isExtern() const;
 
         EntityType getType() const;
         std::string getFullName() const;
@@ -46,9 +53,11 @@ namespace gdml {
             return true;
         }
         ValueEntity(
+            Instance& instance,
             std::shared_ptr<Namespace> container, 
             std::string const& name,
-            EntityType type
+            EntityType type,
+            bool isExtern
         );
     };
 
@@ -63,9 +72,11 @@ namespace gdml {
         }
 
         TypeEntity(
+            Instance& instance,
             std::shared_ptr<Namespace> container,
             std::string const& name,
-            std::shared_ptr<Type> type
+            std::shared_ptr<Type> type,
+            bool isExtern = false
         );
     };
 
@@ -82,11 +93,13 @@ namespace gdml {
         }
 
         Variable(
+            Instance& instance,
             std::shared_ptr<Namespace> container,
             std::string const& name,
             QualifiedType const& type,
             std::shared_ptr<Value> value,
-            ast::VariableDeclExpr* decl
+            ast::VariableDeclExpr* decl,
+            bool isExtern = false
         );
     };
 
@@ -100,10 +113,12 @@ namespace gdml {
         std::shared_ptr<Value> eval(Instance& instance) override;
 
         FunctionEntity(
+            Instance& instance,
             std::shared_ptr<Namespace> container,
             std::string const& name,
             QualifiedFunType const& type,
-            ast::AFunctionDeclStmt* decl
+            ast::AFunctionDeclStmt* decl,
+            bool isExtern = false
         );
     };
 
@@ -131,11 +146,19 @@ namespace gdml {
             Option<EntityType> const& type
         ) const;
 
+        std::shared_ptr<Entity> makeExtern(
+            std::string const& name,
+            Option<EntityType> const& type,
+            Option<std::vector<Parameter>> const& parameters
+        );
+
     public:
         Namespace(
+            Instance& instance,
             std::shared_ptr<Namespace> container,
             std::string const& name,
-            bool isGlobal = false
+            bool isGlobal = false,
+            bool isExtern = false
         );
 
         bool isGlobal() const;
@@ -168,6 +191,7 @@ namespace gdml {
             std::string const& name, Args&&... args
         ) {
             auto entity = std::make_shared<T>(
+                m_instance,
                 shared_from_this(),
                 name, std::forward<Args>(args)...
             );
@@ -192,9 +216,11 @@ namespace gdml {
 
     public:
         Class(
+            Instance& instance,
             std::shared_ptr<Namespace> container,
             std::string const& name,
-            std::shared_ptr<ClassType> classType
+            std::shared_ptr<ClassType> classType,
+            bool isExtern = false
         );
 
         bool isType() const override {
@@ -224,9 +250,11 @@ namespace gdml {
             std::string const& name, Args&&... args
         ) {
             auto entity = std::make_shared<T>(
+                m_instance,
                 shared_from_this(),
                 name, std::forward<Args>(args)...
             );
+            entity->applyTypeDefinition();
             pushEntity(name, entity);
             return entity;
         }

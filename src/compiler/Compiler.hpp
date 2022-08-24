@@ -33,6 +33,7 @@ namespace gdml {
 
     struct Scope {
     protected:
+        Compiler& m_compiler;
         std::shared_ptr<Namespace> m_global;
         NamespaceParts m_currentNamespace;
         std::vector<NamespaceParts> m_namespaces;
@@ -40,7 +41,7 @@ namespace gdml {
         friend class Compiler;
 
     public:
-        Scope(bool isGlobal);
+        Scope(Compiler& compiler, bool isGlobal);
 
         void useNamespace(NamespaceParts const& space);
 
