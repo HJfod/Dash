@@ -133,6 +133,8 @@ static const std::unordered_map<std::string, TokenType> TOKEN_STRINGS = {
     { "[", TokenType::LeftBracket },
     { "]", TokenType::RightBracket },
 
+    { "__debug_dump_entities", TokenType::DebugDumpEntities },
+
     { "<INVALID>", TokenType::Invalid },
 };
 
@@ -313,6 +315,11 @@ bool gdml::isLValueOperator(TokenType type) {
         type == TokenType::QuestionAssign ||
         type == TokenType::Increment ||
         type == TokenType::Decrement;
+}
+
+bool gdml::isDebugToken(TokenType type) {
+    return
+        type == TokenType::DebugDumpEntities;
 }
 
 std::ostream& gdml::operator<<(std::ostream& stream, TokenType type) {

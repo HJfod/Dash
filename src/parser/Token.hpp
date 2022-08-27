@@ -153,11 +153,15 @@ namespace gdml {
         LeftBracket,    // [
         RightBracket,   // ]
 
+        // debug stuff
+        DebugDumpEntities,
+
         Invalid,
 
         TOKEN_ENUM_END
     };
-    static constexpr auto TOKEN_COUNT = static_cast<size_t>(TokenType::TOKEN_ENUM_END);
+    static constexpr size_t TOKEN_COUNT = static_cast<size_t>(TokenType::TOKEN_ENUM_END);
+    static constexpr size_t MAX_TOKEN_LENGTH = 21;
 
     std::string tokenTypeToString(TokenType type);
     std::string tokenTypeToLongString(TokenType type);
@@ -179,6 +183,7 @@ namespace gdml {
     bool isLiteralPrefixOperator(TokenType type);
     bool isLiteral(TokenType type);
     bool isLValueOperator(TokenType type);
+    bool isDebugToken(TokenType type);
 
     std::ostream& operator<<(std::ostream& stream, TokenType type);
 

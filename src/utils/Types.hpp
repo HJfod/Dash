@@ -350,6 +350,16 @@ namespace gdml {
     template<class T>
     using LineResult = Result<T, LineError>;
 
+    struct FindError {
+        std::string error;
+        size_t depth;
+    };
+    template<class T>
+    using ScopeFindResult = Result<std::shared_ptr<T>, FindError>;
+
+    template<class T>
+    using FindResult = Result<std::shared_ptr<T>, std::string>;
+
     std::ostream& operator<<(std::ostream& stream, Error error);
     std::ostream& operator<<(std::ostream& stream, Position const& pos);
 

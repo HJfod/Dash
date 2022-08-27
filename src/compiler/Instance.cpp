@@ -55,7 +55,7 @@ Error Instance::execute() {
             auto type = tokenTypeToLongString(token.type);
             auto loc = token.start.toString() + " - " + token.end.toString();
             m_shared.rawIO()
-                << type << std::string(19 - type.size(), ' ') << "| "
+                << type << std::string(MAX_TOKEN_LENGTH + 7 - type.size(), ' ') << "| "
                 << loc << std::string(17 - loc.size(), ' ') << "| "
                 << token.data << "\n";
         }

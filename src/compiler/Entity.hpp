@@ -30,8 +30,10 @@ namespace gdml {
 
         EntityType getType() const;
         std::string getFullName() const;
-        std::string getName() const;
+        virtual std::string getName() const;
         bool hasParentNamespace() const;
+
+        virtual void dump(size_t indent) = 0;
 
         virtual bool isValue() const {
             return false;
@@ -71,12 +73,14 @@ namespace gdml {
             return QualifiedType(type);
         }
 
+        void dump(size_t indent) override;
+
         TypeEntity(
             Instance& instance,
             std::shared_ptr<Namespace> container,
             std::string const& name,
             std::shared_ptr<Type> type,
-            bool isExtern = false
+            bool isExtern
         );
     };
 
@@ -92,6 +96,8 @@ namespace gdml {
             return value;
         }
 
+        void dump(size_t indent) override;
+
         Variable(
             Instance& instance,
             std::shared_ptr<Namespace> container,
@@ -99,7 +105,7 @@ namespace gdml {
             QualifiedType const& type,
             std::shared_ptr<Value> value,
             ast::VariableDeclExpr* decl,
-            bool isExtern = false
+            bool isExtern
         );
     };
 
@@ -112,13 +118,15 @@ namespace gdml {
         }
         std::shared_ptr<Value> eval(Instance& instance) override;
 
+        void dump(size_t indent) override;
+
         FunctionEntity(
             Instance& instance,
             std::shared_ptr<Namespace> container,
             std::string const& name,
             QualifiedFunType const& type,
             ast::AFunctionDeclStmt* decl,
-            bool isExtern = false
+            bool isExtern
         );
     };
 
@@ -132,51 +140,60 @@ namespace gdml {
 
         void pushEntity(std::string const& name, std::shared_ptr<Entity> entity);
         
-        std::shared_ptr<Entity> getEntity(
+        ScopeFindResult<Entity> getEntity(
             std::string const& name,
             Option<EntityType> const& type,
-            Option<std::vector<Parameter>> const& parameters
+            Option<std::vector<Parameter>> const& parameters,
+            size_t depth,
+            bool expandExtern
         ) const;
-        std::shared_ptr<Namespace> getNamespaceMut(std::string const& name);
-        std::shared_ptr<const Namespace> getNamespace(std::string const& name) const;
-        std::shared_ptr<const Namespace> getNamespace(NamespaceParts const& name) const;
+        FindResult<Namespace> getNamespaceMut(std::string const& name);
+        FindResult<const Namespace> getNamespace(std::string const& name) const;
+        FindResult<const Namespace> getNamespace(NamespaceParts const& name) const;
 
         std::vector<std::shared_ptr<Entity>> getEntities(
             std::string const& name,
             Option<EntityType> const& type
         ) const;
 
-        std::shared_ptr<Entity> makeExtern(
+        FindResult<Entity> makeExtern(
             std::string const& name,
             Option<EntityType> const& type,
-            Option<std::vector<Parameter>> const& parameters
+            Option<std::vector<Parameter>> const& parameters,
+            bool expandExtern
         );
+
+        friend class Compiler;
 
     public:
         Namespace(
             Instance& instance,
             std::shared_ptr<Namespace> container,
             std::string const& name,
-            bool isGlobal = false,
-            bool isExtern = false
+            bool isExtern
         );
 
+        void dump(size_t indent) override;
+
         bool isGlobal() const;
+        std::string getName() const override;
 
         bool hasEntity(
             std::string const& name,
             NamespaceParts const& currentNamespace,
             std::vector<NamespaceParts> const& testNamespaces,
             Option<EntityType> const& type,
-            Option<std::vector<Parameter>> const& parameters
+            Option<std::vector<Parameter>> const& parameters,
+            bool expandExtern
         ) const;
 
-        std::shared_ptr<Entity> getEntity(
+        ScopeFindResult<Entity> getEntity(
             std::string const& name,
             NamespaceParts const& currentNamespace,
             std::vector<NamespaceParts> const& testNamespaces,
             Option<EntityType> const& type,
-            Option<std::vector<Parameter>> const& parameters
+            Option<std::vector<Parameter>> const& parameters,
+            bool expandExtern
         ) const;
 
         std::vector<std::shared_ptr<Entity>> getEntities(
@@ -209,6 +226,7 @@ namespace gdml {
     {
     protected:
         std::shared_ptr<ClassType> m_classType;
+        bool m_complete;
 
         void applyTypeDefinition() override;
 
@@ -220,8 +238,13 @@ namespace gdml {
             std::shared_ptr<Namespace> container,
             std::string const& name,
             std::shared_ptr<ClassType> classType,
-            bool isExtern = false
+            bool isExtern
         );
+
+        bool isComplete() const;
+        void markComplete();
+
+        void dump(size_t indent) override;
 
         bool isType() const override {
             return true;
@@ -233,16 +256,22 @@ namespace gdml {
         std::shared_ptr<ClassType> getClassType() const;
         std::shared_ptr<PointerType> getClassTypePointer() const;
 
-        bool hasMember(std::string const& name) const;
-        std::shared_ptr<Variable> getMember(std::string const& name) const;
+        bool hasMember(
+            std::string const& name, bool expandExtern
+        ) const;
+        std::shared_ptr<Variable> getMember(
+            std::string const& name, bool expandExtern
+        ) const;
 
         bool hasMemberFunction(
             std::string const& name,
-            Option<std::vector<Parameter>> const& parameters
+            Option<std::vector<Parameter>> const& parameters,
+            bool expandExtern
         ) const;
         std::shared_ptr<FunctionEntity> getMemberFunction(
             std::string const& name,
-            Option<std::vector<Parameter>> const& parameters
+            Option<std::vector<Parameter>> const& parameters,
+            bool expandExtern
         ) const;
 
         template<class T, class... Args>

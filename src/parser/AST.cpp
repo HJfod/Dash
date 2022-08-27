@@ -545,14 +545,16 @@ TypeCheckResult VariableExpr::compileWithParams(
             );
         }
         THROW_COMPILE_ERR(
-           "Identifier \"" + name->fullName() + "\" is undefined",
+            var.unwrapErr(),
             "",
             ""
         );
     }
     // variables and functions
-    if (var->isValue()) {
-        evalType = std::static_pointer_cast<ValueEntity>(var)->getValueType();
+    if (var.unwrap()->isValue()) {
+        evalType = std::static_pointer_cast<ValueEntity>(
+            var.unwrap()
+        )->getValueType();
     }
     // otherwise bad identifier for variable
     else {
@@ -564,7 +566,7 @@ TypeCheckResult VariableExpr::compileWithParams(
         );
     }
 
-    entity = var;
+    entity = var.unwrap();
 
     DEBUG_LOG_TYPE();
     return Ok();
@@ -604,7 +606,7 @@ void ScopeExpr::codegen(Instance& com, std::ostream& stream) const noexcept {
 
 TypeCheckResult TypeNameExpr::compile(Instance& instance) noexcept {
     auto entity = instance.getCompiler().getEntity(name->fullName(), None, None);
-    if (!entity || !entity->isType()) {
+    if (!entity || !entity.unwrap()->isType()) {
         THROW_TYPE_ERR(
             "Unknown type \"" + name->fullName() + "\"",
             "Not all C++ types are supported yet, sorry!",
@@ -612,7 +614,10 @@ TypeCheckResult TypeNameExpr::compile(Instance& instance) noexcept {
         );
     }
 
-    evalType = QualifiedType { entity->getValueType().type, qualifiers };
+    evalType = QualifiedType {
+        entity.unwrap()->getValueType().type,
+        qualifiers
+    };
     DEBUG_LOG_TYPE();
 
     DEBUG_LOG_TYPE();
@@ -851,7 +856,6 @@ TypeCheckResult PointerToExpr::compile(Instance& instance) noexcept {
 }
 
 void PointerToExpr::codegen(Instance& instance, std::ostream& stream) const noexcept {
-    std::cout << __FUNCTION__ << "\n";
     stream << (deref ? "*" : "&");
     stream << "(";
     value->codegen(instance, stream);
@@ -862,6 +866,13 @@ void PointerToExpr::codegen(Instance& instance, std::ostream& stream) const noex
 
 TypeCheckResult NameSpaceStmt::compile(Instance& instance) noexcept {
     GDML_TYPECHECK_CHILD_O(name);
+
+    if (name) {
+        instance.getCompiler().getScope().makeEntity<Namespace>(
+            name.value()->fullName(),
+            instance.getCompiler().getASTParser().isExtern()
+        );
+    }
 
     if (name) {
         for (auto& ns : name.value()->fullNameList()) {
@@ -896,7 +907,7 @@ TypeCheckResult UsingNameSpaceStmt::compile(Instance& instance) noexcept {
     GDML_TYPECHECK_CHILD(name);
 
     if (!instance.getCompiler().getScope().hasEntity(
-        name->fullName(), EntityType::Namespace, None
+        name->fullName(), EntityType::Namespace, None, true
     )) {
         THROW_COMPILE_ERR(
             "Unknown namespace \"" + name->fullName() + "\"",
@@ -1011,7 +1022,7 @@ TypeCheckResult VariableDeclExpr::compile(Instance& instance) noexcept {
 
     PROPAGATE_ERROR(inferType(instance, false));
 
-    if (instance.getCompiler().hasEntity<Variable>(name, None, false)) {
+    if (instance.getCompiler().hasEntity<Variable>(name, None, false, false)) {
         THROW_COMPILE_ERR(
             "Variable named \"" + name + "\" already exists "
             "in this scope",
@@ -1020,7 +1031,8 @@ TypeCheckResult VariableDeclExpr::compile(Instance& instance) noexcept {
         );
     }
     variable = instance.getCompiler().getScope().makeEntity<Variable>(
-        name, evalType, nullptr, this
+        name, evalType, nullptr, this,
+        instance.getCompiler().getASTParser().isExtern()
     );
     
     DEBUG_LOG_TYPE();
@@ -1049,7 +1061,7 @@ TypeCheckResult VariableDeclExpr::compile(
 
     PROPAGATE_ERROR(inferType(instance, false));
 
-    if (instance.getCompiler().hasEntity<Variable>(name, None, false)) {
+    if (instance.getCompiler().hasEntity<Variable>(name, None, false, false)) {
         THROW_COMPILE_ERR(
             "Variable named \"" + name + "\" already exists "
             "in this scope",
@@ -1058,7 +1070,8 @@ TypeCheckResult VariableDeclExpr::compile(
         );
     }
     variable = instance.getCompiler().getScope().makeEntity<Variable>(
-        name, evalType, nullptr, this
+        name, evalType, nullptr, this,
+        instance.getCompiler().getASTParser().isExtern()
     );
     
     DEBUG_LOG_TYPE();
@@ -1074,14 +1087,17 @@ TypeCheckResult VariableDeclExpr::compileAsMember(
 
     PROPAGATE_ERROR(inferType(instance, true));
 
-    if (classEntity->hasMember(name)) {
+    if (classEntity->hasMember(name, false)) {
         THROW_COMPILE_ERR(
             "Class already has a member named \"" + name + "\"",
             "",
             ""
         );
     }
-    variable = classEntity->makeMember<Variable>(name, evalType, nullptr, this);
+    variable = classEntity->makeMember<Variable>(
+        name, evalType, nullptr, this,
+        instance.getCompiler().getASTParser().isExtern()
+    );
 
     
     DEBUG_LOG_TYPE();
@@ -1266,7 +1282,10 @@ TypeCheckResult FunctionDeclStmt::compile(Instance& instance) noexcept {
     auto funType = type->evalType.into<FunctionType>();
 
     if (instance.getCompiler().getScope(1).hasEntity(
-        name->fullName(), EntityType::Function, funType.type->getParameters()
+        name->fullName(),
+        EntityType::Function,
+        funType.type->getParameters(),
+        false
     )) {
         THROW_COMPILE_ERR(
             "Function named \"" + name->fullName() + "\" with "
@@ -1277,7 +1296,8 @@ TypeCheckResult FunctionDeclStmt::compile(Instance& instance) noexcept {
     }
 
     entity = instance.getCompiler().getScope(1).makeEntity<FunctionEntity>(
-        name->fullName(), funType, this
+        name->fullName(), funType, this,
+        instance.getCompiler().getASTParser().isExtern()
     );
 
     GDML_TYPECHECK_CHILD_O(body);
@@ -1307,7 +1327,8 @@ TypeCheckResult FunctionDeclStmt::compileAsMember(
 
     if (classEntity->hasMemberFunction(
         name->fullName(),
-        funType.type->getParameters()
+        funType.type->getParameters(),
+        false
     )) {
         THROW_COMPILE_ERR(
             "Member function named \"" + name->fullName() + "\" with "
@@ -1317,7 +1338,8 @@ TypeCheckResult FunctionDeclStmt::compileAsMember(
         );
     }
     entity = classEntity->makeMember<FunctionEntity>(
-        name->fullName(), funType, this
+        name->fullName(), funType, this,
+        instance.getCompiler().getASTParser().isExtern()
     );
 
     GDML_TYPECHECK_CHILD_O(body);
@@ -1561,7 +1583,7 @@ TypeCheckResult ConstructorDeclStmt::compile(
     }
 
     auto funName = isDestructor ? DESTRUCTOR_FUN_NAME : CONSTRUCTOR_FUN_NAME;
-    if (classEntity->hasMemberFunction(funName, evalParamTypes)) {
+    if (classEntity->hasMemberFunction(funName, evalParamTypes, false)) {
         THROW_TYPE_ERR(
             "Class already has a constructor with these parameters",
             "",
@@ -1572,11 +1594,15 @@ TypeCheckResult ConstructorDeclStmt::compile(
     auto funType = instance.getCompiler().makeType<FunctionType>(
         QualifiedType(classEntity->getClassTypePointer()), evalParamTypes
     );
-    entity = classEntity->makeMember<FunctionEntity>(funName, funType, this);
+    entity = classEntity->makeMember<FunctionEntity>(
+        funName, funType, this,
+        instance.getCompiler().getASTParser().isExtern()
+    );
 
     instance.getCompiler().getScope().makeEntity<Variable>(
         "this", QualifiedType(classEntity->getClassTypePointer()),
-        nullptr, nullptr
+        nullptr, nullptr,
+        instance.getCompiler().getASTParser().isExtern()
     );
 
     GDML_TYPECHECK_CHILD_O(body);
@@ -1623,7 +1649,7 @@ TypeCheckResult ConstructExpr::checkInitializer(
     for (auto& [pName, pValue] : namedValues) {
         params.emplace_back(pName, pValue->evalType);
     }
-    funEntity = entity->getMemberFunction(CONSTRUCTOR_FUN_NAME, params);
+    funEntity = entity->getMemberFunction(CONSTRUCTOR_FUN_NAME, params, true);
     if (!funEntity) {
         THROW_TYPE_ERR(
             "No matching constructor for `" + entity->getFullName() + "` "
@@ -1650,10 +1676,10 @@ TypeCheckResult ConstructExpr::compile(Instance& instance) noexcept {
             );
         }
         // check initializer list
-        PROPAGATE_ERROR(checkInitializer(cls, instance));
+        PROPAGATE_ERROR(checkInitializer(cls.unwrap(), instance));
         evalType = isNew ?
-            QualifiedType(cls->getClassTypePointer()) :
-            QualifiedType(cls->getClassType());
+            QualifiedType(cls.unwrap()->getClassTypePointer()) :
+            QualifiedType(cls.unwrap()->getClassType());
     }
 
     DEBUG_LOG_TYPE();
@@ -1892,6 +1918,17 @@ bool StmtList::swap(Stmt* stmt, Stmt* to) {
 
 TypeCheckResult ClassFwdDeclStmt::compile(Instance& instance) noexcept {
     GDML_TYPECHECK_CHILD(name);
+    
+    if (!instance.getCompiler().getScope().hasEntity(
+        name->fullName(), EntityType::Class, None, false
+    )) {
+        instance.getCompiler().getScope().makeEntity<Class>(
+            name->fullName(), 
+            instance.getCompiler().makeType<ClassType>(name->fullName()),
+            instance.getCompiler().getASTParser().isExtern()
+        );
+    }
+
     DEBUG_LOG_TYPE_S();
     return Ok();
 }
@@ -1910,18 +1947,25 @@ void ClassFwdDeclStmt::codegen(Instance& instance, std::ostream& stream) const n
 TypeCheckResult ClassDeclStmt::compile(Instance& instance) noexcept {
     GDML_TYPECHECK_CHILD(name);
 
-    if (instance.getCompiler().getScope().hasEntity(name->fullName(), EntityType::Class, None)) {
-        THROW_COMPILE_ERR(
-            "Class named \"" + name->fullName() + "\" already "
-            "exists in this scope",
-            "",
-            ""
+    auto findEntity = instance.getCompiler().getEntity<Class>(name->fullName(), None);
+    if (findEntity) {
+        entity = findEntity.unwrap();
+        if (entity->isComplete()) {
+            THROW_COMPILE_ERR(
+                "Class \"" + name->fullName() + "\" is already "
+                "fully defined",
+                "",
+                ""
+            );
+        }
+        entity->markComplete();
+    } else {
+        entity = instance.getCompiler().getScope().makeEntity<Class>(
+            name->fullName(), 
+            instance.getCompiler().makeType<ClassType>(name->fullName()),
+            instance.getCompiler().getASTParser().isExtern()
         );
     }
-    entity = instance.getCompiler().getScope().makeEntity<Class>(
-        name->fullName(), 
-        instance.getCompiler().makeType<ClassType>(name->fullName())
-    );
 
     for (auto& member : members) {
         PROPAGATE_ERROR(member->compileAsMember(entity, instance));
@@ -1973,76 +2017,33 @@ BranchInferResult ReturnStmt::inferBranchReturnType(Instance& instance) {
     return Option<QualifiedType>(value->evalType);
 }
 
-// ExternVarStmt
+// ExternStmt
 
-TypeCheckResult ExternVarStmt::compile(Instance& instance) noexcept {
-    GDML_TYPECHECK_CHILD(type);
-
-    if (instance.getCompiler().hasEntity<Variable>(name, None, false)) {
-        THROW_COMPILE_ERR(
-            "Variable named \"" + name + "\" already exists "
-            "in this scope",
-            "",
-            ""
-        );
-    }
-    instance.getCompiler().getScope().makeEntity<Variable>(
-        name, type->evalType, nullptr, nullptr
-    );
+TypeCheckResult ExternStmt::compile(Instance& instance) noexcept {
+    instance.getCompiler().getASTParser().pushExtern();
+    GDML_TYPECHECK_CHILD(content);
+    instance.getCompiler().getASTParser().popExtern();
 
     return Ok();
 }
 
-void ExternVarStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {}
-
-// ExternClassStmt
-
-TypeCheckResult ExternClassStmt::compile(Instance& instance) noexcept {
-    if (instance.getCompiler().getScope().hasEntity(name, EntityType::Class, None)) {
-        THROW_COMPILE_ERR(
-            "Class named \"" + name + "\" already exists "
-            "in this scope",
-            "",
-            ""
-        );
-    }
-    instance.getCompiler().getScope().makeEntity<Class>(
-        name, 
-        instance.getCompiler().makeType<ClassType>(name),
-        true
-    );
-
-    return Ok();
-}
-
-void ExternClassStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {}
-
-// ExternNamespaceStmt
-
-TypeCheckResult ExternNamespaceStmt::compile(Instance& instance) noexcept {
-    if (instance.getCompiler().getScope().hasEntity(name, EntityType::Namespace, None)) {
-        THROW_COMPILE_ERR(
-            "Namespace named \"" + name + "\" already exists "
-            "in this scope",
-            "",
-            ""
-        );
-    }
-    instance.getCompiler().getScope().makeEntity<Namespace>(
-        name,
-        false,
-        true
-    );
-
-    return Ok();
-}
-
-void ExternNamespaceStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {}
+void ExternStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {}
 
 // EmbedCodeStmt
 
 void EmbedCodeStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
     stream << data;
+}
+
+// DebugStmt
+
+TypeCheckResult DebugStmt::compile(Instance& instance) noexcept {
+    instance.getCompiler().dumpScopes();
+    return Ok();
+}
+
+void DebugStmt::codegen(Instance& instance, std::ostream& stream) const noexcept {
+    instance.getCompiler().getFormatter().skipSemiColon();
 }
 
 // AST

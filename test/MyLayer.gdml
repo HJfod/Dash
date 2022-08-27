@@ -1,12 +1,26 @@
 
 import "MyLayer.hpp"
 
-extern class CCLayer;
+extern {
+    namespace std {
+        let cout;
+    }
+
+    namespace cocos2d {
+        class CCLayer;
+    }
+}
+
+using namespace cocos2d;
 
 impl MyLayer::init(title: string const&) -> bool {
+    __debug_dump_entities;
+
     if !CCLayer::init() {
         false
     }
+
+    std::cout << "hi\n";
 
     true
 }

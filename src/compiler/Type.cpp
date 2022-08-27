@@ -446,10 +446,10 @@ QualifiedType ClassType::typeOfMember(
         return QualifiedType::NO_TYPE;
     }
     if (args) {
-        auto function = m_entity->getMemberFunction(name, args);
+        auto function = m_entity->getMemberFunction(name, args, true);
         return function ? function->getValueType() : QualifiedType::NO_TYPE;
     }
-    auto member = m_entity->getMember(name);
+    auto member = m_entity->getMember(name, true);
     return member ? member->getValueType() : QualifiedType::NO_TYPE;
 }
 

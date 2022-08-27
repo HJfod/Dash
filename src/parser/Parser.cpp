@@ -1322,10 +1322,10 @@ ExprResult<IfStmt> Parser::parseIfChain() noexcept {
 }
 
 ExprResult<StmtList> Parser::parseBlock(bool topLevel) noexcept {
-    std::vector<Stmt*> statements;
-
     INIT_TOKEN();
     auto start = token.start;
+
+    std::vector<Stmt*> statements;
 
     // if this is just '{}'
     if (next.type == TokenType::RightBrace) {
@@ -1372,7 +1372,7 @@ ExprResult<StmtList> Parser::parseBlock(bool topLevel) noexcept {
     );
 }
 
-ExprResult<Stmt> Parser::parseExternDeclaration() noexcept {
+ExprResult<Stmt> Parser::parseExternDeclaration(bool topLevel) noexcept {
     INIT_TOKEN();
 
     auto start = token.start;
@@ -1380,84 +1380,24 @@ ExprResult<Stmt> Parser::parseExternDeclaration() noexcept {
     // consume 'extern'
     NEXT_TOKEN();
 
-    switch (token.type) {
-        // extern variable
-        case TokenType::Identifier: {
-            if (next.type != TokenType::Colon) {
-                THROW_SYNTAX_ERR(
-                    next,
-                    "Expected " + TOKEN_STR(Colon) + " for variable type, "
-                    "found " + TOKEN_STR_V(next.type),
-                    "Extern variable declarations must specify type",
-                    ""
-                );
-            }
-
-            auto name = token.data;
-
-            // consume name and colon
-            m_index += 2;
-
-            TypeExpr* type;
-            PROPAGATE_ASSIGN(type, parseTypeExpression());
-
-            return m_ast->make<ExternVarStmt>(
-                m_source, start, PREV_TOKEN().end,
-                name, type
-            );
-        } break;
-
-        // extern class
-        case TokenType::Class: {
-            if (next.type != TokenType::Identifier) {
-                THROW_SYNTAX_ERR(
-                    next,
-                    "Expected " + TOKEN_STR(Identifier) + " for class name, "
-                    "found " + TOKEN_STR_V(next.type),
-                    "",
-                    ""
-                );
-            }
-
-            // consume 'class' and name
-            m_index += 2;
-
-            return m_ast->make<ExternClassStmt>(
-                m_source, start, PREV_TOKEN().end, next.data
-            );
-        } break;
-
-        // extern namespace
-        case TokenType::Namespace: {
-            if (next.type != TokenType::Identifier) {
-                THROW_SYNTAX_ERR(
-                    next,
-                    "Expected " + TOKEN_STR(Identifier) + " for namespace name, "
-                    "found " + TOKEN_STR_V(next.type),
-                    "",
-                    ""
-                );
-            }
-
-            // consume 'class' and name
-            m_index += 2;
-
-            return m_ast->make<ExternNamespaceStmt>(
-                m_source, start, PREV_TOKEN().end, next.data
-            );
-        } break;
-
-        default: {
-            THROW_SYNTAX_ERR(
-                token,
-                "Expected " + TOKEN_STR(Identifier) + " for extern "
-                "variable declaration",
-                "",
-                "Only variables are currently supported for extern "
-                "declarations, sorry!"
-            );
-        } break;
+    StmtList* list;
+    // statement list?
+    if (token.type == TokenType::RightBrace) {
+        PROPAGATE_ASSIGN(list, parseBlock(topLevel));
     }
+    // otherwise parse single statement
+    else {
+        Stmt* stmt;
+        PROPAGATE_ASSIGN(stmt, parseStatement(topLevel));
+        list = m_ast->make<StmtList>(
+            m_source, stmt->start, stmt->end,
+            std::vector<Stmt*> { stmt }
+        );
+    }
+
+    return m_ast->make<ExternStmt>(
+        m_source, start, PREV_TOKEN().end, list
+    );
 }
 
 ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
@@ -1525,10 +1465,7 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
         } break;
 
         case TokenType::Extern: {
-            Stmt* decl;
-            PROPAGATE_ASSIGN(decl, parseExternDeclaration());
-            CHECK_SEMICOLON();
-            return decl;
+            PROPAGATE_VALUE(parseExternDeclaration(topLevel));
         } break;
 
         case TokenType::EmbedLanguageIdentifier: {
@@ -1639,6 +1576,13 @@ ExprResult<Stmt> Parser::parseStatement(bool topLevel) noexcept {
         } break;
 
         default: {
+            if (isDebugToken(token.type)) {
+                m_index++;
+                return m_ast->make<DebugStmt>(
+                    m_source, token.start, token.end, token.type
+                );
+            }
+
             if (topLevel) {
                 THROW_SYNTAX_ERR(
                     token,

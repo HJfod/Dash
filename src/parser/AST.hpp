@@ -1604,76 +1604,33 @@ namespace gdml::ast {
 
     // embed
 
-    struct ExternVarStmt : Stmt {
-        TypeExpr* type;
-        std::string name;
+    struct ExternStmt : Stmt {
+        StmtList* content;
 
-        ExternVarStmt(
+        ExternStmt(
             SourceFile const* src,
             Position const& start,
             Position const& end,
-            std::string const& name,
-            TypeExpr* type
+            StmtList* content
         ) : Stmt(src, start, end),
-            name(name), type(type)
+            content(content)
         {
-            GDML_APPLY_PARENT(type);
+            GDML_APPLY_PARENT(content);
         }
 
         std::string debugPrintAST(size_t i) const override {
             return
-                GDML_DEBUG_FMT(ExternVarStmt) + 
-                GDML_DEBUG_FMT_PROP_S(name) + 
-                GDML_DEBUG_FMT_CHILD(type);
+                GDML_DEBUG_FMT(ExternStmt) + 
+                GDML_DEBUG_FMT_CHILD(content);
         }
 
         TypeCheckResult compile(Instance& instance) noexcept override;
         void codegen(Instance& instance, std::ostream& stream) const noexcept override;
 
         bool swap(Stmt* stmt, Stmt* to) override {
-            GDML_SWAP_CHILD(type);
+            GDML_SWAP_CHILD(content);
             return false;
         }
-    };
-
-    struct ExternClassStmt : Stmt {
-        std::string name;
-
-        ExternClassStmt(
-            SourceFile const* src,
-            Position const& start,
-            Position const& end,
-            std::string const& name
-        ) : Stmt(src, start, end), name(name) {}
-
-        std::string debugPrintAST(size_t i) const override {
-            return
-                GDML_DEBUG_FMT(ExternClassStmt) + 
-                GDML_DEBUG_FMT_PROP_S(name);
-        }
-
-        TypeCheckResult compile(Instance& instance) noexcept override;
-        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
-    };
-
-    struct ExternNamespaceStmt : Stmt {
-        std::string name;
-
-        ExternNamespaceStmt(
-            SourceFile const* src,
-            Position const& start,
-            Position const& end,
-            std::string const& name
-        ) : Stmt(src, start, end), name(name) {}
-
-        std::string debugPrintAST(size_t i) const override {
-            return
-                GDML_DEBUG_FMT(ExternNamespaceStmt) + 
-                GDML_DEBUG_FMT_PROP_S(name);
-        }
-
-        TypeCheckResult compile(Instance& instance) noexcept override;
-        void codegen(Instance& instance, std::ostream& stream) const noexcept override;
     };
 
     struct EmbedCodeStmt : Stmt {
@@ -1721,6 +1678,30 @@ namespace gdml::ast {
                 GDML_DEBUG_FMT_PROP(isRelative);
         }
 
+        void codegen(Instance& Instance, std::ostream& stream) const noexcept override;
+    };
+
+    // debug
+
+    // todo: get rid of this after macros have been implemented and use those
+    struct DebugStmt : Stmt {
+        TokenType token;
+        
+        DebugStmt(
+            SourceFile const* src,
+            Position const& start,
+            Position const& end,
+            TokenType token
+        ) : Stmt(src, start, end),
+            token(token) {}
+
+        std::string debugPrintAST(size_t i) const override {
+            return
+                GDML_DEBUG_FMT(DebugStmt) +
+                GDML_DEBUG_FMT_PROP_OP(token);
+        }
+
+        TypeCheckResult compile(Instance& instance) noexcept override;
         void codegen(Instance& Instance, std::ostream& stream) const noexcept override;
     };
 

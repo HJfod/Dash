@@ -4,6 +4,7 @@
 #include "Type.hpp"
 #include <unordered_set>
 #include "Entity.hpp"
+#include <utils/Macros.hpp>
 
 namespace gdml {
     enum class ConstValue {
@@ -31,6 +32,19 @@ namespace gdml {
         void skipSemiColon();
     };
 
+    class ASTParser {
+    protected:
+        Compiler& m_compiler;
+        size_t m_inExtern;
+    
+    public:
+        ASTParser(Compiler& compiler);
+
+        bool isExtern() const;
+        void pushExtern();
+        void popExtern();
+    };
+
     struct Scope {
     protected:
         Compiler& m_compiler;
@@ -41,7 +55,7 @@ namespace gdml {
         friend class Compiler;
 
     public:
-        Scope(Compiler& compiler, bool isGlobal);
+        Scope(Compiler& compiler);
 
         void useNamespace(NamespaceParts const& space);
 
@@ -52,12 +66,14 @@ namespace gdml {
         bool hasEntity(
             std::string const& name,
             Option<EntityType> type,
-            Option<std::vector<Parameter>> const& parameters
+            Option<std::vector<Parameter>> const& parameters,
+            bool expandExtern
         ) const;
-        std::shared_ptr<Entity> getEntity(
+        ScopeFindResult<Entity> getEntity(
             std::string const& name,
             Option<EntityType> type,
-            Option<std::vector<Parameter>> const& parameters
+            Option<std::vector<Parameter>> const& parameters,
+            bool expandExtern
         ) const;
         template<class T, class... Args>
         std::shared_ptr<T> makeEntity(
@@ -81,6 +97,7 @@ namespace gdml {
         std::unordered_map<ConstValue, std::shared_ptr<Value>> m_constValues;
         std::vector<Scope> m_scope;
         Formatter m_formatter;
+        ASTParser m_astParser;
     
         void loadBuiltinTypes();
         void loadConstValues();
@@ -95,87 +112,94 @@ namespace gdml {
 
         Instance& getInstance() const;
         Formatter& getFormatter();
+        ASTParser& getASTParser();
 
         void pushScope();
         void popScope();
         Scope& getScope(size_t offset = 0);
+        void dumpScopes();
 
         bool hasEntity(
             std::string const& name,
             Option<EntityType> type,
             Option<std::vector<Parameter>> const& parameters,
-            bool checkAllScopes = true
+            bool checkAllScopes = true,
+            bool expandExtern = true
         ) const;
         template<class T>
         bool hasEntity(
             std::string const& name,
             Option<std::vector<Parameter>> const& parameters = None,
-            bool checkAllScopes = true
+            bool checkAllScopes = true,
+            bool expandExtern = true
         ) {
             if constexpr (std::is_same_v<T, Variable>) {
-                return hasEntity(name, EntityType::Variable, None, checkAllScopes);
+                return hasEntity(name, EntityType::Variable, None, checkAllScopes, expandExtern);
             }
             else if constexpr (std::is_same_v<T, FunctionEntity>) {
-                return hasEntity(name, EntityType::Function, parameters, checkAllScopes);
+                return hasEntity(name, EntityType::Function, parameters, checkAllScopes, expandExtern);
             }
             else if constexpr (std::is_same_v<T, TypeEntity>) {
-                return hasEntity(name, EntityType::Type, None, checkAllScopes);
+                return hasEntity(name, EntityType::Type, None, checkAllScopes, expandExtern);
             }
             else if constexpr (std::is_same_v<T, Namespace>) {
-                return hasEntity(name, EntityType::Namespace, None, checkAllScopes);
+                return hasEntity(name, EntityType::Namespace, None, checkAllScopes, expandExtern);
             }
             else if constexpr (std::is_same_v<T, Class>) {
-                return hasEntity(name, EntityType::Class, None, checkAllScopes);
+                return hasEntity(name, EntityType::Class, None, checkAllScopes, expandExtern);
             }
             else if constexpr (std::is_same_v<T, ValueEntity>) {
-                return hasEntity(name, None, None, checkAllScopes);
+                return hasEntity(name, None, None, checkAllScopes, expandExtern);
             }
             else {
                 static_assert(!std::is_same_v<T, T>, "Invalid type to check entity as");
             }
         }
 
-        std::shared_ptr<Entity> getEntity(
+        FindResult<Entity> getEntity(
             std::string const& name,
             Option<EntityType> type,
-            Option<std::vector<Parameter>> const& parameters
+            Option<std::vector<Parameter>> const& parameters,
+            bool expandExtern = true
         ) const;
         template<class T>
-        std::shared_ptr<T> getEntity(
+        FindResult<T> getEntity(
             std::string const& name,
-            Option<std::vector<Parameter>> const& parameters = None
+            Option<std::vector<Parameter>> const& parameters = None,
+            bool expandExtern = true
         ) {
             if constexpr (std::is_same_v<T, Variable>) {
-                return getEntityAs<T>(name, EntityType::Variable, None);
+                return getEntityAs<T>(name, EntityType::Variable, None, expandExtern);
             }
             else if constexpr (std::is_same_v<T, FunctionEntity>) {
-                return getEntityAs<T>(name, EntityType::Function, parameters);
+                return getEntityAs<T>(name, EntityType::Function, parameters, expandExtern);
             }
             else if constexpr (std::is_same_v<T, TypeEntity>) {
-                return getEntityAs<T>(name, EntityType::Type, None);
+                return getEntityAs<T>(name, EntityType::Type, None, expandExtern);
             }
             else if constexpr (std::is_same_v<T, Namespace>) {
-                return getEntityAs<T>(name, EntityType::Namespace, None);
+                return getEntityAs<T>(name, EntityType::Namespace, None, expandExtern);
             }
             else if constexpr (std::is_same_v<T, Class>) {
-                return getEntityAs<T>(name, EntityType::Class, None);
+                return getEntityAs<T>(name, EntityType::Class, None, expandExtern);
             }
             else if constexpr (std::is_same_v<T, ValueEntity>) {
-                return getEntityAs<T>(name, None, None);
+                return getEntityAs<T>(name, None, None, expandExtern);
             }
             else {
                 static_assert(!std::is_same_v<T, T>, "Invalid type to get entity as");
             }
         }
         template<class T>
-        std::shared_ptr<T> getEntityAs(
+        FindResult<T> getEntityAs(
             std::string const& name,
             Option<EntityType> type,
-            Option<std::vector<Parameter>> const& parameters
+            Option<std::vector<Parameter>> const& parameters,
+            bool expandExtern = true
         ) const {
-            return std::static_pointer_cast<T>(getEntity(
-                name, type, parameters
-            ));
+            auto e = getEntity(name, type, parameters, expandExtern);
+            PROPAGATE_ERROR(e);
+            return std::static_pointer_cast<T>(e.unwrap());
         }
 
         std::vector<std::shared_ptr<Entity>> getEntities(
