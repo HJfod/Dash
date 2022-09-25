@@ -1,0 +1,14 @@
+
+fun addTwo(a: i32, b: i32) -> i32 {
+    return a + b;
+}
+
+fun addTwo(a: f32, b: f32) -> f32 {
+    return a + b;
+}
+
+let steve = 6;
+let alex = 7;
+
+let x = addTwo(steve, alex);
+
