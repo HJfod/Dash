@@ -1,0 +1,36 @@
+
+struct CCPoint {
+    x: float;
+    y: float;
+}
+
+node CCNode {
+    x: float {
+        get: () => // impld in compiler
+        set: (val: float) => this.setPositionX(val);
+    }
+    y: float {
+        get: () => this.getPositionY();
+        set: (val: float) => this.setPositionY(val);
+    }
+    pos: CCSize {
+        get: () => CCSize { this.x, this.y };
+        set: (val: CCSize) => {
+            this.x = val.x;
+            this.y = val.y;
+        }
+    }
+}
+
+node MyBinding {
+    rotation: float {
+        get: () => 
+    }
+}
+
+node CCLabelBMFont {
+    text: string {
+        get: () => this.getString();
+        set: (val: string) => this.setString(val);
+    }
+}

@@ -1,0 +1,207 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "gdml",
+	"patterns": [
+		{
+			"include": "#language"
+		}
+	],
+	"repository": {
+		"language": {
+			"patterns": [
+				{
+					"include": "#comments"
+				},
+				{
+					"include": "#constants"
+				},
+				{
+					"include": "#keywords"
+				},
+				{
+					"include": "#strings"
+				},
+				{
+					"include": "#declarations"
+				},
+				{
+					"include": "#parenthesis"
+				},
+				{
+					"include": "#operators"
+				},
+				{
+					"include": "#expression"
+				}
+			]
+		},
+		"declarations": {
+			"patterns": [
+				{
+					"match": "(?<=const\\s+)[a-zA-Z]+",
+					"name": "variable.other.constant.gdml"
+				},
+				{
+					"match": "(?<=(new|decl(\\s+[a-zA-Z0-9]+\\s*=)?|:)\\s*)[a-zA-Z0-9_]+",
+					"name": "entity.name.type.gdml"
+				},
+				{
+					"match": "[a-zA-Z0-9_]+(?=\\s*\\{)",
+					"name": "entity.name.type.gdml"
+				},
+				{
+					"match": "\\b(\\w+\\!?)(?=\\s*\\()",
+					"captures": {
+						"1": {
+							"name": "entity.name.function.gdml"
+						}
+					}
+				}
+			]
+		},
+		"keywords": {
+			"patterns": [
+				{
+					"name": "keyword.control.gdml",
+					"match": "\\b(for|while|if|else|try|return|break|from|continue|new)\\b"
+				},
+				{
+					"name": "keyword.control.meta.gdml",
+					"match": "(@([a-zA-Z]+))\\b"
+				},
+				{
+					"name": "storage.type.gdml",
+					"match": "\\b(void|bool|int|float|string)\\b"
+				},
+				{
+					"name": "keyword.other.gdml",
+					"match": "\\b(in|is|as|extern|import|export)\\b"
+				},
+				{
+					"name": "storage.type.gdml",
+					"match": "\\b(let|const|fun|decl)\\b"
+				},
+				{
+					"name": "punctuation.gdml",
+					"match": "(->)|\\.|;|,|:|\\?|#"
+				}
+			]
+		},
+		"operators": {
+			"name": "keyword.operator.gdml",
+			"match": "[\\+\\-\\*\\/=<>\\^\\|\\&\\!%~@]"
+		},
+		"strings": {
+			"patterns": [
+				{
+					"name": "string.quoted.double.gdml",
+					"begin": "\"",
+					"end": "\"",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.begin.gdml"
+						}
+					},
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.begin.gdml"
+						}
+					},
+					"patterns": [
+						{
+							"name": "constant.character.escape.gdml",
+							"match": "\\\\."
+						},
+						{
+							"name": "variable.gdml",
+							"begin": "\\{",
+							"end": "\\}",
+							"beginCaptures": {
+								"0": { "name": "punctuation.paren.open" }
+							},
+							"endCaptures": {
+								"0": { "name": "punctuation.paren.close" }
+							},
+							"patterns": [{ "include": "#language" }]
+						}
+					]
+				}
+			]
+		},
+		"constants": {
+			"patterns": [
+				{
+					"name": "constant.numeric.gdml",
+					"match": "\\b(([0-9]*\\.[0-9]+)|([0-9]+))\\b"
+				},
+				{
+					"name": "constant.numeric.gdml",
+					"match": "0x[0-9A-Fa-f]+"
+				},
+				{
+					"name": "constant.language.gdml",
+					"match": "\\b((argument[0-9]*)|arguments|namedArguments|this)\\b"
+				},
+				{
+					"name": "constant.language.gdml",
+					"match": "\\b(true|false|null)\\b"
+				}
+			]
+		},
+		"comments": {
+			"patterns": [
+				{
+					"name": "comment.block",
+					"begin": "/\\*",
+					"end": "\\*/"
+				},
+				{
+					"name": "comment.line",
+					"begin": "//",
+					"end": "\n"
+				}
+			]
+		},
+		"parenthesis": {
+			"patterns": [
+				{
+					"begin": "\\(",
+					"end": "\\)",
+					"beginCaptures": {
+						"0": { "name": "punctuation.paren.open" }
+					},
+					"endCaptures": {
+						"0": { "name": "punctuation.paren.close" }
+					},
+					"name": "expression.group",
+					"patterns": [{ "include": "#language" }]
+				},
+				{
+					"begin": "\\{",
+					"end": "\\}",
+					"beginCaptures": {
+						"0": { "name": "punctuation.paren.open" }
+					},
+					"endCaptures": {
+						"0": { "name": "punctuation.paren.close" }
+					},
+					"name": "expression.group",
+					"patterns": [{ "include": "#language" }]
+				},
+				{
+					"begin": "\\[",
+					"end": "\\]",
+					"beginCaptures": {
+						"0": { "name": "punctuation.paren.open" }
+					},
+					"endCaptures": {
+						"0": { "name": "punctuation.paren.close" }
+					},
+					"name": "expression.group",
+					"patterns": [{ "include": "#language" }]
+				}
+			]
+		}
+	},
+	"scopeName": "source.gdml"
+}
