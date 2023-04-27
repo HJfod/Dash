@@ -140,7 +140,7 @@
 				},
 				{
 					"name": "constant.language.gdml",
-					"match": "\\b((argument[0-9]*)|arguments|namedArguments|this)\\b"
+					"match": "\\b(this|root)\\b"
 				},
 				{
 					"name": "constant.language.gdml",
