@@ -1,4 +1,8 @@
-#include "Parser.hpp"
+#include <lang/Parser.hpp>
+
+using namespace geode::prelude;
+using namespace gdml::lang;
+using namespace gdml;
 
 static std::unordered_map<Keyword, std::string> KEYWORDS {
     { Keyword::For,         "for" },
@@ -49,9 +53,9 @@ static std::unordered_map<Op, std::tuple<std::string, size_t, OpDir>> OPS {
 
 static std::string INVALID_IDENT_CHARS = ".,;(){}[]@`\\´¨'\"";
 static std::string VALID_OP_CHARS = "=+-/*<>!#?&|%:~^";
-static std::unordered_set<std::string> SPECIAL_IDENTS { "this", "root" };
+static std::unordered_set<std::string> SPECIAL_IDENTS { "this", "super", "root" };
 
-bool isIdentCh(char ch) {
+bool lang::isIdentCh(char ch) {
     return
         // no reserved chars
         INVALID_IDENT_CHARS.find_first_of(ch) == std::string::npos && 
@@ -61,7 +65,7 @@ bool isIdentCh(char ch) {
         !std::isspace(ch);
 }
 
-bool isIdent(std::string const& ident) {
+bool lang::isIdent(std::string const& ident) {
     // can't be empty
     if (!ident.size()) {
         return false;
@@ -85,15 +89,15 @@ bool isIdent(std::string const& ident) {
     return true;
 }
 
-bool isSpecialIdent(std::string const& ident) {
+bool lang::isSpecialIdent(std::string const& ident) {
     return SPECIAL_IDENTS.contains(ident);
 }
 
-bool isOpCh(char ch) {
+bool lang::isOpCh(char ch) {
     return VALID_OP_CHARS.find_first_of(ch) != std::string::npos;
 }
 
-bool isOp(std::string const& op) {
+bool lang::isOp(std::string const& op) {
     for (auto& c : op) {
         if (!isOpCh(c)) {
             return false;
@@ -102,7 +106,7 @@ bool isOp(std::string const& op) {
     return op.size();
 }
 
-bool isUnOp(Op op) {
+bool lang::isUnOp(Op op) {
     switch (op) {
         case Op::Add:
         case Op::Sub:
@@ -110,6 +114,14 @@ bool isUnOp(Op op) {
             return true;
         default: return false;
     }
+}
+
+size_t lang::opPriority(Op op) {
+    return std::get<1>(OPS.at(op));
+}
+
+OpDir lang::opDir(Op op) {
+    return std::get<2>(OPS.at(op));
 }
 
 std::string Token::toString(bool debug) const {
@@ -144,9 +156,11 @@ void Token::skipToNext(Stream& stream) {
 ParseResult<Token> Token::pull(Stream& stream) {
     Token::skipToNext(stream);
 
+    Rollback rb(stream);
+
     stream.debugTick();
     if (stream.eof()) {
-        return Err(stream.error("Expected token, found end-of-file"));
+        return rb.error("Expected token, found end-of-file");
     }
 
     // string literals
@@ -158,7 +172,7 @@ ParseResult<Token> Token::pull(Stream& stream) {
             if (c == '\\') {
                 auto escaped = stream.next();
                 if (escaped == '\0') {
-                    return Err(stream.error("Expected escaped character, found end-of-file"));
+                    return rb.error("Expected escaped character, found end-of-file");
                 }
                 switch (escaped) {
                     case 'n':  lit += '\n'; break;
@@ -173,10 +187,10 @@ ParseResult<Token> Token::pull(Stream& stream) {
                         .src = stream.src(),
                         .info = fmt::format("Unknown escape sequence '\\{}'", escaped),
                         .range = Range(
-                            stream.src()->getLocation(stream.offset() - 2),
-                            stream.src()->getLocation(stream.offset() - 1)
+                            stream.src()->getLocation(stream.offset() - 1),
+                            stream.src()->getLocation(stream.offset())
                         ),
-                    });
+                    }); break;
                 }
             }
             // todo: interpolated string literals
@@ -184,6 +198,7 @@ ParseResult<Token> Token::pull(Stream& stream) {
                 break;
             }
         }
+        rb.commit();
         return Ok(Token(lit));
     }
 
@@ -204,24 +219,27 @@ ParseResult<Token> Token::pull(Stream& stream) {
         }
         if (foundDot) {
             try {
+                rb.commit();
                 return Ok(Token(std::stod(num)));
             }
             catch(...) {
-                return Err(stream.error("Invalid float literal", start));
+                return rb.error("Invalid float literal");
             }
         }
         else {
             try {
+                rb.commit();
                 return Ok(Token(std::stoul(num)));
             }
             catch(...) {
-                return Err(stream.error("Invalid integer literal", start));
+                return rb.error("Invalid integer literal");
             }
         }
     }
 
     // punctuation
     if (std::string("()[]{}:;,.@").find_first_of(stream.peek()) != std::string::npos) {
+        rb.commit();
         return Ok(Token(Punct(stream.next())));
     }
 
@@ -245,33 +263,38 @@ ParseResult<Token> Token::pull(Stream& stream) {
             }
         }
 
-        return Err(stream.error(fmt::format("Invalid operator '{}'", ident), start));
+        return rb.error("Invalid operator '{}'", ident);
     }
 
     // special literals
     if (ident == "true") {
+        rb.commit();
         return Ok(Token(Lit(true)));
     }
     if (ident == "false") {
+        rb.commit();
         return Ok(Token(Lit(false)));
     }
     if (ident == "null") {
+        rb.commit();
         return Ok(Token(Lit(NullLit())));
     }
 
     // keyword
     for (auto const& [kw, va] : KEYWORDS) {
         if (va == ident) {
+            rb.commit();
             return Ok(Token(kw));
         }
     }
 
     // identifier
     if (isIdent(ident)) {
+        rb.commit();
         return Ok(Token(ident));
     }
 
-    return Err(stream.error(fmt::format("Invalid keyword or identifier '{}'", ident), start));
+    return rb.error("Invalid keyword or identifier '{}'", ident);
 }
 
 Option<Token> Token::peek(Stream& stream) {
@@ -339,4 +362,17 @@ std::string tokenToString(Punct punct, bool debug) {
         return fmt::format("punct('{}')", punct);
     }
     return std::string(1, punct);
+}
+
+Rollback::Rollback(Stream& stream) : m_stream(stream), m_offset(stream.offset()) {}
+
+Rollback::~Rollback() {
+    if (!m_commit) {
+        m_stream.navigate(m_offset);
+        m_commit = true;
+    }
+}
+
+void Rollback::commit() {
+    m_commit = true;
 }

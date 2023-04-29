@@ -140,7 +140,7 @@
 				},
 				{
 					"name": "constant.language.gdml",
-					"match": "\\b(this|root)\\b"
+					"match": "\\b(this|super|root)\\b"
 				},
 				{
 					"name": "constant.language.gdml",

@@ -1,0 +1,208 @@
+#pragma once
+
+#include "Main.hpp"
+
+namespace gdml::lang {
+    template <class T>
+    using ParseResult = geode::Result<T, Message>;
+
+    // Rollback needs to know this
+    template <class T>
+    using ExprResult = ParseResult<Rc<T>>;
+
+    enum class Keyword {
+        For, In, While,
+        If, Else, Try,
+        Function, Return, Break, Continue, From,
+        New, Const, Let,
+        Export, Import, Extern,
+        True, False, Null,
+    };
+
+    enum class Op {
+        Seq,    // a = b
+        AddSeq, // a += b
+        SubSeq, // a -= b
+        MulSeq, // a *= b
+        DivSeq, // a /= b
+        ModSeq, // a %= b
+        Add,    // a + b or +a
+        Sub,    // a - b or -a
+        Mul,    // a * b
+        Div,    // a / b
+        Mod,    // a % b
+        Eq,     // a == b
+        Neq,    // a != b
+        Less,   // a < b
+        Leq,    // a <= b
+        More,   // a > b
+        Meq,    // a >= b
+        Not,    // !a
+        And,    // a && b
+        Or,     // a || b
+        Arrow,  // a => b
+    };
+
+    using NullLit = std::monostate; // std::nullptr_t is not <=>!!!
+    using BoolLit = bool;
+    using StrLit = std::string;
+    using IntLit = int64_t;
+    using FloatLit = double;
+    using Lit = std::variant<NullLit, BoolLit, StrLit, IntLit, FloatLit>;
+    using Ident = std::string;
+    using Punct = char;
+
+    template <class T>
+    struct TokenTraits;
+
+    template <>
+    struct TokenTraits<Keyword> {
+        static inline const char* TYPE_NAME = "keyword";
+    };
+
+    template <>
+    struct TokenTraits<Op> {
+        static inline const char* TYPE_NAME = "operator";
+    };
+
+    template <>
+    struct TokenTraits<Lit> {
+        static inline const char* TYPE_NAME = "literal";
+    };
+
+    template <>
+    struct TokenTraits<Ident> {
+        static inline const char* TYPE_NAME = "identifier";
+    };
+
+    template <>
+    struct TokenTraits<Punct> {
+        static inline const char* TYPE_NAME = "punctuation";
+    };
+
+    template <class T>
+    concept TokenType = requires {
+        TokenTraits<T>::TYPE_NAME;
+    };
+
+    std::string tokenToString(Keyword kw, bool debug = false);
+    std::string tokenToString(Ident ident, bool debug = false);
+    std::string tokenToString(Lit lit, bool debug = false);
+    std::string tokenToString(Op op, bool debug = false);
+    std::string tokenToString(Punct punct, bool debug = false);
+
+    enum class OpDir : bool {
+        LTR, RTL,
+    };
+
+    struct Token {
+        std::variant<Keyword, Op, Lit, Punct, Ident> value;
+
+        Token() = default;
+        Token(Token&&) = default;
+        Token(Token const&) = default;
+        template <class T>
+        Token(T const& value) : value(value) {}
+        Token(decltype(Token::value) const& value) : value(value) {}
+        Token(decltype(Token::value) && value) : value(value) {}
+
+        std::string toString(bool debug = false) const;
+
+        static void skipToNext(Stream& stream);
+        static ParseResult<Token> pull(Stream& stream);
+        static Option<Token> peek(Stream& stream);
+
+        template <class T>
+        static ParseResult<T> pull(Stream& stream) {
+            auto start = stream.location();
+            GEODE_UNWRAP_INTO(auto tk, Token::pull(stream));
+            if (auto val = std::get_if<T>(&tk.value)) {
+                return Ok(*val);
+            }
+            return Err(stream.error(fmt::format(
+                "Expected {}, got '{}'",
+                TokenTraits<T>::TYPE_NAME, tk.toString()
+            ), start));
+        }
+
+        template <class T>
+        static ParseResult<T> pull(T c, Stream& stream) {
+            auto start = stream.location();
+            GEODE_UNWRAP_INTO(auto tk, Token::pull(stream));
+            if (auto val = std::get_if<T>(&value.value().value)) {
+                if (*val == c) {
+                    return Ok(*val);
+                }
+            }
+            return Err(stream.error(fmt::format(
+                "Expected {}, got '{}'",
+                TokenTraits<T>::TYPE_NAME, tk.toString()
+            ), start));
+        }
+
+        template <class T>
+        static Option<T> peek(Stream& stream) {
+            auto value = Token::peek(stream);
+            if (value) {
+                if (auto pun = std::get_if<T>(&value.value().value)) {
+                    return *pun;
+                }
+            }
+            return None;
+        }
+
+        template <class T>
+        static bool peek(T c, Stream& stream) {
+            auto value = Token::peek(stream);
+            if (value) {
+                if (auto pun = std::get_if<T>(&value.value().value)) {
+                    return *pun == c;
+                }
+            }
+            return false;
+        }
+    };
+
+    struct Rollback final {
+    private:
+        Stream& m_stream;
+        bool m_commit = false;
+        size_t m_offset;
+
+    public:
+        Rollback(Stream& stream);
+        ~Rollback();
+
+        void commit();
+
+        template <class E, class... Args>
+        ExprResult<E> commit(Args&&... args) {
+            m_commit = true;
+            return Ok(std::make_shared<E>(
+                std::forward<Args>(args)...,
+                Range(m_stream.src()->getLocation(m_offset), m_stream.location())
+            ));
+        }
+
+        template <class... Args>
+        impl::Failure<Message> error(std::string const& message, Args&&... args) {
+            auto msg = Message {
+                .level = Level::Error,
+                .src = m_stream.src(),
+                .info = fmt::format(message, std::forward<Args>(args)...),
+                .range = Range(m_stream.src()->getLocation(m_offset), m_stream.location())
+            };
+            m_stream.log(msg);
+            return Err(msg);
+        }
+    };
+
+    bool isIdentCh(char ch);
+    bool isIdent(std::string const& ident);
+    bool isSpecialIdent(std::string const& ident);
+    bool isOpCh(char ch);
+    bool isOp(std::string const& op);
+    bool isUnOp(Op op);
+    size_t opPriority(Op op);
+    OpDir opDir(Op op);
+}

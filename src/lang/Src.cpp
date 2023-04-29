@@ -1,5 +1,9 @@
-#include "Main.hpp"
+#include <lang/Main.hpp>
 #include <Geode/utils/file.hpp>
+
+using namespace geode::prelude;
+using namespace gdml::lang;
+using namespace gdml;
 
 SrcFile::SrcFile(ghc::filesystem::path const& path, std::string const& data)
   : m_path(path), m_data(data) {} 
@@ -62,20 +66,6 @@ void Stream::debugTick() {
     }
 }
 
-Message Stream::error(std::string const& message, Option<Location> start) {
-    auto msg = Message {
-        .level = Level::Error,
-        .src = m_file,
-        .info = message,
-        .range = Range {
-            .start = start.value_or(this->location()),
-            .end = this->location(),
-        },
-    };
-    this->log(msg);
-    return msg;
-}
-
 void Stream::log(Message const& message) {
     m_messages.push_back(message);
 }
@@ -112,5 +102,6 @@ Location SrcFile::getLocation(size_t offset) {
         .file = shared_from_this(),
         .line = line,
         .column = col,
+        .offset = offset,
     };
 }
