@@ -95,6 +95,8 @@ namespace gdml::lang {
         LTR, RTL,
     };
 
+    struct Rollback;
+
     struct Token {
         std::variant<Keyword, Op, Lit, Punct, Ident> value;
 
@@ -114,30 +116,30 @@ namespace gdml::lang {
 
         template <class T>
         static ParseResult<T> pull(Stream& stream) {
-            auto start = stream.location();
+            Rollback rb(stream);
             GEODE_UNWRAP_INTO(auto tk, Token::pull(stream));
             if (auto val = std::get_if<T>(&tk.value)) {
-                return Ok(*val);
+                return geode::Ok(*val);
             }
-            return Err(stream.error(fmt::format(
+            return rb.error(
                 "Expected {}, got '{}'",
                 TokenTraits<T>::TYPE_NAME, tk.toString()
-            ), start));
+            );
         }
 
         template <class T>
         static ParseResult<T> pull(T c, Stream& stream) {
-            auto start = stream.location();
+            Rollback rb(stream);
             GEODE_UNWRAP_INTO(auto tk, Token::pull(stream));
-            if (auto val = std::get_if<T>(&value.value().value)) {
+            if (auto val = std::get_if<T>(&tk.value)) {
                 if (*val == c) {
-                    return Ok(*val);
+                    return geode::Ok(*val);
                 }
             }
-            return Err(stream.error(fmt::format(
+            return rb.error(
                 "Expected {}, got '{}'",
                 TokenTraits<T>::TYPE_NAME, tk.toString()
-            ), start));
+            );
         }
 
         template <class T>
@@ -178,22 +180,22 @@ namespace gdml::lang {
         template <class E, class... Args>
         ExprResult<E> commit(Args&&... args) {
             m_commit = true;
-            return Ok(std::make_shared<E>(
+            return geode::Ok(std::make_shared<E>(
                 std::forward<Args>(args)...,
                 Range(m_stream.src()->getLocation(m_offset), m_stream.location())
             ));
         }
 
         template <class... Args>
-        impl::Failure<Message> error(std::string const& message, Args&&... args) {
+        geode::impl::Failure<Message> error(std::string const& fmt, Args&&... args) {
             auto msg = Message {
                 .level = Level::Error,
                 .src = m_stream.src(),
-                .info = fmt::format(message, std::forward<Args>(args)...),
+                .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
                 .range = Range(m_stream.src()->getLocation(m_offset), m_stream.location())
             };
             m_stream.log(msg);
-            return Err(msg);
+            return geode::Err(std::move(msg));
         }
     };
 

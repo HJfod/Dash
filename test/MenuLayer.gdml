@@ -1,5 +1,5 @@
 
 CCLabelBMFont {
     text: "Omg god";
-    x: CCDirector::get().getWinSize() / 2;
+    pos: global.winSize / 2;
 }

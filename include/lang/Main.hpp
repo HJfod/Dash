@@ -2,7 +2,7 @@
 
 #include <Geode/DefaultInclude.hpp>
 
-namespace gdml::lang {
+namespace gdml {
     // this code has not been approved by the Rust foundation
 
     template <class T>
@@ -14,7 +14,9 @@ namespace gdml::lang {
 
     template <class T>
     using Vec = std::vector<T>;
+}
 
+namespace gdml::lang {
     class SrcFile;
 
     struct Location {

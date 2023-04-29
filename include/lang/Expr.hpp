@@ -1,5 +1,5 @@
 #include "Main.hpp"
-#include "Parser.hpp"
+#include "Token.hpp"
 
 namespace gdml::lang {
     struct Expr {
@@ -18,14 +18,14 @@ namespace gdml::lang {
     struct LitExpr : public AExpr<LitExpr> {
         Lit value;
         LitExpr(Lit const& value, Range const& range)
-          : AExpr(range), value(value) {}
+            : AExpr(range), value(value) {}
         static ExprResult<LitExpr> pull(Stream& stream);
     };
 
     struct IdentExpr : public AExpr<IdentExpr> {
         Ident ident;
         IdentExpr(Ident const& ident, Range const& range)
-          : AExpr(range), ident(ident) {}
+            : AExpr(range), ident(ident) {}
         static ExprResult<IdentExpr> pull(Stream& stream);
     };
 
@@ -34,7 +34,7 @@ namespace gdml::lang {
         Rc<Expr> rhs;
         Op op;
         BinOpExpr(Rc<Expr> lhs, Rc<Expr> rhs, Op op, Range const& range)
-          : AExpr(range), lhs(lhs), rhs(rhs), op(op) {}
+            : AExpr(range), lhs(lhs), rhs(rhs), op(op) {}
         static ExprResult<Expr> pull(Stream& stream, size_t prec, Rc<Expr> lhs);
         static ExprResult<Expr> pull(Stream& stream);
     };
@@ -43,14 +43,14 @@ namespace gdml::lang {
         Rc<Expr> target;
         Vec<Rc<Expr>> args;
         CallExpr(Rc<Expr> target, Vec<Rc<Expr>> args, Range const& range)
-          : AExpr(range), target(target), args(args) {}
+            : AExpr(range), target(target), args(args) {}
         static ExprResult<CallExpr> pull(Rc<Expr> target, Stream& stream);
     };
 
     struct ListExpr : public AExpr<ListExpr> {
         Vec<Rc<Expr>> exprs;
         ListExpr(Vec<Rc<Expr>> const& exprs, Range const& range)
-          : AExpr(range), exprs(exprs) {}
+            : AExpr(range), exprs(exprs) {}
         static ExprResult<ListExpr> pull(Stream& stream);
     };
 }

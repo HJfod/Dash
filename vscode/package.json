@@ -1,5 +1,5 @@
 {
-    "name": "gdml-support",
+    "name": "gdml-lang-support",
     "displayName": "GDML Language Support",
     "description": "Support for the GDML language for Geometry Dash mods",
     "author": {
@@ -12,7 +12,7 @@
     "publisher": "HJfod",
     "version": "0.0.1",
     "engines": {
-        "vscode": "^1.67.0"
+        "vscode": "^1.77.0"
     },
     "categories": [
         "Programming Languages"

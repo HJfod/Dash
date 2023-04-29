@@ -1,4 +1,4 @@
-#include <lang/Parser.hpp>
+#include <lang/Token.hpp>
 
 using namespace geode::prelude;
 using namespace gdml::lang;
@@ -53,7 +53,7 @@ static std::unordered_map<Op, std::tuple<std::string, size_t, OpDir>> OPS {
 
 static std::string INVALID_IDENT_CHARS = ".,;(){}[]@`\\´¨'\"";
 static std::string VALID_OP_CHARS = "=+-/*<>!#?&|%:~^";
-static std::unordered_set<std::string> SPECIAL_IDENTS { "this", "super", "root" };
+static std::unordered_set<std::string> SPECIAL_IDENTS { "this", "super", "root", "global" };
 
 bool lang::isIdentCh(char ch) {
     return
@@ -304,21 +304,21 @@ Option<Token> Token::peek(Stream& stream) {
     return tk.ok();
 }
 
-std::string tokenToString(Keyword kw, bool debug) {
+std::string lang::tokenToString(Keyword kw, bool debug) {
     if (debug) {
         return fmt::format("keyword({})", KEYWORDS.at(kw));
     }
     return KEYWORDS.at(kw);
 }
 
-std::string tokenToString(Ident ident, bool debug) {
+std::string lang::tokenToString(Ident ident, bool debug) {
     if (debug) {
         return fmt::format("identifier({:?})", ident);
     }
     return ident;
 }
 
-std::string tokenToString(Lit lit, bool debug) {
+std::string lang::tokenToString(Lit lit, bool debug) {
     return std::visit(makeVisitor {
         [&](NullLit const& null) -> std::string {
             return "null";
@@ -350,14 +350,14 @@ std::string tokenToString(Lit lit, bool debug) {
     }, lit);
 }
 
-std::string tokenToString(Op op, bool debug) {
+std::string lang::tokenToString(Op op, bool debug) {
     if (debug) {
         return fmt::format("op({})", std::get<0>(OPS.at(op)));
     }
     return std::get<0>(OPS.at(op));
 }
 
-std::string tokenToString(Punct punct, bool debug) {
+std::string lang::tokenToString(Punct punct, bool debug) {
     if (debug) {
         return fmt::format("punct('{}')", punct);
     }

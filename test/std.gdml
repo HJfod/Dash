@@ -1,36 +1,95 @@
 
-struct CCPoint {
-    x: float;
-    y: float;
-}
+// On structs, every non-binded member without a default value will be required
+// On decls, only properties explicitly marked required aren't optional
 
-node CCNode {
-    x: float {
-        get: () => // impld in compiler
-        set: (val: float) => this.setPositionX(val);
-    }
-    y: float {
-        get: () => this.getPositionY();
-        set: (val: float) => this.setPositionY(val);
-    }
-    pos: CCSize {
-        get: () => CCSize { this.x, this.y };
-        set: (val: CCSize) => {
-            this.x = val.x;
-            this.y = val.y;
-        }
-    }
-}
+// All .gdml files do `import * from "Std.gdml";` by default
 
-node MyBinding {
-    rotation: float {
-        get: () => 
+export {
+    struct CCPoint {
+        x: float;
+        y: float;
     }
-}
 
-node CCLabelBMFont {
-    text: string {
-        get: () => this.getString();
-        set: (val: string) => this.setString(val);
+    struct CCSize {
+        width: float;
+        height: float;
+    }
+
+    struct CCRect {
+        origin: CCPoint;
+        size: CCSize;
+        x: float <=> this.origin.x;
+        y: float <=> this.origin.y;
+        width: float <=> this.size.width;
+        height: float <=> this.size.height;
+    }
+
+    struct ccColor3B {
+        r: int;
+        g: int;
+        b: int;
+    }
+
+    struct ccColor4B {
+        r: int;
+        g: int;
+        b: int;
+        a: int;
+        // rgb: ccColor3B <=> { this.r, this.g, this.b };
+    }
+
+    extern struct global {
+        winSize: CCSize;
+    }
+
+    extern struct Layout {}
+    extern struct RowLayout extends Layout {}
+    extern struct ColumnLayout extends Layout {}
+
+    extern decl CCNode {
+        id: string;
+        pos: CCPoint;
+        x: float <=> this.pos.x;
+        y: float <=> this.pos.y;
+        size: CCSize;
+        width: float <=> this.size.width;
+        height: float <=> this.size.height;
+        layout: Layout;
+    }
+    // All decls implicitly extend CCNode
+    decl default extends CCNode;
+
+    extern decl CCLayer {}
+
+    extern decl CCMenu extends CCLayer {}
+
+    extern decl CCMenuItemSpriteExtra {
+        clicked: fun () => void;
+    }
+
+    extern decl CCLabelBMFont {
+        required text: string;
+        font: string;
+    }
+
+    extern decl CCSprite {
+        sprite: string;
+        frame: string;
+        color: ccColor3B;
+        required sprite || frame;
+    }
+
+    extern decl ButtonSprite {
+        required text: string;
+        font: string;
+        bg: string;
+    }
+
+    fun CCPoint as CCSize {
+        return { width: this.x, height: this.y };
+    }
+
+    fun CCSize as CCPoint {
+        return { x: this.width, y: this.height };
     }
 }
