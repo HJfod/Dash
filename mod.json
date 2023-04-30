@@ -1,8 +1,13 @@
 {
-	"geode": "1.0.0-beta.14",
+	"geode": "1.0.0",
 	"version": "v1.0.0",
 	"id": "hjfod.gdml",
 	"name": "GDML",
 	"developer": "HJfod",
-	"description": ""
+	"description": "",
+	"resources": {
+		"files": [
+			"test/MenuLayer.gdml"
+		]
+	}
 }

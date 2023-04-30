@@ -47,6 +47,23 @@ namespace gdml::lang {
         static ExprResult<CallExpr> pull(Rc<Expr> target, Stream& stream);
     };
 
+    struct PropExpr : public AExpr<PropExpr> {
+        Ident prop;
+        Rc<Expr> value;
+        PropExpr(Ident prop, Rc<Expr> value, Range const& range)
+            : AExpr(range), prop(prop), value(value) {}
+        static ExprResult<PropExpr> pull(Stream& stream);
+    };
+
+    struct NodeExpr : public AExpr<NodeExpr> {
+        Ident ident;
+        Vec<Rc<PropExpr>> props;
+        Vec<Rc<NodeExpr>> children;
+        NodeExpr(Ident ident, Vec<Rc<PropExpr>> props, Vec<Rc<NodeExpr>> children, Range const& range)
+            : AExpr(range), ident(ident), props(props), children(children) {}
+        static ExprResult<NodeExpr> pull(Stream& stream);
+    };
+
     struct ListExpr : public AExpr<ListExpr> {
         Vec<Rc<Expr>> exprs;
         ListExpr(Vec<Rc<Expr>> const& exprs, Range const& range)

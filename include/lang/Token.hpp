@@ -4,7 +4,7 @@
 
 namespace gdml::lang {
     template <class T>
-    using ParseResult = geode::Result<T, Message>;
+    using ParseResult = geode::Result<T, size_t>;
 
     // Rollback needs to know this
     template <class T>
@@ -187,7 +187,7 @@ namespace gdml::lang {
         }
 
         template <class... Args>
-        geode::impl::Failure<Message> error(std::string const& fmt, Args&&... args) {
+        geode::impl::Failure<size_t> error(std::string const& fmt, Args&&... args) {
             auto msg = Message {
                 .level = Level::Error,
                 .src = m_stream.src(),
@@ -195,7 +195,7 @@ namespace gdml::lang {
                 .range = Range(m_stream.src()->getLocation(m_offset), m_stream.location())
             };
             m_stream.log(msg);
-            return geode::Err(std::move(msg));
+            return geode::Err(m_stream.errors().size());
         }
     };
 

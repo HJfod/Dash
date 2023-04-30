@@ -85,6 +85,39 @@ ExprResult<CallExpr> CallExpr::pull(Rc<Expr> target, Stream& stream) {
     return rb.commit<CallExpr>(target, args);
 }
 
+ExprResult<PropExpr> PropExpr::pull(Stream& stream) {
+    Rollback rb(stream);
+    GEODE_UNWRAP_INTO(auto ident, Token::pull<Ident>(stream));
+    GEODE_UNWRAP(Token::pull(':', stream));
+    GEODE_UNWRAP_INTO(auto value, Expr::pull(stream));
+    return rb.commit<PropExpr>(ident, value);
+}
+
+ExprResult<NodeExpr> NodeExpr::pull(Stream& stream) {
+    Rollback rb(stream);
+    GEODE_UNWRAP_INTO(auto ident, Token::pull<Ident>(stream));
+    GEODE_UNWRAP(Token::pull('{', stream));
+    Vec<Rc<PropExpr>> props;
+    Vec<Rc<NodeExpr>> children;
+    while (true) {
+        if (auto prop = PropExpr::pull(stream)) {
+            props.push_back(prop.unwrap());
+            // pull at least one semicolon
+            GEODE_UNWRAP(Token::pull(';', stream));
+            while (Token::pull(';', stream)) {}
+        }
+        else if (auto child = NodeExpr::pull(stream)) {
+            children.push_back(child.unwrap());
+        }
+        else {
+            return rb.error("Expected property or child");
+        }
+        if (Token::peek('}', stream)) break;
+    }
+    GEODE_UNWRAP(Token::pull('}', stream));
+    return rb.commit<NodeExpr>(ident, props, children);
+}
+
 ExprResult<ListExpr> ListExpr::pull(Stream& stream) {
     Rollback rb(stream);
     Vec<Rc<Expr>> list;

@@ -13,6 +13,9 @@ protected:
             return false;
         
         m_parser = parser;
+        m_parser->getSrc()->onChanged([=](auto) {
+            m_parser->refresh();
+        });
 
         return true;
     }
@@ -33,21 +36,69 @@ Rc<Parser> Parser::create() {
     return std::make_shared<Parser>();
 }
 
-Result<> Parser::loadFile(ghc::filesystem::path const& path) {
-    GEODE_UNWRAP_INTO(auto file, SrcFile::from(path));
-    auto stream = file->read();
-    GEODE_UNWRAP_INTO(m_ast, Expr::pull(stream).expect("Unable to parse AST: {error}"));
-    return Ok();
+void Parser::reset() {
+    m_errors.clear();
+    m_src = nullptr;
+    m_ast = nullptr;
+    m_target = nullptr;
+}
+
+bool Parser::loadFile(ghc::filesystem::path const& path) {
+    this->reset();
+    auto srcRes = SrcFile::from(path);
+    if (!srcRes) {
+        m_errors.push_back(srcRes.unwrapErr());
+        return false;
+    }
+    m_src = srcRes.unwrap();
+    return this->parse();
+}
+
+bool Parser::parse() {
+    m_ast = nullptr;
+    auto stream = m_src->read();
+    auto ast = Expr::pull(stream);
+    if (!ast) {
+        for (auto& err : stream.errors()) {
+            m_errors.push_back(err.toString());
+        }
+    }
+    else {
+        m_ast = ast.unwrap();
+    }
+    return ast.isOk();
 }
 
 void Parser::enableHotReload(bool enable) {
     m_hotReloadEnabled = enable;
 }
 
+void Parser::populate(CCNode* node) const {
+    if (!m_errors.empty()) {
+        node->addChild(CCLabelBMFont::create(
+            "There were errors loading GDML - see console",
+            "bigFont.fnt"
+        ));
+    }
+}
+
 void Parser::addTo(CCNode* node) {
     if (m_hotReloadEnabled) {
+        m_target = node;
         node->addChild(HotReloadNode::create(shared_from_this()));
     }
+    this->populate(node);
+}
+
+void Parser::refresh() {
+    if (!m_target) return;
+    m_errors.clear();
+    this->parse();
+    this->populate(m_target);
+}
+
+Rc<lang::Src> Parser::getSrc() const {
+    return m_src;
 }
 
 void gdml::loadGDMLFromFile(CCNode* node, ghc::filesystem::path const& path, bool hotReload) {
