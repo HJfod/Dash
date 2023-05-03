@@ -48,7 +48,7 @@ namespace gdml::lang {
     using StrLit = std::string;
     using IntLit = int64_t;
     using FloatLit = double;
-    using Lit = std::variant<NullLit, BoolLit, StrLit, IntLit, FloatLit>;
+    using Lit = std::variant<BoolLit, StrLit, IntLit, FloatLit>;
     using Ident = std::string;
     using Punct = char;
 

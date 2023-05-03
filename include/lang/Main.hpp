@@ -19,6 +19,9 @@ namespace gdml {
 
     template <class T>
     using Vec = std::vector<T>;
+
+    template <class K, class V>
+    using Map = std::unordered_map<K, V>;
 }
 
 namespace gdml::lang {

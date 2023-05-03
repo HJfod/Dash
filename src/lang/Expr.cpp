@@ -11,6 +11,23 @@ ExprResult<LitExpr> LitExpr::pull(Stream& stream) {
     return rb.commit<LitExpr>(value);
 }
 
+TypeCheckResult LitExpr::typecheck(State&) const {
+    return Ok(std::visit(makeVisitor {
+        [](BoolLit const&) {
+            return Type(BoolType());
+        },
+        [](IntLit const&) {
+            return Type(IntType());
+        },
+        [](FloatLit const&) {
+            return Type(FloatType());
+        },
+        [](StrLit const&) {
+            return Type(StrType());
+        },
+    }, value));
+}
+
 std::string LitExpr::debug(size_t indent) const {
     return DebugPrint("LitExpr", indent)
         .member("value", value);
@@ -20,6 +37,12 @@ ExprResult<IdentExpr> IdentExpr::pull(Stream& stream) {
     Rollback rb(stream);
     GEODE_UNWRAP_INTO(auto value, Token::pull<Ident>(stream));
     return rb.commit<IdentExpr>(value);
+}
+
+TypeCheckResult IdentExpr::typecheck(State& state) const {
+    if (!state.getVar(ident)) {
+
+    }
 }
 
 std::string IdentExpr::debug(size_t indent) const {

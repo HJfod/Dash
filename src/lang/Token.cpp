@@ -302,10 +302,10 @@ ParseResult<Token> Token::pull(Stream& stream) {
         rb.commit();
         return done(Token(Lit(false)));
     }
-    if (ident == "null") {
-        rb.commit();
-        return done(Token(Lit(NullLit())));
-    }
+    // if (ident == "null") {
+    //     rb.commit();
+    //     return done(Token(Lit(NullLit())));
+    // }
 
     // keyword
     for (auto const& [kw, va] : KEYWORDS) {

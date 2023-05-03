@@ -1,12 +1,16 @@
 #include "Main.hpp"
 #include "Token.hpp"
+#include "Type.hpp"
 
 namespace gdml::lang {
+    using TypeCheckResult = ParseResult<Type>;
+
     struct Expr {
         Range range;
         Expr(Range const& range) : range(range) {}
         virtual ~Expr() = default;
         
+        virtual TypeCheckResult typecheck(State& state) const = 0;
         virtual std::string debug(size_t indent = 0) const = 0;
 
         static ExprResult<Expr> pull(Stream& stream);
@@ -24,6 +28,7 @@ namespace gdml::lang {
         LitExpr(Lit const& value, Range const& range)
             : AExpr(range), value(value) {}
         static ExprResult<LitExpr> pull(Stream& stream);
+        TypeCheckResult typecheck(State& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
@@ -32,6 +37,7 @@ namespace gdml::lang {
         IdentExpr(Ident const& ident, Range const& range)
             : AExpr(range), ident(ident) {}
         static ExprResult<IdentExpr> pull(Stream& stream);
+        TypeCheckResult typecheck(State& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
@@ -43,6 +49,7 @@ namespace gdml::lang {
             : AExpr(range), lhs(lhs), rhs(rhs), op(op) {}
         static ExprResult<Expr> pull(Stream& stream, size_t prec, Rc<Expr> lhs);
         static ExprResult<Expr> pull(Stream& stream);
+        TypeCheckResult typecheck(State& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
