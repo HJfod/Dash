@@ -3,7 +3,7 @@
 #include "Main.hpp"
 
 namespace gdml::lang {
-    template <class T>
+    template <class T = geode::impl::DefaultValue>
     using ParseResult = geode::Result<T, size_t>;
 
     // Rollback needs to know this
@@ -107,18 +107,25 @@ namespace gdml::lang {
         Token(T const& value) : value(value) {}
         Token(decltype(Token::value) const& value) : value(value) {}
         Token(decltype(Token::value) && value) : value(value) {}
+        bool operator==(Token const&) const = default;
 
         std::string toString(bool debug = false) const;
 
         static void skipToNext(Stream& stream);
+        static ParseResult<> pullSemicolons(Stream& stream);
         static ParseResult<Token> pull(Stream& stream);
-        static Option<Token> peek(Stream& stream);
+        static Option<Token> peek(Stream& stream, size_t offset = 0);
 
         template <class T>
         static ParseResult<T> pull(Stream& stream) {
+            Token::skipToNext(stream);
             Rollback rb(stream);
+            if (stream.eof()) {
+                return rb.errorLastToken("Expected {}, got end-of-file", TokenTraits<T>::TYPE_NAME);
+            }
             GEODE_UNWRAP_INTO(auto tk, Token::pull(stream));
             if (auto val = std::get_if<T>(&tk.value)) {
+                rb.commit();
                 return geode::Ok(*val);
             }
             return rb.error(
@@ -129,22 +136,27 @@ namespace gdml::lang {
 
         template <class T>
         static ParseResult<T> pull(T c, Stream& stream) {
+            Token::skipToNext(stream);
             Rollback rb(stream);
+            if (stream.eof()) {
+                return rb.errorLastToken("Expected '{}', got end-of-file", tokenToString(c));
+            }
             GEODE_UNWRAP_INTO(auto tk, Token::pull(stream));
             if (auto val = std::get_if<T>(&tk.value)) {
                 if (*val == c) {
+                    rb.commit();
                     return geode::Ok(*val);
                 }
             }
             return rb.error(
-                "Expected {}, got '{}'",
-                TokenTraits<T>::TYPE_NAME, tk.toString()
+                "Expected '{}', got '{}'",
+                tokenToString(c), tk.toString()
             );
         }
 
         template <class T>
-        static Option<T> peek(Stream& stream) {
-            auto value = Token::peek(stream);
+        static Option<T> peek(Stream& stream, size_t offset = 0) {
+            auto value = Token::peek(stream, offset);
             if (value) {
                 if (auto pun = std::get_if<T>(&value.value().value)) {
                     return *pun;
@@ -154,8 +166,8 @@ namespace gdml::lang {
         }
 
         template <class T>
-        static bool peek(T c, Stream& stream) {
-            auto value = Token::peek(stream);
+        static bool peek(T c, Stream& stream, size_t offset = 0) {
+            auto value = Token::peek(stream, offset);
             if (value) {
                 if (auto pun = std::get_if<T>(&value.value().value)) {
                     return *pun == c;
@@ -176,6 +188,7 @@ namespace gdml::lang {
         Rollback(Stream& stream, std::source_location const loc = std::source_location::current());
         ~Rollback();
 
+        void clearMessages();
         void commit();
 
         template <class E, class... Args>
@@ -194,6 +207,31 @@ namespace gdml::lang {
                 .src = m_stream.src(),
                 .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
                 .range = Range(m_stream.src()->getLocation(m_offset), m_stream.location())
+            };
+            m_stream.m_messages.push_back({ m_msgLevel, msg });
+            return geode::Err(m_stream.errors().size());
+        }
+
+        template <class... Args>
+        geode::impl::Failure<size_t> errorLastToken(std::string const& fmt, Args&&... args) {
+            auto msg = Message {
+                .level = Level::Error,
+                .src = m_stream.src(),
+                .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
+                .range = Range(m_stream.src()->getLocation(m_offset), m_stream.src()->getLocation(m_offset))
+            };
+            m_stream.m_messages.push_back({ m_msgLevel, msg });
+            return geode::Err(m_stream.errors().size());
+        }
+
+        template <class... Args>
+        geode::impl::Failure<size_t> errorNextToken(std::string const& fmt, Args&&... args) {
+            Token::skipToNext(m_stream);
+            auto msg = Message {
+                .level = Level::Error,
+                .src = m_stream.src(),
+                .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
+                .range = Range(m_stream.location(), m_stream.location())
             };
             m_stream.m_messages.push_back({ m_msgLevel, msg });
             return geode::Err(m_stream.errors().size());

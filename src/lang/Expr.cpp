@@ -144,17 +144,14 @@ ExprResult<NodeExpr> NodeExpr::pull(Stream& stream) {
     Vec<Rc<NodeExpr>> children;
     while (true) {
         stream.debugTick();
-        if (auto prop = PropExpr::pull(stream)) {
-            props.push_back(prop.unwrap());
-            // pull at least one semicolon
-            GEODE_UNWRAP(Token::pull(';', stream));
-            while (Token::pull(';', stream)) {}
-        }
-        else if (auto child = NodeExpr::pull(stream)) {
-            children.push_back(child.unwrap());
+        if (Token::peek<Ident>(stream) && Token::peek(':', stream, 1)) {
+            GEODE_UNWRAP_INTO(auto prop, PropExpr::pull(stream));
+            GEODE_UNWRAP(Token::pullSemicolons(stream));
+            props.push_back(prop);
         }
         else {
-            return rb.error("Expected property or child");
+            GEODE_UNWRAP_INTO(auto child, NodeExpr::pull(stream));
+            children.push_back(child);
         }
         if (Token::peek('}', stream)) break;
     }
@@ -181,11 +178,9 @@ ExprResult<ListExpr> ListExpr::pull(Stream& stream) {
         GEODE_UNWRAP_INTO(auto expr, Expr::pull(stream));
         list.push_back(expr);
         // Allow omitting last semicolon
-        if (!Token::peek(';', stream) && !Token::peek('}', stream)) {
+        if (!Token::pullSemicolons(stream) && !Token::peek('}', stream)) {
             return rb.error("Expected semicolon");
         }
-        // Allow any number of semicolons
-        while (Token::pull(';', stream)) {}
         // End at EOF or }
         if (!Token::peek(stream) || Token::peek('}', stream)) {
             break;
@@ -227,7 +222,8 @@ ExprResult<Expr> Expr::pullPrimary(Stream& stream) {
     if (auto value = expr::pull(stream)) {\
         rb.commit(); \
         return value; \
-    }
+    }\
+    rb.clearMessages();
     
 ExprResult<Expr> Expr::pullPrimaryNonCall(Stream& stream) {
     Rollback rb(stream);
@@ -239,7 +235,13 @@ ExprResult<Expr> Expr::pullPrimaryNonCall(Stream& stream) {
         rb.commit();
         return Ok(expr);
     }
+    rb.clearMessages();
 
+    if (Token::peek<Ident>(stream) && Token::peek('{', stream, 1)) {
+        GEODE_UNWRAP_INTO(auto expr, NodeExpr::pull(stream));
+        rb.commit();
+        return Ok(expr);
+    }
     TRY_PULL(LitExpr);
     TRY_PULL(IdentExpr);
 
@@ -259,7 +261,7 @@ ExprResult<AST> AST::pull(Stream& stream) {
         stream.debugTick();
         GEODE_UNWRAP_INTO(auto expr, Expr::pull(stream));
         exprs.push_back(expr);
-        GEODE_UNWRAP(Token::pull(';', stream));
+        GEODE_UNWRAP(Token::pullSemicolons(stream));
         if (!Token::peek(stream)) {
             break;
         }

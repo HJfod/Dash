@@ -1,4 +1,5 @@
 #include <lang/Main.hpp>
+#include <lang/Token.hpp>
 #include <Geode/utils/file.hpp>
 
 using namespace geode::prelude;
@@ -10,7 +11,7 @@ bool Location::operator==(Location const& other) const {
 }
 
 std::string Location::toString() const {
-    return fmt::format("{}:{}", line, column);
+    return fmt::format("{}:{}", line + 1, column + 1);
 }
 
 std::string Range::toString() const {
@@ -29,6 +30,7 @@ std::string Message::toString() const {
         default: res += "Unknown"; break;
     }
     res += " at " + this->range.toString() + " in " + this->src->getName() + ":\n";
+    res += this->src->getUnderlined(this->range) + "\n";
     res += this->info;
     return res;
 }
@@ -99,6 +101,17 @@ void Stream::debugTick(std::source_location const loc) {
     }
 }
 
+void Stream::setLastToken(Token const& token) {
+    m_lastToken = std::make_unique<Token>(token);
+}
+
+Option<Token> Stream::last() const {
+    if (m_lastToken) {
+        return *m_lastToken;
+    }
+    return None;
+}
+
 void Stream::log(Message const& message) {
     m_messages.push_back({ 0, message });
 }
@@ -120,6 +133,54 @@ SrcFile::~SrcFile() {
 
 Stream SrcFile::read() {
     return Stream(shared_from_this());
+}
+
+std::string SrcFile::getUnderlined(Range const& range) const {
+    std::vector<std::string> lines { "" };
+    size_t line = 0;
+    for (auto& c : m_data) {
+        if (c == '\n') {
+            if (line >= range.start.line && line < range.end.line) {
+                lines.push_back("");
+            }
+            line += 1;
+        }
+        else if (line >= range.start.line && line <= range.end.line) {
+            if (c != '\r') {
+                lines.back() += c;
+            }
+        }
+    }
+    std::string res;
+    line = 0;
+    for (auto& data : lines) {
+        if (line > 0) {
+            res += "\n";
+        }
+        res += data + "\n";
+        size_t len;
+        if (line == 0) {
+            res += std::string(range.start.column, ' ');
+            if (lines.size() == 1) {
+                len = range.end.column - range.start.column;
+            }
+            else {
+                len = data.size() - range.start.column;
+            }
+        }
+        else if (line == lines.size() - 1) {
+            len = range.end.column;
+        }
+        else {
+            len = data.size();
+        }
+        if (len == 0) {
+            len = 1;
+        }
+        res += std::string(len, '~');
+        line += 1;
+    }
+    return res;
 }
 
 bool SrcFile::onChanged(std::function<void(Rc<Src>)> callback) {

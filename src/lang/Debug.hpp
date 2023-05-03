@@ -30,6 +30,9 @@ template <class T>
         debugPrint(t, 0);
     }
 std::string debugPrint(Vec<T> const& vec, size_t i) {
+    if (vec.empty()) {
+        return "[]";
+    }
     std::string ret = "[\n";
     bool first = true;
     for (auto& t : vec) {
@@ -37,7 +40,7 @@ std::string debugPrint(Vec<T> const& vec, size_t i) {
             ret += ",\n";
         }
         first = false;
-        ret += std::string(i + 4, ' ') + debugPrint(t, i + 8);
+        ret += std::string(i + 4, ' ') + debugPrint(t, i + 4);
     }
     ret += "\n" + std::string(i, ' ') + "]";
     return ret;
@@ -64,7 +67,7 @@ struct DebugPrint {
         for (auto& mem : m_members) {
             ret += std::string(m_indent + 4, ' ') + mem.first + ": " + mem.second + "\n";
         }
-        ret += "}";
+        ret += std::string(m_indent, ' ') + "}";
         return ret;
     }
 };

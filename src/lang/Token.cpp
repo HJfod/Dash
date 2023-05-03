@@ -159,14 +159,35 @@ void Token::skipToNext(Stream& stream) {
     }
 }
 
+ParseResult<> Token::pullSemicolons(Stream& stream) {
+    Rollback rb (stream);
+    if (stream.last() == Token(Punct('}'))) {
+        while (Token::pull(';', stream)) {}
+        rb.commit();
+        return Ok();
+    }
+    else {
+        GEODE_UNWRAP(Token::pull(';', stream));
+        while (Token::pull(';', stream)) {}
+        rb.commit();
+        return Ok();
+    }
+}
+
 ParseResult<Token> Token::pull(Stream& stream) {
     Token::skipToNext(stream);
 
     Rollback rb(stream);
 
+    auto done = [&](Token const& tk) {
+        rb.commit();
+        stream.setLastToken(tk);
+        return Ok(tk);
+    };
+
     stream.debugTick();
     if (stream.eof()) {
-        return rb.error("Expected token, found end-of-file");
+        return rb.errorLastToken("Expected token, found end-of-file");
     }
 
     // string literals
@@ -204,8 +225,7 @@ ParseResult<Token> Token::pull(Stream& stream) {
                 break;
             }
         }
-        rb.commit();
-        return Ok(Token(lit));
+        return done(Token(lit));
     }
 
     // number literals
@@ -221,12 +241,13 @@ ParseResult<Token> Token::pull(Stream& stream) {
             if (c == '.') {
                 foundDot = true;
             }
+            stream.next();
             num += c;
         }
         if (foundDot) {
             try {
                 rb.commit();
-                return Ok(Token(std::stod(num)));
+                return done(Token(std::stod(num)));
             }
             catch(...) {
                 return rb.error("Invalid float literal");
@@ -235,7 +256,7 @@ ParseResult<Token> Token::pull(Stream& stream) {
         else {
             try {
                 rb.commit();
-                return Ok(Token(std::stoul(num)));
+                return done(Token(std::stoul(num)));
             }
             catch(...) {
                 return rb.error("Invalid integer literal");
@@ -246,7 +267,7 @@ ParseResult<Token> Token::pull(Stream& stream) {
     // punctuation
     if (std::string("()[]{}:;,.@").find_first_of(stream.peek()) != std::string::npos) {
         rb.commit();
-        return Ok(Token(Punct(stream.next())));
+        return done(Token(Punct(stream.next())));
     }
 
     // other
@@ -264,7 +285,8 @@ ParseResult<Token> Token::pull(Stream& stream) {
         
         for (auto const& [op, va] : OPS) {
             if (std::get<0>(va) == maybeOp) {
-                return Ok(Token(op));
+                rb.commit();
+                return done(Token(op));
             }
         }
 
@@ -274,38 +296,45 @@ ParseResult<Token> Token::pull(Stream& stream) {
     // special literals
     if (ident == "true") {
         rb.commit();
-        return Ok(Token(Lit(true)));
+        return done(Token(Lit(true)));
     }
     if (ident == "false") {
         rb.commit();
-        return Ok(Token(Lit(false)));
+        return done(Token(Lit(false)));
     }
     if (ident == "null") {
         rb.commit();
-        return Ok(Token(Lit(NullLit())));
+        return done(Token(Lit(NullLit())));
     }
 
     // keyword
     for (auto const& [kw, va] : KEYWORDS) {
         if (va == ident) {
             rb.commit();
-            return Ok(Token(kw));
+            return done(Token(kw));
         }
     }
 
     // identifier
     if (isIdent(ident)) {
         rb.commit();
-        return Ok(Token(ident));
+        return done(Token(ident));
     }
 
     return rb.error("Invalid keyword or identifier '{}'", ident);
 }
 
-Option<Token> Token::peek(Stream& stream) {
-    auto pos = stream.offset();
+Option<Token> Token::peek(Stream& stream, size_t offset) {
+    Rollback rb(stream);
+    while (offset > 0) {
+        if (!Token::pull(stream)) {
+            rb.clearMessages();
+            return None;
+        }
+        offset -= 1;
+    }
     auto tk = Token::pull(stream);
-    stream.navigate(pos);
+    rb.clearMessages();
     return tk.ok();
 }
 
@@ -386,8 +415,7 @@ Rollback::~Rollback() {
     m_stream.m_rollbackLevel -= 1;
 }
 
-void Rollback::commit() {
-    m_commit = true;
+void Rollback::clearMessages() {
     // Remove all messages that have been pushed that have a higher or equal msg level
     // This is because rb.error just pushes errors to the stream's message 
     // queue, but sometimes those errors end up being part of a parse tree that's 
@@ -397,4 +425,9 @@ void Rollback::commit() {
     ranges::remove(m_stream.m_messages, [=](std::pair<size_t, Message> const& pair) {
         return pair.first >= m_msgLevel;
     });
+}
+
+void Rollback::commit() {
+    m_commit = true;
+    this->clearMessages();
 }

@@ -24,6 +24,7 @@ namespace gdml {
 namespace gdml::lang {
     class Src;
     class Rollback;
+    struct Token;
 
     struct Location {
         Rc<Src> src;
@@ -69,6 +70,7 @@ namespace gdml::lang {
         std::vector<std::pair<size_t, Message>> m_messages;
         // Rollback level starts at 1 because non-rollback messages have 0
         size_t m_rollbackLevel = 1;
+        Box<Token> m_lastToken = nullptr;
 
         Stream(Rc<Src> file);
 
@@ -82,6 +84,11 @@ namespace gdml::lang {
         bool eof() const;
         void navigate(size_t offset);
         void debugTick(std::source_location const loc = std::source_location::current());
+        void setLastToken(Token const& token);
+        Option<Token> last() const;
+
+        Stream(Stream const&) = delete;
+        Stream(Stream&&) = delete;
 
         Rc<Src> src() const;
         size_t offset() const;
@@ -100,6 +107,7 @@ namespace gdml::lang {
         virtual char at(size_t offset) const = 0;
         virtual std::string from(size_t offset, size_t count) const = 0;
         virtual Location getLocation(size_t offset) = 0;
+        virtual std::string getUnderlined(Range const& range) const = 0;
 
         virtual bool onChanged(std::function<void(Rc<Src>)> callback) = 0;
 
@@ -124,6 +132,7 @@ namespace gdml::lang {
         char at(size_t offset) const override;
         std::string from(size_t offset, size_t count) const override;
         Stream read() override;
+        std::string getUnderlined(Range const& range) const override;
         bool onChanged(std::function<void(Rc<Src>)> callback) override;
 
         ghc::filesystem::path getPath() const;
