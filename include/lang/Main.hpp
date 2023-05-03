@@ -2,6 +2,7 @@
 
 #include <Geode/DefaultInclude.hpp>
 #include <Geode/utils/file.hpp>
+#include <source_location>
 
 namespace gdml {
     // this code has not been approved by the Rust foundation
@@ -22,6 +23,7 @@ namespace gdml {
 
 namespace gdml::lang {
     class Src;
+    class Rollback;
 
     struct Location {
         Rc<Src> src;
@@ -64,11 +66,14 @@ namespace gdml::lang {
         Rc<Src> m_file;
         size_t m_position = 0;
         size_t m_debugTickCounter = 0;
-        std::vector<Message> m_messages;
+        std::vector<std::pair<size_t, Message>> m_messages;
+        // Rollback level starts at 1 because non-rollback messages have 0
+        size_t m_rollbackLevel = 1;
 
         Stream(Rc<Src> file);
 
         friend class SrcFile;
+        friend class Rollback;
 
     public:
         char peek() const;
@@ -76,7 +81,7 @@ namespace gdml::lang {
         char next();
         bool eof() const;
         void navigate(size_t offset);
-        void debugTick();
+        void debugTick(std::source_location const loc = std::source_location::current());
 
         Rc<Src> src() const;
         size_t offset() const;

@@ -62,7 +62,9 @@ bool lang::isIdentCh(char ch) {
         // no operators
         VALID_OP_CHARS.find_first_of(ch) == std::string::npos &&
         // no spaces
-        !std::isspace(ch);
+        !std::isspace(ch) &&
+        // no nulls
+        ch != '\0';
 }
 
 bool lang::isIdent(std::string const& ident) {
@@ -150,6 +152,10 @@ void Token::skipToNext(Stream& stream) {
                 // loop at **/
             }
         }
+        // if it's not a comment nor space, then we're done
+        else {
+            break;
+        }
     }
 }
 
@@ -207,8 +213,8 @@ ParseResult<Token> Token::pull(Stream& stream) {
     if (isdigit(stream.peek())) {
         bool foundDot = false;
         std::string num;
-        auto start = stream.location();
         while (auto c = stream.peek()) {
+            stream.debugTick();
             if (!(isdigit(c) || (!foundDot && c == '.'))) {
                 break;
             }
@@ -244,7 +250,6 @@ ParseResult<Token> Token::pull(Stream& stream) {
     }
 
     // other
-    auto start = stream.location();
     std::string ident;
     while (isIdentCh(stream.peek())) {
         ident += stream.next();
@@ -256,7 +261,7 @@ ParseResult<Token> Token::pull(Stream& stream) {
         while (isOpCh(stream.peek())) {
             maybeOp += stream.next();
         }
-            
+        
         for (auto const& [op, va] : OPS) {
             if (std::get<0>(va) == maybeOp) {
                 return Ok(Token(op));
@@ -364,15 +369,32 @@ std::string lang::tokenToString(Punct punct, bool debug) {
     return std::string(1, punct);
 }
 
-Rollback::Rollback(Stream& stream) : m_stream(stream), m_offset(stream.offset()) {}
+Rollback::Rollback(Stream& stream, std::source_location const loc)
+  : m_stream(stream),
+    m_offset(stream.offset()),
+    m_msgLevel(stream.m_rollbackLevel)
+{
+    stream.debugTick(loc);
+    stream.m_rollbackLevel += 1;
+}
 
 Rollback::~Rollback() {
     if (!m_commit) {
         m_stream.navigate(m_offset);
         m_commit = true;
     }
+    m_stream.m_rollbackLevel -= 1;
 }
 
 void Rollback::commit() {
     m_commit = true;
+    // Remove all messages that have been pushed that have a higher or equal msg level
+    // This is because rb.error just pushes errors to the stream's message 
+    // queue, but sometimes those errors end up being part of a parse tree that's 
+    // an optional branch and aren't actually errors but just signal that that 
+    // branch isn't valid (like how Expr::pullPrimaryNonCall tries a bunch of 
+    // different options)
+    ranges::remove(m_stream.m_messages, [=](std::pair<size_t, Message> const& pair) {
+        return pair.first >= m_msgLevel;
+    });
 }

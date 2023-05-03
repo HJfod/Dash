@@ -47,7 +47,6 @@ bool Parser::loadFile(ghc::filesystem::path const& path) {
     this->reset();
     auto srcRes = SrcFile::from(path);
     if (!srcRes) {
-        m_errors.push_back(srcRes.unwrapErr());
         return false;
     }
     m_src = srcRes.unwrap();
@@ -57,16 +56,24 @@ bool Parser::loadFile(ghc::filesystem::path const& path) {
 bool Parser::parse() {
     m_ast = nullptr;
     auto stream = m_src->read();
-    auto ast = Expr::pull(stream);
-    if (!ast) {
-        for (auto& err : stream.errors()) {
-            m_errors.push_back(err.toString());
+    try {
+        auto ast = AST::pull(stream);
+        if (!ast) {
+            for (auto& err : stream.errors()) {
+                m_errors.push_back(err.toString());
+            }
         }
+        else {
+            log::debug("Succesfully parsed AST");
+            m_ast = ast.unwrap();
+            log::debug("{}", m_ast->debug());
+        }
+        return ast.isOk();
     }
-    else {
-        m_ast = ast.unwrap();
+    catch(std::exception& e) {
+        m_errors.push_back(e.what());
+        return false;
     }
-    return ast.isOk();
 }
 
 void Parser::enableHotReload(bool enable) {
@@ -75,6 +82,9 @@ void Parser::enableHotReload(bool enable) {
 
 void Parser::populate(CCNode* node) const {
     if (!m_errors.empty()) {
+        for (auto& err : m_errors) {
+            log::error("{}", err);
+        }
         node->addChild(CCLabelBMFont::create(
             "There were errors loading GDML - see console",
             "bigFont.fnt"

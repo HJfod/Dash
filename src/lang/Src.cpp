@@ -48,28 +48,28 @@ Result<Rc<SrcFile>> SrcFile::from(ghc::filesystem::path const& path) {
 Stream::Stream(Rc<Src> file) : m_file(file) {}
 
 char Stream::peek() const {
-    if (m_file->size() < m_position) {
+    if (m_position < m_file->size()) {
         return m_file->at(m_position);
     }
     return '\0';
 }
 
 std::string Stream::peek(size_t count) const {
-    if (m_file->size() < m_position + count) {
+    if (m_position + count < m_file->size()) {
         return m_file->from(m_position, count);
     }
     return "";
 }
 
 char Stream::next() {
-    if (m_file->size() < m_position) {
+    if (m_position < m_file->size()) {
         return m_file->at(m_position++);
     }
     return '\0';
 }
 
 bool Stream::eof() const {
-    return m_file->size() >= m_position;
+    return m_position >= m_file->size();
 }
 
 void Stream::navigate(size_t offset) {
@@ -88,23 +88,24 @@ Location Stream::location() const {
     return m_file->getLocation(m_position);
 }
 
-void Stream::debugTick() {
+void Stream::debugTick(std::source_location const loc) {
     if (m_debugTickCounter++ > 10000000) {
-        throw std::runtime_error(
+        throw std::runtime_error(fmt::format(
             "Internal Compiler Error: Debug tick level exceeded 10000000 limit. "
             "This implies that the compiler ended up in an infinite loop - "
-            "please report this bug!"
-        );
+            "please report this bug! (Occurred in {} at {}:{} in {})",
+            loc.file_name(), loc.line(), loc.column(), loc.function_name()
+        ));
     }
 }
 
 void Stream::log(Message const& message) {
-    m_messages.push_back(message);
+    m_messages.push_back({ 0, message });
 }
 
 std::vector<Message> Stream::errors() const {
     std::vector<Message> errs;
-    for (auto& msg : m_messages) {
+    for (auto& [_, msg] : m_messages) {
         if (msg.level == Level::Error) {
             errs.push_back(msg);
         }

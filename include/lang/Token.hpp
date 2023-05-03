@@ -170,16 +170,17 @@ namespace gdml::lang {
         Stream& m_stream;
         bool m_commit = false;
         size_t m_offset;
+        size_t m_msgLevel;
 
     public:
-        Rollback(Stream& stream);
+        Rollback(Stream& stream, std::source_location const loc = std::source_location::current());
         ~Rollback();
 
         void commit();
 
         template <class E, class... Args>
         ExprResult<E> commit(Args&&... args) {
-            m_commit = true;
+            this->commit();
             return geode::Ok(std::make_shared<E>(
                 std::forward<Args>(args)...,
                 Range(m_stream.src()->getLocation(m_offset), m_stream.location())
@@ -194,7 +195,7 @@ namespace gdml::lang {
                 .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
                 .range = Range(m_stream.src()->getLocation(m_offset), m_stream.location())
             };
-            m_stream.log(msg);
+            m_stream.m_messages.push_back({ m_msgLevel, msg });
             return geode::Err(m_stream.errors().size());
         }
     };

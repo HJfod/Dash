@@ -1,4 +1,5 @@
 #include <lang/Expr.hpp>
+#include "Debug.hpp"
 
 using namespace geode::prelude;
 using namespace gdml::lang;
@@ -10,10 +11,20 @@ ExprResult<LitExpr> LitExpr::pull(Stream& stream) {
     return rb.commit<LitExpr>(value);
 }
 
+std::string LitExpr::debug(size_t indent) const {
+    return DebugPrint("LitExpr", indent)
+        .member("value", value);
+}
+
 ExprResult<IdentExpr> IdentExpr::pull(Stream& stream) {
     Rollback rb(stream);
     GEODE_UNWRAP_INTO(auto value, Token::pull<Ident>(stream));
     return rb.commit<IdentExpr>(value);
+}
+
+std::string IdentExpr::debug(size_t indent) const {
+    return DebugPrint("IdentExpr", indent)
+        .member("ident", ident);
 }
 
 ExprResult<Expr> BinOpExpr::pull(Stream& stream, size_t prec, Rc<Expr> lhs) {
@@ -60,6 +71,26 @@ ExprResult<Expr> BinOpExpr::pull(Stream& stream) {
     return Ok(lhs);
 }
 
+std::string BinOpExpr::debug(size_t indent) const {
+    return DebugPrint("BinOpExpr", indent)
+        .member("lhs", lhs)
+        .member("rhs", rhs)
+        .member("op", op);
+}
+
+ExprResult<MemberExpr> MemberExpr::pull(Rc<Expr> target, Stream& stream) {
+    Rollback rb(stream);
+    GEODE_UNWRAP(Token::pull('.', stream));
+    GEODE_UNWRAP_INTO(auto ident, Token::pull<Ident>(stream));
+    return rb.commit<MemberExpr>(target, ident);
+}
+
+std::string MemberExpr::debug(size_t indent) const {
+    return DebugPrint("MemberExpr", indent)
+        .member("target", target)
+        .member("member", member);
+}
+
 ExprResult<CallExpr> CallExpr::pull(Rc<Expr> target, Stream& stream) {
     Rollback rb(stream);
     GEODE_UNWRAP(Token::pull('(', stream));
@@ -85,12 +116,24 @@ ExprResult<CallExpr> CallExpr::pull(Rc<Expr> target, Stream& stream) {
     return rb.commit<CallExpr>(target, args);
 }
 
+std::string CallExpr::debug(size_t indent) const {
+    return DebugPrint("CallExpr", indent)
+        .member("target", target)
+        .member("args", args);
+}
+
 ExprResult<PropExpr> PropExpr::pull(Stream& stream) {
     Rollback rb(stream);
     GEODE_UNWRAP_INTO(auto ident, Token::pull<Ident>(stream));
     GEODE_UNWRAP(Token::pull(':', stream));
     GEODE_UNWRAP_INTO(auto value, Expr::pull(stream));
     return rb.commit<PropExpr>(ident, value);
+}
+
+std::string PropExpr::debug(size_t indent) const {
+    return DebugPrint("PropExpr", indent)
+        .member("prop", prop)
+        .member("value", value);
 }
 
 ExprResult<NodeExpr> NodeExpr::pull(Stream& stream) {
@@ -100,6 +143,7 @@ ExprResult<NodeExpr> NodeExpr::pull(Stream& stream) {
     Vec<Rc<PropExpr>> props;
     Vec<Rc<NodeExpr>> children;
     while (true) {
+        stream.debugTick();
         if (auto prop = PropExpr::pull(stream)) {
             props.push_back(prop.unwrap());
             // pull at least one semicolon
@@ -116,6 +160,13 @@ ExprResult<NodeExpr> NodeExpr::pull(Stream& stream) {
     }
     GEODE_UNWRAP(Token::pull('}', stream));
     return rb.commit<NodeExpr>(ident, props, children);
+}
+
+std::string NodeExpr::debug(size_t indent) const {
+    return DebugPrint("NodeExpr", indent)
+        .member("ident", ident)
+        .member("props", props)
+        .member("children", children);
 }
 
 ExprResult<ListExpr> ListExpr::pull(Stream& stream) {
@@ -143,6 +194,11 @@ ExprResult<ListExpr> ListExpr::pull(Stream& stream) {
     return rb.commit<ListExpr>(list);
 }
 
+std::string ListExpr::debug(size_t indent) const {
+    return DebugPrint("ListExpr", indent)
+        .member("exprs", exprs);
+}
+
 ExprResult<Expr> Expr::pull(Stream& stream) {
     return BinOpExpr::pull(stream);
 }
@@ -153,6 +209,10 @@ ExprResult<Expr> Expr::pullPrimary(Stream& stream) {
     // Get all indexes and calls (if chained)
     while (true) {
         stream.debugTick();
+        if (Token::peek('.', stream)) {
+            GEODE_UNWRAP_INTO(expr, MemberExpr::pull(expr, stream));
+            continue;
+        }
         if (Token::peek('(', stream)) {
             GEODE_UNWRAP_INTO(expr, CallExpr::pull(expr, stream));
             continue;
@@ -192,3 +252,22 @@ ExprResult<Expr> Expr::pullPrimaryNonCall(Stream& stream) {
     }
 }
 
+ExprResult<AST> AST::pull(Stream& stream) {
+    Rollback rb(stream);
+    Vec<Rc<Expr>> exprs;
+    while (true) {
+        stream.debugTick();
+        GEODE_UNWRAP_INTO(auto expr, Expr::pull(stream));
+        exprs.push_back(expr);
+        GEODE_UNWRAP(Token::pull(';', stream));
+        if (!Token::peek(stream)) {
+            break;
+        }
+    }
+    return rb.commit<AST>(exprs);
+}
+
+std::string AST::debug(size_t indent) const {
+    return DebugPrint("AST", indent)
+        .member("exprs", exprs);
+}
