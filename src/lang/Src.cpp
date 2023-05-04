@@ -1,5 +1,6 @@
-#include <lang/Main.hpp>
+#include <lang/Src.hpp>
 #include <lang/Token.hpp>
+#include <lang/State.hpp>
 #include <Geode/utils/file.hpp>
 
 using namespace geode::prelude;
@@ -47,7 +48,13 @@ Result<Rc<SrcFile>> SrcFile::from(ghc::filesystem::path const& path) {
     return Ok(std::make_shared<SrcFile>(path, data));
 }
 
-Stream::Stream(Rc<Src> file) : m_file(file) {}
+Stream::Stream(Rc<Src> file, Rc<State> state) : m_file(file), m_state(state) {}
+
+Stream::~Stream() {
+    if (m_lastToken) {
+        delete m_lastToken;
+    }
+}
 
 char Stream::peek() const {
     if (m_position < m_file->size()) {
@@ -102,7 +109,7 @@ void Stream::debugTick(std::source_location const loc) {
 }
 
 void Stream::setLastToken(Token const& token) {
-    m_lastToken = std::make_unique<Token>(token);
+    m_lastToken = new Token(token);
 }
 
 Option<Token> Stream::last() const {
@@ -112,18 +119,8 @@ Option<Token> Stream::last() const {
     return None;
 }
 
-void Stream::log(Message const& message) {
-    m_messages.push_back({ 0, message });
-}
-
-std::vector<Message> Stream::errors() const {
-    std::vector<Message> errs;
-    for (auto& [_, msg] : m_messages) {
-        if (msg.level == Level::Error) {
-            errs.push_back(msg);
-        }
-    }
-    return errs;
+Rc<State> Stream::state() const {
+    return m_state;
 }
 
 SrcFile::~SrcFile() {
@@ -131,8 +128,8 @@ SrcFile::~SrcFile() {
     file::unwatchFile(m_path);
 }
 
-Stream SrcFile::read() {
-    return Stream(shared_from_this());
+Stream SrcFile::read(Rc<State> state) {
+    return Stream(shared_from_this(), state);
 }
 
 std::string SrcFile::getUnderlined(Range const& range) const {
@@ -238,4 +235,40 @@ Location SrcFile::getLocation(size_t offset) {
         .column = col,
         .offset = offset,
     };
+}
+
+Rollback::Rollback(Stream& stream, std::source_location const loc)
+  : m_stream(stream),
+    m_offset(stream.offset()),
+    m_msgLevel(stream.state()->pushLogLevel())
+{
+    stream.debugTick(loc);
+}
+
+Rollback::~Rollback() {
+    if (!m_commit) {
+        m_stream.navigate(m_offset);
+        m_commit = true;
+    }
+    m_stream.state()->popLogLevel();
+}
+
+impl::Failure<size_t> Rollback::error(Message const& msg) {
+    m_stream.state()->log(msg, m_msgLevel);
+    return geode::Err(m_stream.state()->getErrors().size());
+}
+
+void Rollback::clearMessages() {
+    // Remove all messages that have been pushed that have a higher or equal msg level
+    // This is because rb.error just pushes errors to the stream's message 
+    // queue, but sometimes those errors end up being part of a parse tree that's 
+    // an optional branch and aren't actually errors but just signal that that 
+    // branch isn't valid (like how Expr::pullPrimaryNonCall tries a bunch of 
+    // different options)
+    m_stream.state()->popMessages(m_msgLevel);
+}
+
+void Rollback::commit() {
+    m_commit = true;
+    this->clearMessages();
 }

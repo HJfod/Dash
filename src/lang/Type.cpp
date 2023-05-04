@@ -34,7 +34,7 @@ std::string Type::toString() const {
         [](StrType const&) -> std::string {
             return "string";
         },
-        [](StructType const& str) {
+        [](StructType const& str) -> std::string {
             if (str.name) {
                 return str.name.value();
             }
@@ -48,60 +48,68 @@ std::string Type::toString() const {
                     ret += ", ";
                 }
                 first = false;
-                ret += mem + ": " + ty.toString();
+                ret += mem + ": " + ty.type.toString();
             }
             ret += " }";
             return ret;
         },
-        [](NodeType const& node) {
+        [](NodeType const& node) -> std::string {
             return node.name;
         },
     }, kind);
 }
 
-State::State() : m_scopes({ Scope() }) {}
-
-void State::pushType(Type const& type) {
-    m_scopes.back().types.insert({ type.toString(), type });
+Option<Type> Type::getMemberType(std::string const& name) const {
+    return std::visit(makeVisitor {
+        [&](VoidType const&) -> Option<Type> {
+            return None;
+        },
+        [&](BoolType const&) -> Option<Type> {
+            return None;
+        },
+        [&](IntType const&) -> Option<Type> {
+            return None;
+        },
+        [&](FloatType const&) -> Option<Type> {
+            return None;
+        },
+        [&](StrType const&) -> Option<Type> {
+            return None;
+        },
+        [&](StructType const& str) -> Option<Type> {
+            if (str.members.contains(name)) {
+                return str.members.at(name).type;
+            }
+            return None;
+        },
+        [&](NodeType const& node) -> Option<Type> {
+            if (node.props.contains(name)) {
+                return node.props.at(name).type;
+            }
+            return None;
+        },
+    }, kind);
 }
 
-Type* State::getType(std::string const& name, bool topOnly) {
-    // Prefer topmost scope
-    for (auto& scope : ranges::reverse(m_scopes)) {
-        if (scope.types.contains(name)) {
-            return &scope.types.at(name);
-        }
-        if (topOnly) {
-            return nullptr;
-        }
-    }
-    return nullptr;
-}
-
-void State::pushVar(Var const& var) {
-    m_scopes.back().vars.insert({ var.name, var });
-}
-
-Var* State::getVar(std::string const& name, bool topOnly) {
-    // Prefer topmost scope
-    for (auto& scope : ranges::reverse(m_scopes)) {
-        if (scope.vars.contains(name)) {
-            return &scope.vars.at(name);
-        }
-        if (topOnly) {
-            return nullptr;
-        }
-    }
-    return nullptr;
-}
-
-void State::pushScope() {
-    m_scopes.emplace_back();
-}
-
-void State::popScope() {
-    m_scopes.pop_back();
-    if (m_scopes.empty()) {
-        throw std::runtime_error("Internal Compiler Error: Scope stack is empty");
-    }
+Type Value::getType() const {
+    return std::visit(makeVisitor {
+        [](VoidLit const&) {
+            return Type(VoidType());
+        },
+        [](BoolLit const&) {
+            return Type(BoolType());
+        },
+        [](IntLit const&) {
+            return Type(IntType());
+        },
+        [](FloatLit const&) {
+            return Type(FloatType());
+        },
+        [](StrLit const&) {
+            return Type(StrType());
+        },
+        [](auto const& str) {
+            return Type(str.type);
+        },
+    }, kind);
 }

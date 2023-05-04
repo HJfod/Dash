@@ -15,6 +15,10 @@ target_include_directories(${PROJECT_NAME} PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
 )
 
+if (PROJECT_IS_TOP_LEVEL)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE HJFOD_GDML_EXPORTING)
+endif()
+
 if (NOT DEFINED ENV{GEODE_SDK})
     message(FATAL_ERROR "Unable to find Geode SDK! Please define GEODE_SDK environment variable to point to Geode")
 else()

@@ -1,4 +1,5 @@
 #include <GDML.hpp>
+#include <lang/State.hpp>
 
 using namespace gdml;
 using namespace gdml::lang;
@@ -37,10 +38,9 @@ Rc<Parser> Parser::create() {
 }
 
 void Parser::reset() {
-    m_errors.clear();
     m_src = nullptr;
-    m_ast = nullptr;
     m_target = nullptr;
+    m_state = State::create();
 }
 
 bool Parser::loadFile(ghc::filesystem::path const& path) {
@@ -54,24 +54,17 @@ bool Parser::loadFile(ghc::filesystem::path const& path) {
 }
 
 bool Parser::parse() {
-    m_ast = nullptr;
-    auto stream = m_src->read();
+    m_state = State::create();
     try {
-        auto ast = AST::pull(stream);
-        if (!ast) {
-            for (auto& err : stream.errors()) {
-                m_errors.push_back(err.toString());
-            }
-        }
-        else {
-            log::debug("Succesfully parsed AST");
-            m_ast = ast.unwrap();
-            log::debug("{}", m_ast->debug());
-        }
-        return ast.isOk();
+        return m_state->parse(m_src).isOk();
     }
     catch(std::exception& e) {
-        m_errors.push_back(e.what());
+        m_state->log(Message {
+            .level = Level::Error,
+            .src = m_src,
+            .info = e.what(),
+            .range = Range(m_src->getLocation(0)),
+        });
         return false;
     }
 }
@@ -81,10 +74,8 @@ void Parser::enableHotReload(bool enable) {
 }
 
 void Parser::populate(CCNode* node) const {
-    if (!m_errors.empty()) {
-        for (auto& err : m_errors) {
-            log::error("{}", err);
-        }
+    m_state->dispatchLogs();
+    if (!m_state->getErrors().empty()) {
         node->addChild(CCLabelBMFont::create(
             "There were errors loading GDML - see console",
             "bigFont.fnt"
@@ -102,7 +93,6 @@ void Parser::addTo(CCNode* node) {
 
 void Parser::refresh() {
     if (!m_target) return;
-    m_errors.clear();
     this->parse();
     this->populate(m_target);
 }

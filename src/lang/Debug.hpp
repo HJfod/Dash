@@ -29,6 +29,19 @@ template <class T>
     requires requires(T const& t) {
         debugPrint(t, 0);
     }
+std::string debugPrint(Option<T> const& opt, size_t i) {
+    if (opt) {
+        return fmt::format("Some({})", debugPrint(opt.value(), i));
+    }
+    else {
+        return "None";
+    }
+}
+
+template <class T>
+    requires requires(T const& t) {
+        debugPrint(t, 0);
+    }
 std::string debugPrint(Vec<T> const& vec, size_t i) {
     if (vec.empty()) {
         return "[]";

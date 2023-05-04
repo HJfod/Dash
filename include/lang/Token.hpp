@@ -1,19 +1,16 @@
 #pragma once
 
 #include "Main.hpp"
+#include "Src.hpp"
 
 namespace gdml::lang {
-    template <class T = geode::impl::DefaultValue>
-    using ParseResult = geode::Result<T, size_t>;
-
-    // Rollback needs to know this
-    template <class T>
-    using ExprResult = ParseResult<Rc<T>>;
+    class Stream;
 
     enum class Keyword {
         For, In, While,
         If, Else, Try,
         Function, Return, Break, Continue, From,
+        Struct, Decl,
         New, Const, Let,
         Export, Import, Extern,
         True, False, Null,
@@ -43,12 +40,12 @@ namespace gdml::lang {
         Arrow,  // a => b
     };
 
-    using NullLit = std::monostate; // std::nullptr_t is not <=>!!!
+    using VoidLit = std::monostate;
     using BoolLit = bool;
     using StrLit = std::string;
     using IntLit = int64_t;
     using FloatLit = double;
-    using Lit = std::variant<BoolLit, StrLit, IntLit, FloatLit>;
+    using Lit = std::variant<VoidLit, BoolLit, StrLit, IntLit, FloatLit>;
     using Ident = std::string;
     using Punct = char;
 
@@ -85,11 +82,11 @@ namespace gdml::lang {
         TokenTraits<T>::TYPE_NAME;
     };
 
-    std::string tokenToString(Keyword kw, bool debug = false);
-    std::string tokenToString(Ident ident, bool debug = false);
-    std::string tokenToString(Lit lit, bool debug = false);
-    std::string tokenToString(Op op, bool debug = false);
-    std::string tokenToString(Punct punct, bool debug = false);
+    GDML_DLL std::string tokenToString(Keyword kw, bool debug = false);
+    GDML_DLL std::string tokenToString(Ident ident, bool debug = false);
+    GDML_DLL std::string tokenToString(Lit lit, bool debug = false);
+    GDML_DLL std::string tokenToString(Op op, bool debug = false);
+    GDML_DLL std::string tokenToString(Punct punct, bool debug = false);
 
     enum class OpDir : bool {
         LTR, RTL,
@@ -97,7 +94,7 @@ namespace gdml::lang {
 
     struct Rollback;
 
-    struct Token {
+    struct GDML_DLL Token {
         std::variant<Keyword, Op, Lit, Punct, Ident> value;
 
         Token() = default;
@@ -177,73 +174,12 @@ namespace gdml::lang {
         }
     };
 
-    struct Rollback final {
-    private:
-        Stream& m_stream;
-        bool m_commit = false;
-        size_t m_offset;
-        size_t m_msgLevel;
-
-    public:
-        Rollback(Stream& stream, std::source_location const loc = std::source_location::current());
-        ~Rollback();
-
-        void clearMessages();
-        void commit();
-
-        template <class E, class... Args>
-        ExprResult<E> commit(Args&&... args) {
-            this->commit();
-            return geode::Ok(std::make_shared<E>(
-                std::forward<Args>(args)...,
-                Range(m_stream.src()->getLocation(m_offset), m_stream.location())
-            ));
-        }
-
-        template <class... Args>
-        geode::impl::Failure<size_t> error(std::string const& fmt, Args&&... args) {
-            auto msg = Message {
-                .level = Level::Error,
-                .src = m_stream.src(),
-                .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
-                .range = Range(m_stream.src()->getLocation(m_offset), m_stream.location())
-            };
-            m_stream.m_messages.push_back({ m_msgLevel, msg });
-            return geode::Err(m_stream.errors().size());
-        }
-
-        template <class... Args>
-        geode::impl::Failure<size_t> errorLastToken(std::string const& fmt, Args&&... args) {
-            auto msg = Message {
-                .level = Level::Error,
-                .src = m_stream.src(),
-                .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
-                .range = Range(m_stream.src()->getLocation(m_offset), m_stream.src()->getLocation(m_offset))
-            };
-            m_stream.m_messages.push_back({ m_msgLevel, msg });
-            return geode::Err(m_stream.errors().size());
-        }
-
-        template <class... Args>
-        geode::impl::Failure<size_t> errorNextToken(std::string const& fmt, Args&&... args) {
-            Token::skipToNext(m_stream);
-            auto msg = Message {
-                .level = Level::Error,
-                .src = m_stream.src(),
-                .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
-                .range = Range(m_stream.location(), m_stream.location())
-            };
-            m_stream.m_messages.push_back({ m_msgLevel, msg });
-            return geode::Err(m_stream.errors().size());
-        }
-    };
-
-    bool isIdentCh(char ch);
-    bool isIdent(std::string const& ident);
-    bool isSpecialIdent(std::string const& ident);
-    bool isOpCh(char ch);
-    bool isOp(std::string const& op);
-    bool isUnOp(Op op);
-    size_t opPriority(Op op);
-    OpDir opDir(Op op);
+    GDML_DLL bool isIdentCh(char ch);
+    GDML_DLL bool isIdent(std::string const& ident);
+    GDML_DLL bool isSpecialIdent(std::string const& ident);
+    GDML_DLL bool isOpCh(char ch);
+    GDML_DLL bool isOp(std::string const& op);
+    GDML_DLL bool isUnOp(Op op);
+    GDML_DLL size_t opPriority(Op op);
+    GDML_DLL OpDir opDir(Op op);
 }

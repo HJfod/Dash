@@ -1,4 +1,6 @@
 #include <lang/Token.hpp>
+#include <lang/Src.hpp>
+#include <lang/State.hpp>
 
 using namespace geode::prelude;
 using namespace gdml::lang;
@@ -16,6 +18,8 @@ static std::unordered_map<Keyword, std::string> KEYWORDS {
     { Keyword::Break,       "break" },
     { Keyword::Continue,    "continue" },
     { Keyword::From,        "from" },
+    { Keyword::Struct,      "struct" },
+    { Keyword::Decl,        "decl" },
     { Keyword::New,         "new" },
     { Keyword::Const,       "const" },
     { Keyword::Let,         "let" },
@@ -209,15 +213,13 @@ ParseResult<Token> Token::pull(Stream& stream) {
                     case '\'': lit += '\''; break;
                     case '\\': lit += '\\'; break;
                     case '{':  lit += '{'; break;
-                    default: stream.log(Message {
-                        .level = Level::Warning,
-                        .src = stream.src(),
-                        .info = fmt::format("Unknown escape sequence '\\{}'", escaped),
-                        .range = Range(
+                    default: stream.state()->warn(
+                        Range(
                             stream.src()->getLocation(stream.offset() - 1),
                             stream.src()->getLocation(stream.offset())
                         ),
-                    }); break;
+                        "Unknown escape sequence '\\{}'", escaped
+                    ); break;
                 }
             }
             // todo: interpolated string literals
@@ -302,10 +304,10 @@ ParseResult<Token> Token::pull(Stream& stream) {
         rb.commit();
         return done(Token(Lit(false)));
     }
-    // if (ident == "null") {
-    //     rb.commit();
-    //     return done(Token(Lit(NullLit())));
-    // }
+    if (ident == "void") {
+        rb.commit();
+        return done(Token(Lit(VoidLit())));
+    }
 
     // keyword
     for (auto const& [kw, va] : KEYWORDS) {
@@ -354,8 +356,8 @@ std::string lang::tokenToString(Ident ident, bool debug) {
 
 std::string lang::tokenToString(Lit lit, bool debug) {
     return std::visit(makeVisitor {
-        [&](NullLit const& null) -> std::string {
-            return "null";
+        [&](VoidLit const&) -> std::string {
+            return "void";
         },
         [&](BoolLit const& b) -> std::string {
             if (debug) {
@@ -396,38 +398,4 @@ std::string lang::tokenToString(Punct punct, bool debug) {
         return fmt::format("punct('{}')", punct);
     }
     return std::string(1, punct);
-}
-
-Rollback::Rollback(Stream& stream, std::source_location const loc)
-  : m_stream(stream),
-    m_offset(stream.offset()),
-    m_msgLevel(stream.m_rollbackLevel)
-{
-    stream.debugTick(loc);
-    stream.m_rollbackLevel += 1;
-}
-
-Rollback::~Rollback() {
-    if (!m_commit) {
-        m_stream.navigate(m_offset);
-        m_commit = true;
-    }
-    m_stream.m_rollbackLevel -= 1;
-}
-
-void Rollback::clearMessages() {
-    // Remove all messages that have been pushed that have a higher or equal msg level
-    // This is because rb.error just pushes errors to the stream's message 
-    // queue, but sometimes those errors end up being part of a parse tree that's 
-    // an optional branch and aren't actually errors but just signal that that 
-    // branch isn't valid (like how Expr::pullPrimaryNonCall tries a bunch of 
-    // different options)
-    ranges::remove(m_stream.m_messages, [=](std::pair<size_t, Message> const& pair) {
-        return pair.first >= m_msgLevel;
-    });
-}
-
-void Rollback::commit() {
-    m_commit = true;
-    this->clearMessages();
 }

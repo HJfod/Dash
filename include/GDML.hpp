@@ -1,14 +1,13 @@
 #pragma once
 
 #include "lang/Main.hpp"
-#include "lang/Expr.hpp"
+#include "lang/State.hpp"
 
 namespace gdml {
-    class Parser final : public std::enable_shared_from_this<Parser> {
+    class GDML_DLL Parser final : public std::enable_shared_from_this<Parser> {
     protected:
         Rc<lang::Src> m_src;
-        Rc<lang::Expr> m_ast;
-        std::vector<std::string> m_errors;
+        Rc<lang::State> m_state;
         cocos2d::CCNode* m_target;
         bool m_hotReloadEnabled = false;
 
@@ -26,5 +25,5 @@ namespace gdml {
         Rc<lang::Src> getSrc() const;
     };
 
-    void loadGDMLFromFile(cocos2d::CCNode* node, ghc::filesystem::path const& path, bool hotReload = true);
+    GDML_DLL void loadGDMLFromFile(cocos2d::CCNode* node, ghc::filesystem::path const& path, bool hotReload = true);
 }

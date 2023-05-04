@@ -1,29 +1,42 @@
 #pragma once
 
 #include "Main.hpp"
+#include "Token.hpp"
 
 namespace gdml::lang {
     struct Type;
+    struct Value;
 
-    struct VoidType {};
-    struct BoolType {};
-    struct IntType {};
-    struct FloatType {};
-    struct StrType {};
-    struct StructType {
+    struct GDML_DLL VoidType {};
+    struct GDML_DLL BoolType {};
+    struct GDML_DLL IntType {};
+    struct GDML_DLL FloatType {};
+    struct GDML_DLL StrType {};
+
+    struct GDML_DLL PropType {
+        Type type;
+        Option<Box<Value>> defaultValue;
+        // prop <=> full.path.to.another
+        Option<Vec<std::string>> binding;
+    };
+
+    struct GDML_DLL StructType {
         Option<std::string> name;
-        Map<std::string, Type> members;
+        Map<std::string, PropType> members;
     };
-    struct NodeType {
+    struct GDML_DLL NodeType {
         std::string name;
-        Map<std::string, Type> props;
+        Map<std::string, PropType> props;
+    };
+    struct GDML_DLL RefType {
+        Box<Type> type;
     };
 
-    struct Type {
+    struct GDML_DLL Type {
         std::variant<
             VoidType,
             BoolType, IntType, FloatType, StrType,
-            StructType, NodeType
+            StructType, NodeType, RefType
         > kind;
 
         using Value = decltype(kind);
@@ -32,33 +45,37 @@ namespace gdml::lang {
         Type(Value const& value) : kind(value) {}
 
         bool operator==(Type const& other) const;
+        Option<Type> getMemberType(std::string const& name) const;
         std::string toString() const;
     };
 
-    struct Var final {
-        std::string name;
-        Type type;
+    struct GDML_DLL PropValue {
+        Value value;
     };
 
-    struct Scope final {
-        Map<std::string, Type> types;
-        Map<std::string, Var> vars;
+    struct GDML_DLL StructValue {
+        StructType type;
+        Map<std::string, PropValue> members;
     };
 
-    class State final {
-    private:
-        Vec<Scope> m_scopes;
-
-    public:
-        State();
-
-        void pushType(Type const& type);
-        Type* getType(std::string const& name, bool topOnly = false);
-
-        void pushVar(Var const& var);
-        Var* getVar(std::string const& name, bool topOnly = false);
-
-        void pushScope();
-        void popScope();
+    struct GDML_DLL NodeValue {
+        NodeType type;
+        Map<std::string, PropValue> props;
     };
+
+    struct GDML_DLL RefValue {
+        RefType type;
+        Rc<Value> value;
+    };
+
+    struct GDML_DLL Value {
+        std::variant<
+            VoidLit, BoolLit, IntLit, FloatLit, StrLit,
+            StructValue, NodeValue, RefValue
+        > kind;
+
+        Type getType() const;
+    };
+    
+    using TypeCheckResult = ParseResult<Type>;
 }

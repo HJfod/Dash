@@ -16,12 +16,12 @@ export {
     }
 
     struct CCRect {
-        origin: CCPoint;
-        size: CCSize;
-        x: float <=> this.origin.x;
-        y: float <=> this.origin.y;
-        width: float <=> this.size.width;
-        height: float <=> this.size.height;
+        x: float;
+        y: float;
+        width: float;
+        height: float;
+        origin: CCPoint <=> { x, y };
+        size: CCSize <=> { width, height };
     }
 
     struct ccColor3B {
@@ -35,61 +35,85 @@ export {
         g: int;
         b: int;
         a: int;
-        // rgb: ccColor3B <=> { this.r, this.g, this.b };
+        rgb: ccColor3B <=> { r, g, b };
     }
 
     extern struct global {
         winSize: CCSize;
     }
 
-    extern struct Layout {}
-    extern struct RowLayout extends Layout {}
-    extern struct ColumnLayout extends Layout {}
+    // extern struct Layout {}
+    // extern struct RowLayout extends Layout {}
+    // extern struct ColumnLayout extends Layout {}
 
     extern decl CCNode {
         id: string;
-        pos: CCPoint;
-        x: float <=> this.pos.x;
-        y: float <=> this.pos.y;
-        size: CCSize;
-        width: float <=> this.size.width;
-        height: float <=> this.size.height;
-        layout: Layout;
+        x: float;
+        y: float;
+        pos: CCPoint <=> { x, y };
+        width: float;
+        height: float;
+        size: CCSize <=> { width, height };
+        // layout: Layout;
     }
     // All decls implicitly extend CCNode
     decl default extends CCNode;
 
-    extern decl CCLayer {}
+    // extern decl CCLayer {}
 
-    extern decl CCMenu extends CCLayer {}
+    // extern decl CCMenu extends CCLayer {}
 
-    extern decl CCMenuItemSpriteExtra {
-        clicked: fun () => void;
-    }
+    // extern decl CCMenuItemSpriteExtra {
+    //     clicked: fun () => void;
+    // }
 
     extern decl CCLabelBMFont {
-        required text: string;
+        text: string;
         font: string;
     }
 
-    extern decl CCSprite {
-        sprite: string;
-        frame: string;
-        color: ccColor3B;
-        required sprite || frame;
+    // extern decl CCSprite {
+    //     sprite: string;
+    //     frame: string;
+    //     color: ccColor3B;
+    //     required sprite || frame;
+    // }
+
+    // extern decl ButtonSprite {
+    //     required text: string;
+    //     font: string;
+    //     bg: string;
+    // }
+
+    fun point: CCPoint as CCSize {
+        return { width: point.x, height: point.y };
+    }
+    fun point: CCPoint / factor: int -> CCPoint {
+        return { x: point.x / factor, y: point.y / factor };
+    }
+    fun point: CCPoint / factor: float -> CCPoint {
+        return { x: point.x / factor, y: point.y / factor };
+    }
+    fun point: CCPoint * factor: int -> CCPoint {
+        return { x: point.x * factor, y: point.y * factor };
+    }
+    fun point: CCPoint * factor: float -> CCPoint {
+        return { x: point.x * factor, y: point.y * factor };
     }
 
-    extern decl ButtonSprite {
-        required text: string;
-        font: string;
-        bg: string;
+    fun size: CCSize as CCPoint {
+        return { x: size.width, y: size.height };
     }
-
-    fun CCPoint as CCSize {
-        return { width: this.x, height: this.y };
+    fun size: CCSize / factor: int -> CCSize {
+        return { width: size.width / factor, height: size.height / factor };
     }
-
-    fun CCSize as CCPoint {
-        return { x: this.width, y: this.height };
+    fun size: CCSize / factor: float -> CCSize {
+        return { width: size.width / factor, height: size.height / factor };
+    }
+    fun size: CCSize * factor: int -> CCSize {
+        return { width: size.width * factor, height: size.height * factor };
+    }
+    fun size: CCSize * factor: float -> CCSize {
+        return { width: size.width * factor, height: size.height * factor };
     }
 }
