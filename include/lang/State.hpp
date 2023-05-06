@@ -6,6 +6,8 @@
 
 namespace gdml::lang {
     class AST;
+    class SrcParser;
+    class SharedParser;
 
     struct GDML_DLL Var final {
         std::string name;
@@ -17,19 +19,20 @@ namespace gdml::lang {
         Map<std::string, Var> vars;
     };
 
-    class GDML_DLL State final : public std::enable_shared_from_this<State> {
+    class GDML_DLL SrcParser final : public std::enable_shared_from_this<SrcParser> {
     private:
+        Rc<SharedParser> m_parser;
+        Rc<Src> m_src;
+        Rc<AST> m_ast;
         Vec<Scope> m_scopes;
-        Vec<std::pair<size_t, Message>> m_messages;
-        // Rollback level starts at 1 because non-rollback messages have 0
-        size_t m_rollbackLevel = 1;
-        Map<Rc<Src>, Rc<AST>> m_asts;
+
+        friend class SharedParser;
 
     public:
-        State();
-        static Rc<State> create();
+        SrcParser();
+        static ParseResult<Rc<SrcParser>> parse(Rc<SharedParser> parser, Rc<Src> src);
 
-        ParseResult<> parse(Rc<Src> src);
+        Rc<SharedParser> getShared() const;
 
         void pushType(Type const& type);
         Type* getType(std::string const& name, bool topOnly = false);
@@ -48,7 +51,7 @@ namespace gdml::lang {
                 .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
                 .range = range,
             };
-            this->log(msg);
+            this->getShared()->log(msg);
         }
 
         template <class... Args>
@@ -59,9 +62,26 @@ namespace gdml::lang {
                 .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
                 .range = range,
             };
-            this->log(msg);
-            return geode::Err(this->getErrors().size());
+            this->getShared()->log(msg);
+            return geode::Err(this->getShared()->getErrors().size());
         }
+    };
+
+    class GDML_DLL SharedParser final : public std::enable_shared_from_this<SharedParser> {
+    private:
+        Rc<Src> m_root;
+        Map<Rc<Src>, Rc<SrcParser>> m_states;
+        Vec<std::pair<size_t, Message>> m_messages;
+        // Rollback level starts at 1 because non-rollback messages have 0
+        size_t m_rollbackLevel = 1;
+
+        ParseResult<> add(Rc<Src> src);
+
+    public:
+        SharedParser(Rc<Src> src);
+        static Rc<SharedParser> create(Rc<Src> src);
+
+        ParseResult<> compile();
 
         void log(Message const& message, size_t level = 0);
         void dispatchLogs() const;

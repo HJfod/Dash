@@ -7,9 +7,9 @@ using namespace geode::prelude;
 
 class HotReloadNode : public CCNode {
 protected:
-    Rc<Parser> m_parser;
+    Rc<GDML> m_parser;
 
-    bool init(Rc<Parser> parser) {
+    bool init(Rc<GDML> parser) {
         if (!CCNode::init())
             return false;
         
@@ -22,7 +22,7 @@ protected:
     }
 
 public:
-    static HotReloadNode* create(Rc<Parser> parser) {
+    static HotReloadNode* create(Rc<GDML> parser) {
         auto ret = new HotReloadNode();
         if (ret && ret->init(parser)) {
             ret->autorelease();
@@ -33,17 +33,17 @@ public:
     }
 };
 
-Rc<Parser> Parser::create() {
-    return std::make_shared<Parser>();
+Rc<GDML> GDML::create() {
+    return std::make_shared<GDML>();
 }
 
-void Parser::reset() {
+void GDML::reset() {
     m_src = nullptr;
     m_target = nullptr;
-    m_state = State::create();
+    m_parser = nullptr;
 }
 
-bool Parser::loadFile(ghc::filesystem::path const& path) {
+bool GDML::loadFile(ghc::filesystem::path const& path) {
     this->reset();
     auto srcRes = SrcFile::from(path);
     if (!srcRes) {
@@ -53,29 +53,17 @@ bool Parser::loadFile(ghc::filesystem::path const& path) {
     return this->parse();
 }
 
-bool Parser::parse() {
-    m_state = State::create();
-    try {
-        return m_state->parse(m_src).isOk();
-    }
-    catch(std::exception& e) {
-        m_state->log(Message {
-            .level = Level::Error,
-            .src = m_src,
-            .info = e.what(),
-            .range = Range(m_src->getLocation(0)),
-        });
-        return false;
-    }
+bool GDML::parse() {
+    return (m_parser = SharedParser::create(m_src))->compile().isOk();
 }
 
-void Parser::enableHotReload(bool enable) {
+void GDML::enableHotReload(bool enable) {
     m_hotReloadEnabled = enable;
 }
 
-void Parser::populate(CCNode* node) const {
-    m_state->dispatchLogs();
-    if (!m_state->getErrors().empty()) {
+void GDML::populate(CCNode* node) const {
+    m_parser->dispatchLogs();
+    if (!m_parser->getErrors().empty()) {
         node->addChild(CCLabelBMFont::create(
             "There were errors loading GDML - see console",
             "bigFont.fnt"
@@ -83,7 +71,7 @@ void Parser::populate(CCNode* node) const {
     }
 }
 
-void Parser::addTo(CCNode* node) {
+void GDML::addTo(CCNode* node) {
     if (m_hotReloadEnabled) {
         m_target = node;
         node->addChild(HotReloadNode::create(shared_from_this()));
@@ -91,18 +79,18 @@ void Parser::addTo(CCNode* node) {
     this->populate(node);
 }
 
-void Parser::refresh() {
+void GDML::refresh() {
     if (!m_target) return;
     this->parse();
     this->populate(m_target);
 }
 
-Rc<lang::Src> Parser::getSrc() const {
+Rc<lang::Src> GDML::getSrc() const {
     return m_src;
 }
 
 void gdml::loadGDMLFromFile(CCNode* node, ghc::filesystem::path const& path, bool hotReload) {
-    auto parser = Parser::create();
+    auto parser = GDML::create();
     parser->enableHotReload(hotReload);
     parser->loadFile(path);
     parser->addTo(node);

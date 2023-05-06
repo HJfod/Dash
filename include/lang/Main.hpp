@@ -31,14 +31,29 @@ namespace gdml {
         Box(Box&& other) : value(std::move(other.value)) {}
         Box(Box const& other) : value(std::make_unique<T>(*other.value.get())) {}
 
+        Box& operator=(Box const& other) {
+            this->value = std::make_unique<T>(*other.value.get());
+            return *this;
+        }
+        bool operator==(Box const& other) const {
+            return this->value == other.value;
+        }
+
+        T clone() const {
+            return *value.get();
+        }
+        operator T() {
+            return this->clone();
+        }
+
         T* get() {
             return value.get();
         }
         T const* get() const {
             return value.get();
         }
-        T* operator*() {
-            return value.get();
+        T operator*() {
+            return *value.get();
         }
         T const* operator*() const {
             return value.get();

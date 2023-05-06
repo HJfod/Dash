@@ -14,10 +14,12 @@ namespace gdml::lang {
     struct GDML_DLL StrType {};
 
     struct GDML_DLL PropType {
-        Type type;
+        Box<Type> type;
         Option<Box<Value>> defaultValue;
         // prop <=> full.path.to.another
         Option<Vec<std::string>> binding;
+
+        bool operator==(PropType const&) const = default;
     };
 
     struct GDML_DLL StructType {
@@ -50,7 +52,7 @@ namespace gdml::lang {
     };
 
     struct GDML_DLL PropValue {
-        Value value;
+        Box<Value> value;
     };
 
     struct GDML_DLL StructValue {

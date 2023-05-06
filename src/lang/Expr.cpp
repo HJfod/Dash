@@ -6,13 +6,37 @@ using namespace geode::prelude;
 using namespace gdml::lang;
 using namespace gdml;
 
+ExprResult<TypeIdentExpr> TypeIdentExpr::pull(Stream& stream) {
+    Rollback rb(stream);
+    GEODE_UNWRAP_INTO(auto value, Token::pull<Ident>(stream));
+    return rb.commit<TypeIdentExpr>(value);
+}
+
+TypeCheckResult TypeIdentExpr::typecheck(Rc<SrcParser> state) const {
+    auto ty = state->getType(ident);
+    if (!ty) {
+        return state->error(range, "Unknown type \"{}\"", ident);
+    }
+    return Ok(*ty);
+}
+
+std::string TypeIdentExpr::debug(size_t indent) const {
+    return DebugPrint("TypeIdentExpr", indent)
+        .member("ident", ident);
+}
+
+ExprResult<TypeExpr> TypeExpr::pull(Stream& stream) {
+    GEODE_UNWRAP_INTO(auto ty, TypeIdentExpr::pull(stream));
+    return Ok(ty);
+}
+
 ExprResult<LitExpr> LitExpr::pull(Stream& stream) {
     Rollback rb(stream);
     GEODE_UNWRAP_INTO(auto value, Token::pull<Lit>(stream));
     return rb.commit<LitExpr>(value);
 }
 
-TypeCheckResult LitExpr::typecheck(Rc<State>) const {
+TypeCheckResult LitExpr::typecheck(Rc<SrcParser>) const {
     return Ok(std::visit(makeVisitor {
         [](VoidLit const&) {
             return Type(VoidType());
@@ -43,7 +67,7 @@ ExprResult<IdentExpr> IdentExpr::pull(Stream& stream) {
     return rb.commit<IdentExpr>(value);
 }
 
-TypeCheckResult IdentExpr::typecheck(Rc<State> state) const {
+TypeCheckResult IdentExpr::typecheck(Rc<SrcParser> state) const {
     auto var = state->getVar(ident);
     if (!var) {
         return state->error(range, "Unknown identifier \"{}\"", ident);
@@ -100,7 +124,7 @@ ExprResult<Expr> BinOpExpr::pull(Stream& stream) {
     return Ok(lhs);
 }
 
-TypeCheckResult BinOpExpr::typecheck(Rc<State> state) const {
+TypeCheckResult BinOpExpr::typecheck(Rc<SrcParser> state) const {
     GEODE_UNWRAP_INTO(auto r, rhs->typecheck(state));
     GEODE_UNWRAP_INTO(auto l, lhs->typecheck(state));
     if (r != l) {
@@ -123,7 +147,7 @@ ExprResult<MemberExpr> MemberExpr::pull(Rc<Expr> target, Stream& stream) {
     return rb.commit<MemberExpr>(target, ident);
 }
 
-TypeCheckResult MemberExpr::typecheck(Rc<State> state) const {
+TypeCheckResult MemberExpr::typecheck(Rc<SrcParser> state) const {
     GEODE_UNWRAP_INTO(auto t, target->typecheck(state));
     auto mem = t.getMemberType(member);
     if (!mem) {
@@ -163,7 +187,7 @@ ExprResult<CallExpr> CallExpr::pull(Rc<Expr> target, Stream& stream) {
     return rb.commit<CallExpr>(target, args);
 }
 
-TypeCheckResult CallExpr::typecheck(Rc<State> state) const {
+TypeCheckResult CallExpr::typecheck(Rc<SrcParser> state) const {
     throw std::runtime_error("todo");
 }
 
@@ -181,7 +205,7 @@ ExprResult<PropExpr> PropExpr::pull(Ident const& node, Stream& stream) {
     return rb.commit<PropExpr>(ident, value, node);
 }
 
-TypeCheckResult PropExpr::typecheck(Rc<State> state) const {
+TypeCheckResult PropExpr::typecheck(Rc<SrcParser> state) const {
     auto ty = state->getType(node);
     // This has been errored in NodeExpr already
     if (!ty) {
@@ -230,7 +254,7 @@ ExprResult<NodeExpr> NodeExpr::pull(Stream& stream) {
     return rb.commit<NodeExpr>(ident, props, children);
 }
 
-TypeCheckResult NodeExpr::typecheck(Rc<State> state) const {
+TypeCheckResult NodeExpr::typecheck(Rc<SrcParser> state) const {
     auto ty = state->getType(ident);
     if (!ty) {
         // todo: hint that you can define nodes with decl
@@ -253,30 +277,65 @@ std::string NodeExpr::debug(size_t indent) const {
         .member("children", children);
 }
 
+ExprResult<MemberDeclExpr> MemberDeclExpr::pull(Stream& stream) {
+    Rollback rb(stream);
+    GEODE_UNWRAP_INTO(auto ident, Token::pull<Ident>(stream));
+    GEODE_UNWRAP(Token::pull(':', stream));
+    GEODE_UNWRAP_INTO(auto type, TypeExpr::pull(stream));
+    return rb.commit<MemberDeclExpr>(ident, type);
+}
+
+TypeCheckResult MemberDeclExpr::typecheck(Rc<SrcParser> state) const {
+    GEODE_UNWRAP_INTO(auto ty, type->typecheck(state));
+    return Ok(ty);
+}
+
+std::string MemberDeclExpr::debug(size_t indent) const {
+    return DebugPrint("MemberDeclExpr", indent)
+        .member("name", name)
+        .member("type", type);
+}
+
 ExprResult<StructDeclExpr> StructDeclExpr::pull(Stream& stream) {
     Rollback rb(stream);
     GEODE_UNWRAP(Token::pull(Keyword::Struct, stream));
     auto ident = Token::pull<Ident>(stream).ok();
     rb.clearMessages();
-    Vec<Rc<PropExpr>> members;
+    Vec<Rc<MemberDeclExpr>> members;
     while (true) {
         stream.debugTick();
-        GEODE_UNWRAP_INTO(auto mem, PropExpr::pull(ident, stream));
+        GEODE_UNWRAP_INTO(auto mem, MemberDeclExpr::pull(stream));
+        members.push_back(mem);
     }
+    return rb.commit<StructDeclExpr>(ident, members);
 }
 
-TypeCheckResult StructDeclExpr::typecheck(Rc<State> state) const {
+TypeCheckResult StructDeclExpr::typecheck(Rc<SrcParser> state) const {
     if (ident) {
         if (state->getType(ident.value())) {
-            state->error(range, "Struct type \"{}\" has already been defined", ident.value());
+            return state->error(range, "Struct type \"{}\" has already been defined", ident.value());
         }
     }
+    StructType sty;
+    sty.name = ident;
+    for (auto& mem : members) {
+        GEODE_UNWRAP_INTO(auto mty, mem->typecheck(state));
+        sty.members[mem->name] = PropType {
+            .type = mty,
+            .defaultValue = None,
+            .binding = None
+        };
+    }
+    if (ident) {
+        state->pushType(Type(sty));
+    }
+    return Ok(sty);
 }
 
 std::string StructDeclExpr::debug(size_t indent) const {
     return DebugPrint("StructDeclExpr", indent)
-        .member(ident)
-        .member(members);
+        .member("ident", ident)
+        .member("members", members);
 }
 
 ExprResult<ListExpr> ListExpr::pull(Stream& stream) {
@@ -302,7 +361,7 @@ ExprResult<ListExpr> ListExpr::pull(Stream& stream) {
     return rb.commit<ListExpr>(list);
 }
 
-TypeCheckResult ListExpr::typecheck(Rc<State> state) const {
+TypeCheckResult ListExpr::typecheck(Rc<SrcParser> state) const {
     for (auto& expr : exprs) {
         GEODE_UNWRAP(expr->typecheck(state));
     }
@@ -390,7 +449,7 @@ ExprResult<AST> AST::pull(Stream& stream) {
     return rb.commit<AST>(exprs);
 }
 
-TypeCheckResult AST::typecheck(Rc<State> state) const {
+TypeCheckResult AST::typecheck(Rc<SrcParser> state) const {
     for (auto& expr : exprs) {
         GEODE_UNWRAP(expr->typecheck(state));
     }

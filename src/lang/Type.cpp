@@ -48,13 +48,16 @@ std::string Type::toString() const {
                     ret += ", ";
                 }
                 first = false;
-                ret += mem + ": " + ty.type.toString();
+                ret += mem + ": " + ty.type->toString();
             }
             ret += " }";
             return ret;
         },
         [](NodeType const& node) -> std::string {
             return node.name;
+        },
+        [](RefType const& ref) -> std::string {
+            return fmt::format("&{}", ref.type->toString());
         },
     }, kind);
 }
@@ -78,15 +81,18 @@ Option<Type> Type::getMemberType(std::string const& name) const {
         },
         [&](StructType const& str) -> Option<Type> {
             if (str.members.contains(name)) {
-                return str.members.at(name).type;
+                return str.members.at(name).type.clone();
             }
             return None;
         },
         [&](NodeType const& node) -> Option<Type> {
             if (node.props.contains(name)) {
-                return node.props.at(name).type;
+                return node.props.at(name).type.clone();
             }
             return None;
+        },
+        [&](RefType const& ref) -> Option<Type> {
+            return ref.type->getMemberType(name);
         },
     }, kind);
 }

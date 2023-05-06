@@ -48,7 +48,7 @@ Result<Rc<SrcFile>> SrcFile::from(ghc::filesystem::path const& path) {
     return Ok(std::make_shared<SrcFile>(path, data));
 }
 
-Stream::Stream(Rc<Src> file, Rc<State> state) : m_file(file), m_state(state) {}
+Stream::Stream(Rc<Src> file, Rc<SrcParser> state) : m_file(file), m_state(state) {}
 
 Stream::~Stream() {
     if (m_lastToken) {
@@ -119,7 +119,7 @@ Option<Token> Stream::last() const {
     return None;
 }
 
-Rc<State> Stream::state() const {
+Rc<SrcParser> Stream::state() const {
     return m_state;
 }
 
@@ -128,7 +128,7 @@ SrcFile::~SrcFile() {
     file::unwatchFile(m_path);
 }
 
-Stream SrcFile::read(Rc<State> state) {
+Stream SrcFile::read(Rc<SrcParser> state) {
     return Stream(shared_from_this(), state);
 }
 
@@ -240,7 +240,7 @@ Location SrcFile::getLocation(size_t offset) {
 Rollback::Rollback(Stream& stream, std::source_location const loc)
   : m_stream(stream),
     m_offset(stream.offset()),
-    m_msgLevel(stream.state()->pushLogLevel())
+    m_msgLevel(stream.state()->getShared()->pushLogLevel())
 {
     stream.debugTick(loc);
 }
@@ -250,12 +250,12 @@ Rollback::~Rollback() {
         m_stream.navigate(m_offset);
         m_commit = true;
     }
-    m_stream.state()->popLogLevel();
+    m_stream.state()->getShared()->popLogLevel();
 }
 
 impl::Failure<size_t> Rollback::error(Message const& msg) {
-    m_stream.state()->log(msg, m_msgLevel);
-    return geode::Err(m_stream.state()->getErrors().size());
+    m_stream.state()->getShared()->log(msg, m_msgLevel);
+    return geode::Err(m_stream.state()->getShared()->getErrors().size());
 }
 
 void Rollback::clearMessages() {
@@ -265,7 +265,7 @@ void Rollback::clearMessages() {
     // an optional branch and aren't actually errors but just signal that that 
     // branch isn't valid (like how Expr::pullPrimaryNonCall tries a bunch of 
     // different options)
-    m_stream.state()->popMessages(m_msgLevel);
+    m_stream.state()->getShared()->popMessages(m_msgLevel);
 }
 
 void Rollback::commit() {

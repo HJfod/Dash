@@ -4,10 +4,10 @@
 #include "lang/State.hpp"
 
 namespace gdml {
-    class GDML_DLL Parser final : public std::enable_shared_from_this<Parser> {
+    class GDML_DLL GDML final : public std::enable_shared_from_this<GDML> {
     protected:
         Rc<lang::Src> m_src;
-        Rc<lang::State> m_state;
+        Rc<lang::SharedParser> m_parser;
         cocos2d::CCNode* m_target;
         bool m_hotReloadEnabled = false;
 
@@ -16,7 +16,7 @@ namespace gdml {
         void reset();
 
     public:
-        static Rc<Parser> create();
+        static Rc<GDML> create();
         bool loadFile(ghc::filesystem::path const& path);
         void enableHotReload(bool enable);
         void addTo(cocos2d::CCNode* node);

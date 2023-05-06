@@ -5,7 +5,7 @@
 namespace gdml::lang {
     class Src;
     class Rollback;
-    class State;
+    class SrcParser;
     struct Token;
 
     struct GDML_DLL Location {
@@ -47,12 +47,12 @@ namespace gdml::lang {
     class GDML_DLL Stream final {
     private:
         Rc<Src> m_file;
-        Rc<State> m_state;
+        Rc<SrcParser> m_state;
         size_t m_position = 0;
         size_t m_debugTickCounter = 0;
         Token* m_lastToken = nullptr;
 
-        Stream(Rc<Src> file, Rc<State> state);
+        Stream(Rc<Src> file, Rc<SrcParser> state);
 
         friend class SrcFile;
         friend class Rollback;
@@ -74,14 +74,14 @@ namespace gdml::lang {
         Rc<Src> src() const;
         size_t offset() const;
         Location location() const;
-        Rc<State> state() const;
+        Rc<SrcParser> state() const;
     };
 
     class GDML_DLL Src {
     public:
         virtual std::string getName() const = 0;
 
-        virtual Stream read(Rc<State> state) = 0;
+        virtual Stream read(Rc<SrcParser> state) = 0;
 
         virtual size_t size() const = 0;
         virtual char at(size_t offset) const = 0;
@@ -111,7 +111,7 @@ namespace gdml::lang {
         size_t size() const override;
         char at(size_t offset) const override;
         std::string from(size_t offset, size_t count) const override;
-        Stream read(Rc<State> state) override;
+        Stream read(Rc<SrcParser> state) override;
         std::string getUnderlined(Range const& range) const override;
         bool onChanged(std::function<void(Rc<Src>)> callback) override;
 
