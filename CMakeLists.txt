@@ -7,6 +7,7 @@ project(GDML VERSION 1.0.0)
 file(GLOB SOURCES
 	src/*.cpp
 	src/lang/*.cpp
+	src/lang/exprs/*.cpp
 )
 
 add_library(${PROJECT_NAME} SHARED ${SOURCES})

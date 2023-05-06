@@ -95,20 +95,22 @@ namespace gdml::lang {
         virtual Location getLocation(size_t offset) = 0;
         virtual std::string getUnderlined(Range const& range) const = 0;
 
+        virtual Path getSearchDir() const = 0;
+
         virtual ~Src() = default;
     };
 
     class GDML_DLL SrcFile final : public Src, public std::enable_shared_from_this<SrcFile> {
     private:
-        ghc::filesystem::path m_path;
+        Path m_path;
         std::string m_data;
 
     public:
-        SrcFile(ghc::filesystem::path const& path, std::string const& data);
+        SrcFile(Path const& path, std::string const& data);
         SrcFile(SrcFile const&) = delete;
         virtual ~SrcFile();
 
-        static geode::Result<Rc<SrcFile>> from(ghc::filesystem::path const& path);
+        static geode::Result<Rc<SrcFile>> from(Path const& path);
 
         std::string getName() const override;
         size_t size() const override;
@@ -117,7 +119,9 @@ namespace gdml::lang {
         Stream read(UnitParser& state) override;
         std::string getUnderlined(Range const& range) const override;
 
-        ghc::filesystem::path getPath() const;
+        Path getSearchDir() const override;
+        
+        Path getPath() const;
         std::string const& getData() const;
 
         Location getLocation(size_t offset) override;

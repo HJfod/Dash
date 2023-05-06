@@ -11,25 +11,64 @@ Rc<AST> ParsedSrc::getAST() const {
     return m_ast;
 }
 
-UnitParser::UnitParser(Parser& parser) : m_parser(parser), m_scopes({ Scope() }) {}
-
-ParseResult<ParsedSrc> UnitParser::parse(Parser& shared, Rc<Src> src) {
-    auto unit = UnitParser(shared);
-    auto stream = src->read(unit);
-    GEODE_UNWRAP_INTO(auto ast, AST::pull(stream));
-    log::debug("Succesfully parsed AST for {}", src->getName());
-    log::debug("{}", ast->debug());
-    return Ok(ParsedSrc(src, ast));
+bool ParsedSrc::addExportedType(Type const& type) {
+    auto name = type.toString();
+    if (m_exportedTypes.contains(name)) {
+        return false;
+    }
+    m_exportedTypes.insert({ name, type });
+    return true;
 }
 
-ParseResult<> UnitParser::typecheck(Parser& shared, ParsedSrc const& src) {
-    auto unit = UnitParser(shared);
-    GEODE_UNWRAP(src.getAST()->typecheck(unit));
-    return Ok();
+Option<Type> ParsedSrc::getExportedType(Ident const& name) const {
+    if (m_exportedTypes.contains(name)) {
+        return m_exportedTypes.at(name);
+    }
+    return None;
+}
+
+Vec<Type> ParsedSrc::getExportedTypes() const {
+    Vec<Type> types;
+    for (auto& [_, ty] : m_exportedTypes) {
+        types.push_back(ty);
+    }
+    return types;
+}
+
+UnitParser::UnitParser(Parser& parser, Rc<Src> src)
+  : m_parser(parser), m_src(src), m_scopes({ Scope() })
+{
+    this->pushType(Type(VoidType()));
+    this->pushType(Type(BoolType()));
+    this->pushType(Type(IntType()));
+    this->pushType(Type(FloatType()));
+    this->pushType(Type(StrType()));
+}
+
+Rc<ParsedSrc> UnitParser::parse(Parser& shared, Rc<Src> src) {
+    auto unit = UnitParser(shared, src);
+    auto stream = src->read(unit);
+    auto ast = AST::pull(stream).unwrapOr(nullptr);
+    auto parsed = std::make_shared<ParsedSrc>(src, ast);
+    if (ast) {
+        log::debug("Succesfully parsed AST for {}", src->getName());
+        log::debug("{}", ast->debug());
+        unit.m_parsed = parsed;
+        ast->typecheck(unit);
+    }
+    return parsed;
 }
 
 Parser& UnitParser::getShared() const {
     return m_parser;
+}
+
+Rc<Src> UnitParser::getSrc() const {
+    return m_src;
+}
+
+Rc<ParsedSrc> UnitParser::getParsedSrc() const {
+    return m_parsed;
 }
 
 void UnitParser::pushType(Type const& type) {
@@ -77,6 +116,10 @@ void UnitParser::popScope() {
     }
 }
 
+bool UnitParser::isRootScope() const {
+    return m_scopes.size() == 1;
+}
+
 Parser::Parser(Rc<Src> src) : m_root(src) {
     this->autorelease();
 }
@@ -85,7 +128,7 @@ Parser* Parser::create(Rc<Src> src) {
     return new Parser(src);
 }
 
-Parser* Parser::create(ghc::filesystem::path const& file) {
+Parser* Parser::create(Path const& file) {
     auto src = SrcFile::from(file);
     auto ret = Parser::create(src.unwrapOr(nullptr));
     if (!src) {
@@ -99,22 +142,10 @@ Parser* Parser::create(ghc::filesystem::path const& file) {
     return ret;
 }
 
-void Parser::add(Rc<Src> src) {
-    auto state = UnitParser::parse(*this, src);
-    if (state) {
-        m_srcs.emplace(src, std::move(state.unwrap()));
-    }
-}
-
 void Parser::compile() {
     if (!m_root) return;
     try {
-        if (m_srcs.empty()) {
-            this->add(m_root);
-        }
-        for (auto& [_, parsed] : m_srcs) {
-            (void)UnitParser::typecheck(*this, parsed);
-        }
+        m_parsed = UnitParser::parse(*this, m_root);
     }
     catch(std::exception const& e) {
         this->log(Message {
@@ -127,12 +158,22 @@ void Parser::compile() {
 }
 
 void Parser::populate(CCNode* node) {
+    for (auto& created : m_created) {
+        created->removeFromParent();
+    }
+    m_created.clear();
     this->dispatchLogs();
     if (!this->getErrors().empty()) {
-        node->addChild(CCLabelBMFont::create(
-            "There were errors loading GDML - see console",
+        auto label = CCLabelBMFont::create(
+            "There were errors loading GDML\n(See console output)",
             "bigFont.fnt"
-        ));
+        );
+        label->setPosition(node->getContentSize() / 2);
+        limitNodeSize(label, node->getContentSize(), 1.f, .1f);
+        m_created.push_back(label);
+    }
+    for (auto& created : m_created) {
+        node->addChild(created);
     }
 }
 

@@ -2,118 +2,116 @@
 // On structs, every non-binded member without a default value will be required
 // On decls, only properties explicitly marked required aren't optional
 
-// All .gdml files do `import * from "Std.gdml";` by default
+// All .gdml files do `import * from "@hjfod.gdml/Std.gdml";` by default
 
-export {
-    struct CCPoint {
-        x: float;
-        y: float;
-    }
+export struct CCPoint {
+    x: float;
+    y: float;
+}
 
-    struct CCSize {
-        width: float;
-        height: float;
-    }
+export struct CCSize {
+    width: float;
+    height: float;
+}
 
-    struct CCRect {
-        x: float;
-        y: float;
-        width: float;
-        height: float;
-        origin: CCPoint <=> { x, y };
-        size: CCSize <=> { width, height };
-    }
+export struct CCRect {
+    x: float;
+    y: float;
+    width: float;
+    height: float;
+    origin: CCPoint <=> { x, y };
+    size: CCSize <=> { width, height };
+}
 
-    struct ccColor3B {
-        r: int;
-        g: int;
-        b: int;
-    }
+export struct ccColor3B {
+    r: int;
+    g: int;
+    b: int;
+}
 
-    struct ccColor4B {
-        r: int;
-        g: int;
-        b: int;
-        a: int;
-        rgb: ccColor3B <=> { r, g, b };
-    }
+export struct ccColor4B {
+    r: int;
+    g: int;
+    b: int;
+    a: int;
+    rgb: ccColor3B <=> { r, g, b };
+}
 
-    extern struct global {
-        winSize: CCSize;
-    }
+export extern struct global {
+    winSize: CCSize;
+}
 
-    // extern struct Layout {}
-    // extern struct RowLayout extends Layout {}
-    // extern struct ColumnLayout extends Layout {}
+// extern struct Layout {}
+// extern struct RowLayout extends Layout {}
+// extern struct ColumnLayout extends Layout {}
 
-    extern decl CCNode {
-        id: string;
-        x: float;
-        y: float;
-        pos: CCPoint <=> { x, y };
-        width: float;
-        height: float;
-        size: CCSize <=> { width, height };
-        // layout: Layout;
-    }
-    // All decls implicitly extend CCNode
-    decl default extends CCNode;
+export extern decl CCNode {
+    id: string;
+    x: float;
+    y: float;
+    pos: CCPoint <=> { x, y };
+    width: float;
+    height: float;
+    size: CCSize <=> { width, height };
+    // layout: Layout;
+}
+// All decls implicitly extend CCNode
+decl default extends CCNode;
 
-    // extern decl CCLayer {}
+// extern decl CCLayer {}
 
-    // extern decl CCMenu extends CCLayer {}
+// extern decl CCMenu extends CCLayer {}
 
-    // extern decl CCMenuItemSpriteExtra {
-    //     clicked: fun () => void;
-    // }
+// extern decl CCMenuItemSpriteExtra {
+//     clicked: fun () => void;
+// }
 
-    extern decl CCLabelBMFont {
-        text: string;
-        font: string;
-    }
+export extern decl CCLabelBMFont {
+    text: string;
+    font: string;
+}
 
-    // extern decl CCSprite {
-    //     sprite: string;
-    //     frame: string;
-    //     color: ccColor3B;
-    //     required sprite || frame;
-    // }
+// extern decl CCSprite {
+//     sprite: string;
+//     frame: string;
+//     color: ccColor3B;
+//     required sprite || frame;
+// }
 
-    // extern decl ButtonSprite {
-    //     required text: string;
-    //     font: string;
-    //     bg: string;
-    // }
+// extern decl ButtonSprite {
+//     required text: string;
+//     font: string;
+//     bg: string;
+// }
 
-    fun point: CCPoint as CCSize {
-        return { width: point.x, height: point.y };
-    }
-    fun point: CCPoint / factor: int -> CCPoint {
-        return { x: point.x / factor, y: point.y / factor };
-    }
-    fun point: CCPoint / factor: float -> CCPoint {
-        return { x: point.x / factor, y: point.y / factor };
-    }
-    fun point: CCPoint * factor: int -> CCPoint {
-        return { x: point.x * factor, y: point.y * factor };
-    }
-    fun point: CCPoint * factor: float -> CCPoint {
-        return { x: point.x * factor, y: point.y * factor };
-    }
+export fun point: CCPoint as CCSize {
+    return { width: point.x, height: point.y };
+}
+export fun point: CCPoint / factor: int -> CCPoint {
+    return { x: point.x / factor, y: point.y / factor };
+}
+export fun point: CCPoint / factor: float -> CCPoint {
+    return { x: point.x / factor, y: point.y / factor };
+}
+export fun point: CCPoint * factor: int -> CCPoint {
+    return { x: point.x * factor, y: point.y * factor };
+}
+export fun point: CCPoint * factor: float -> CCPoint {
+    return { x: point.x * factor, y: point.y * factor };
+}
 
-    fun size: CCSize as CCPoint {
-        return { x: size.width, y: size.height };
-    }
-    fun size: CCSize / factor: int -> CCSize {
-        return { width: size.width / factor, height: size.height / factor };
-    }
-    fun size: CCSize / factor: float -> CCSize {
-        return { width: size.width / factor, height: size.height / factor };
-    }
-    fun size: CCSize * factor: int -> CCSize {
-        return { width: size.width * factor, height: size.height * factor };
-    }
-    fun size: CCSize * factor: float -> CCSize {
-        return { width: size.width * factor, height: size.height * factor };
-    }
+export fun size: CCSize as CCPoint {
+    return { x: size.width, y: size.height };
+}
+export fun size: CCSize / factor: int -> CCSize {
+    return { width: size.width / factor, height: size.height / factor };
+}
+export fun size: CCSize / factor: float -> CCSize {
+    return { width: size.width / factor, height: size.height / factor };
+}
+export fun size: CCSize * factor: int -> CCSize {
+    return { width: size.width * factor, height: size.height * factor };
+}
+export fun size: CCSize * factor: float -> CCSize {
+    return { width: size.width * factor, height: size.height * factor };
 }

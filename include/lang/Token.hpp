@@ -110,6 +110,7 @@ namespace gdml::lang {
 
         static void skipToNext(Stream& stream);
         static ParseResult<> pullSemicolons(Stream& stream);
+        static ParseResult<bool> pullSeparator(char separator, char bracket, Stream& stream);
         static ParseResult<Token> pull(Stream& stream);
         static Option<Token> peek(Stream& stream, size_t offset = 0);
 

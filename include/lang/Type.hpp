@@ -7,6 +7,7 @@ namespace gdml::lang {
     struct Type;
     struct Value;
 
+    struct GDML_DLL UnkType {};
     struct GDML_DLL VoidType {};
     struct GDML_DLL BoolType {};
     struct GDML_DLL IntType {};
@@ -36,6 +37,7 @@ namespace gdml::lang {
 
     struct GDML_DLL Type {
         std::variant<
+            UnkType,
             VoidType,
             BoolType, IntType, FloatType, StrType,
             StructType, NodeType, RefType
@@ -48,7 +50,9 @@ namespace gdml::lang {
 
         bool operator==(Type const& other) const;
         Option<Type> getMemberType(std::string const& name) const;
+        Set<String> getRequiredMembers() const;
         std::string toString() const;
+        bool isExportable() const;
     };
 
     struct GDML_DLL PropValue {

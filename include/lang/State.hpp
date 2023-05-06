@@ -15,13 +15,18 @@ namespace gdml::lang {
     private:
         Rc<Src> m_src;
         Rc<AST> m_ast;
-    
-        ParsedSrc(Rc<Src> src, Rc<AST> ast);
+        Map<Ident, Type> m_exportedTypes;
 
         friend class UnitParser;
 
     public:
+        ParsedSrc(Rc<Src> src, Rc<AST> ast);
+
         Rc<AST> getAST() const;
+
+        bool addExportedType(Type const& type);
+        Option<Type> getExportedType(Ident const& name) const;
+        Vec<Type> getExportedTypes() const;
     };
 
     struct GDML_DLL Var final {
@@ -38,8 +43,10 @@ namespace gdml::lang {
     private:
         Parser& m_parser;
         Vec<Scope> m_scopes;
+        Rc<Src> m_src;
+        Rc<ParsedSrc> m_parsed;
 
-        UnitParser(Parser& parser);
+        UnitParser(Parser& parser, Rc<Src> src);
         UnitParser(UnitParser const&) = delete;
         UnitParser(UnitParser&&) = delete;
         UnitParser& operator=(UnitParser const&) = delete;
@@ -48,10 +55,11 @@ namespace gdml::lang {
         friend class Parser;
 
     public:
-        static ParseResult<ParsedSrc> parse(Parser& parser, Rc<Src> src);
-        static ParseResult<> typecheck(Parser& parser, ParsedSrc const& src);
+        static Rc<ParsedSrc> parse(Parser& parser, Rc<Src> src);
 
         Parser& getShared() const;
+        Rc<Src> getSrc() const;
+        Rc<ParsedSrc> getParsedSrc() const;
 
         void pushType(Type const& type);
         Type* getType(std::string const& name, bool topOnly = false);
@@ -61,6 +69,7 @@ namespace gdml::lang {
 
         void pushScope();
         void popScope();
+        bool isRootScope() const;
 
         template <class... Args>
         void warn(Range const& range, std::string const& fmt, Args&&... args) {
@@ -74,7 +83,7 @@ namespace gdml::lang {
         }
 
         template <class... Args>
-        geode::impl::Failure<size_t> error(Range const& range, std::string const& fmt, Args&&... args) {
+        void error(Range const& range, std::string const& fmt, Args&&... args) {
             auto msg = Message {
                 .level = Level::Error,
                 .src = range.start.src,
@@ -82,20 +91,18 @@ namespace gdml::lang {
                 .range = range,
             };
             this->getShared().log(msg);
-            return geode::Err(this->getShared().getErrors().size());
         }
     };
 
     class GDML_DLL Parser : public cocos2d::CCObject {
     private:
         Rc<Src> m_root;
-        Map<Rc<Src>, Owned<geode::EventListenerProtocol>> m_watchers;
-        Map<Rc<Src>, ParsedSrc> m_srcs;
+        Rc<ParsedSrc> m_parsed;
+        Vec<cocos2d::CCNode*> m_created;
         Vec<std::pair<size_t, Message>> m_messages;
         // Rollback level starts at 1 because non-rollback messages have 0
         size_t m_rollbackLevel = 1;
 
-        void add(Rc<Src> src);
         void dispatchLogs() const;
 
         friend class HotReloadNode;
@@ -106,7 +113,7 @@ namespace gdml::lang {
 
     public:
         static Parser* create(Rc<Src> src);
-        static Parser* create(ghc::filesystem::path const& file);
+        static Parser* create(Path const& file);
 
         void compile();
         void populate(cocos2d::CCNode* node);

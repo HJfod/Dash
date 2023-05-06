@@ -178,6 +178,18 @@ ParseResult<> Token::pullSemicolons(Stream& stream) {
     }
 }
 
+ParseResult<bool> Token::pullSeparator(char separator, char bracket, Stream& stream) {
+    if (Token::peek(bracket, stream)) {
+        return Ok(true);
+    }
+    GEODE_UNWRAP(Token::pull(separator, stream));
+    // Allow trailing comma
+    if (Token::peek(bracket, stream)) {
+        return Ok(true);
+    }
+    return Ok(false);
+}
+
 ParseResult<Token> Token::pull(Stream& stream) {
     Token::skipToNext(stream);
 
@@ -226,8 +238,11 @@ ParseResult<Token> Token::pull(Stream& stream) {
             else if (c == '"') {
                 break;
             }
+            else {
+                lit += c;
+            }
         }
-        return done(Token(lit));
+        return done(Token(Lit(lit)));
     }
 
     // number literals

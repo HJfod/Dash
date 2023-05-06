@@ -42,10 +42,10 @@ std::string SrcFile::getName() const {
     return m_path.generic_string();
 }
 
-SrcFile::SrcFile(ghc::filesystem::path const& path, std::string const& data)
+SrcFile::SrcFile(Path const& path, std::string const& data)
   : m_path(path), m_data(data) {} 
 
-Result<Rc<SrcFile>> SrcFile::from(ghc::filesystem::path const& path) {
+Result<Rc<SrcFile>> SrcFile::from(Path const& path) {
     GEODE_UNWRAP_INTO(auto data, file::readString(path));
     return Ok(std::make_shared<SrcFile>(path, data));
 }
@@ -194,7 +194,11 @@ std::string SrcFile::from(size_t offset, size_t count) const {
     return m_data.substr(offset, count);
 }
 
-ghc::filesystem::path SrcFile::getPath() const {
+Path SrcFile::getSearchDir() const {
+    return m_path.parent_path();
+}
+
+Path SrcFile::getPath() const {
     return m_path;
 }
 

@@ -5,6 +5,12 @@ using namespace gdml::lang;
 using namespace gdml;
 
 bool Type::operator==(Type const& other) const {
+    if (
+        std::holds_alternative<UnkType>(kind) ||
+        std::holds_alternative<UnkType>(other.kind)
+    ) {
+        return true;
+    }
     if (kind.index() != other.kind.index()) {
         return false;
     }
@@ -19,6 +25,9 @@ bool Type::operator==(Type const& other) const {
 
 std::string Type::toString() const {
     return std::visit(makeVisitor {
+        [](UnkType const&) -> std::string {
+            return "unknown";
+        },
         [](VoidType const&) -> std::string {
             return "void";
         },
@@ -64,21 +73,6 @@ std::string Type::toString() const {
 
 Option<Type> Type::getMemberType(std::string const& name) const {
     return std::visit(makeVisitor {
-        [&](VoidType const&) -> Option<Type> {
-            return None;
-        },
-        [&](BoolType const&) -> Option<Type> {
-            return None;
-        },
-        [&](IntType const&) -> Option<Type> {
-            return None;
-        },
-        [&](FloatType const&) -> Option<Type> {
-            return None;
-        },
-        [&](StrType const&) -> Option<Type> {
-            return None;
-        },
         [&](StructType const& str) -> Option<Type> {
             if (str.members.contains(name)) {
                 return str.members.at(name).type.clone();
@@ -93,6 +87,52 @@ Option<Type> Type::getMemberType(std::string const& name) const {
         },
         [&](RefType const& ref) -> Option<Type> {
             return ref.type->getMemberType(name);
+        },
+        [&](auto const&) -> Option<Type> {
+            return Type(UnkType());
+        },
+    }, kind);
+}
+
+Set<String> Type::getRequiredMembers() const {
+    return std::visit(makeVisitor {
+        [](StructType const& str) {
+            Set<String> ret;
+            for (auto& [name, ty] : str.members) {
+                if (!ty.defaultValue && !ty.binding) {
+                    ret.insert(name);
+                }
+            }
+            return ret;
+        },
+        [](NodeType const& node) {
+            Set<String> ret;
+            for (auto& [name, ty] : node.props) {
+                if (!ty.defaultValue && !ty.binding) {
+                    ret.insert(name);
+                }
+            }
+            return ret;
+        },
+        [&](RefType const& ref) {
+            return ref.type->getRequiredMembers();
+        },
+        [](auto const&) -> Set<String> {
+            return {};
+        },
+    }, kind);
+}
+
+bool Type::isExportable() const {
+    return std::visit(makeVisitor {
+        [](StructType const& str) {
+            return str.name.has_value();
+        },
+        [](NodeType const& node) {
+            return true;
+        },
+        [](auto const&) {
+            return false;
         },
     }, kind);
 }

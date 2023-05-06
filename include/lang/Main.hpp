@@ -66,6 +66,8 @@ namespace gdml {
         }
     };
 
+    using String = std::string;
+
     template <class T>
     using Rc = std::shared_ptr<T>;
 
@@ -74,6 +76,8 @@ namespace gdml {
 
     template <class T>
     using Owned = std::unique_ptr<T>;
+
+    using Path = ghc::filesystem::path;
 
     template <class T>
     using Option = std::optional<T>;
@@ -84,6 +88,9 @@ namespace gdml {
 
     template <class K, class V>
     using Map = std::unordered_map<K, V>;
+
+    template <class K>
+    using Set = std::unordered_set<K>;
 }
 
 namespace gdml::lang {
