@@ -75,7 +75,7 @@
 				},
 				{
 					"name": "keyword.other.gdml",
-					"match": "\\b(in|is|as|extern|import|export|get|set|required|default|assert)\\b"
+					"match": "\\b(in|is|as|extern|import|export|get|set|depends|required|default|assert)\\b"
 				},
 				{
 					"name": "storage.type.gdml",

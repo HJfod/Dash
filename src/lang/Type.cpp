@@ -99,7 +99,7 @@ Set<String> Type::getRequiredMembers() const {
         [](StructType const& str) {
             Set<String> ret;
             for (auto& [name, ty] : str.members) {
-                if (!ty.defaultValue && !ty.binding) {
+                if (!ty.defaultValue && !ty.opaque) {
                     ret.insert(name);
                 }
             }
@@ -108,7 +108,7 @@ Set<String> Type::getRequiredMembers() const {
         [](NodeType const& node) {
             Set<String> ret;
             for (auto& [name, ty] : node.props) {
-                if (!ty.defaultValue && !ty.binding) {
+                if (!ty.defaultValue && !ty.opaque) {
                     ret.insert(name);
                 }
             }

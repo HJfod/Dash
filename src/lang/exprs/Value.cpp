@@ -57,33 +57,16 @@ std::string IdentExpr::debug(size_t indent) const {
         .member("ident", ident);
 }
 
-ExprResult<PropExpr> PropExpr::pull(Ident const& node, Stream& stream) {
+ExprResult<PropExpr> PropExpr::pull(Stream& stream) {
     Rollback rb(stream);
     GEODE_UNWRAP_INTO(auto ident, Token::pull<Ident>(stream));
     GEODE_UNWRAP(Token::pull(':', stream));
     GEODE_UNWRAP_INTO(auto value, Expr::pull(stream));
-    return rb.commit<PropExpr>(ident, value, node);
+    return rb.commit<PropExpr>(ident, value);
 }
 
 Type PropExpr::typecheck(UnitParser& state) const {
-    auto ty = state.getType(node);
-    // This has been errored in NodeExpr already
-    if (!ty) {
-        return Type(UnkType());
-    }
-    auto val = value->typecheck(state); 
-    auto mem = ty->getMemberType(prop);
-    if (!mem) {
-        state.error(range, "Node or struct \"{}\" has no property \"{}\"", node, prop);
-        return Type(UnkType());
-    }
-    if (mem.value() != val) {
-        state.error(
-            range, "Attempted to assign '{}' to property of type '{}'",
-            val.toString(), mem.value().toString()
-        );
-    }
-    return mem.value();
+    return value->typecheck(state); 
 }
 
 std::string PropExpr::debug(size_t indent) const {
@@ -101,7 +84,7 @@ ExprResult<NodeExpr> NodeExpr::pull(Stream& stream) {
     while (true) {
         stream.debugTick();
         if (Token::peek<Ident>(stream) && Token::peek(':', stream, 1)) {
-            GEODE_UNWRAP_INTO(auto prop, PropExpr::pull(ident, stream));
+            GEODE_UNWRAP_INTO(auto prop, PropExpr::pull(stream));
             GEODE_UNWRAP(Token::pullSemicolons(stream));
             props.push_back(prop);
         }
@@ -116,33 +99,71 @@ ExprResult<NodeExpr> NodeExpr::pull(Stream& stream) {
 }
 
 Type NodeExpr::typecheck(UnitParser& state) const {
-    auto ty = state.getType(ident);
-    if (!ty) {
-        // todo: hint that you can define nodes with decl
-        state.error(range, "Unknown node or struct \"{}\"", ident);
-        return Type(UnkType());
-    }
-    Set<Ident> assigned;
-    for (auto& prop : props) {
-        prop->typecheck(state);
-        if (assigned.contains(prop->prop)) {
-            state.error(prop->range, "Property or member \"{}\" has already been assigned", prop->prop);
+    if (ident) {
+        auto ty = state.getType(ident.value());
+        if (!ty) {
+            // todo: hint that you can define nodes with decl
+            state.error(range, "Unknown node or struct \"{}\"", ident);
+            return Type(UnkType());
         }
-        assigned.insert(prop->prop);
-    }
-    for (auto& mem : ty->getRequiredMembers()) {
-        if (!assigned.contains(mem)) {
-            state.error(range, "Property or member \"{}\" must be assigned", mem);
+        Set<Ident> assigned;
+        for (auto& prop : props) {
+            auto valty = prop->typecheck(state);
+            auto mem = ty->getMemberType(prop->prop);
+            if (!mem) {
+                state.error(range, "Node or struct \"{}\" has no property \"{}\"", ident.value(), prop->prop);
+                return Type(UnkType());
+            }
+            if (mem.value() != valty) {
+                state.error(
+                    range, "Attempted to assign '{}' to property of type '{}'",
+                    valty.toString(), mem.value().toString()
+                );
+            }
+            if (assigned.contains(prop->prop)) {
+                state.error(prop->range, "Property or member \"{}\" has already been assigned", prop->prop);
+            }
+            assigned.insert(prop->prop);
         }
-    }
-    for (auto& child : children) {
-        if (!std::holds_alternative<NodeType>(ty->kind)) {
-            state.error(child->range, "Only nodes may contain children");
+        for (auto& mem : ty->getRequiredMembers()) {
+            if (!assigned.contains(mem)) {
+                state.error(range, "Property or member \"{}\" must be assigned", mem);
+            }
         }
-        child->typecheck(state);
-        // todo: check that the node type can be added as a child to this one
+        for (auto& child : children) {
+            if (!std::holds_alternative<NodeType>(ty->kind)) {
+                state.error(child->range, "Only nodes may contain children");
+            }
+            child->typecheck(state);
+            // todo: check that the node type can be added as a child to this one
+        }
+        return *ty;
     }
-    return *ty;
+    else {
+        StructType ty;
+        ty.name = None;
+        for (auto& prop : props) {
+            auto valty = prop->typecheck(state);
+            if (ty.members.contains(prop->prop)) {
+                state.error(prop->range, "Member \"{}\" has already been assigned", prop->prop);
+            }
+            else {
+                ty.members.insert({ prop->prop, PropType {
+                    .type = valty,
+                    .defaultValue = None,
+                    .dependencies = {},
+                    .opaque = false,
+                }});
+            }
+        }
+        if (children.size()) {
+            state.error(range, "Anonymous structs may not contain children");
+        }
+        for (auto& child : children) {
+            child->typecheck(state);
+        }
+        return Type(ty);
+    }
 }
 
 std::string NodeExpr::debug(size_t indent) const {

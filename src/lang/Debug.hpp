@@ -1,6 +1,7 @@
 #pragma once
 
 #include <lang/Token.hpp>
+#include <lang/Expr.hpp>
 
 using namespace geode::prelude;
 using namespace gdml;
@@ -9,6 +10,17 @@ using namespace gdml::lang;
 template <class T>
 std::string debugPrint(T const& t, size_t indent) {
     static_assert(!std::is_same_v<T, T>, "debugPrint not defined for type");
+}
+
+template <>
+std::string debugPrint(GetterSetter const& g, size_t indent) {
+    std::string ret = "{\n";
+    ret += std::string(indent + 4, ' ') + "getterBody: " + debugPrint(g.getterBody, indent + 4) + "\n";
+    ret += std::string(indent + 4, ' ') + "setterBody: " + debugPrint(g.setterBody, indent + 4) + "\n";
+    ret += std::string(indent + 4, ' ') + "setterParam: " + debugPrint(g.setterParam, indent + 4) + "\n";
+    ret += std::string(indent + 4, ' ') + "setterType: " + debugPrint(g.setterType, indent + 4) + "\n";
+    ret += std::string(indent, ' ') + "}";
+    return ret;
 }
 
 template <class T>

@@ -67,10 +67,85 @@ std::string VarDeclExpr::debug(size_t indent) const {
 
 ExprResult<MemberDeclExpr> MemberDeclExpr::pull(Stream& stream) {
     Rollback rb(stream);
-    GEODE_UNWRAP_INTO(auto ident, Token::pull<Ident>(stream));
+    auto ident = Token::draw<Ident>(stream);
     GEODE_UNWRAP(Token::pull(':', stream));
     GEODE_UNWRAP_INTO(auto type, TypeExpr::pull(stream));
-    return rb.commit<MemberDeclExpr>(ident, type);
+    Vec<Ident> dependencies;
+    GetterSetter opaque;
+    if (Token::draw('{', stream)) {
+        while (true) {
+            if (Token::draw(Keyword::Depends, stream)) {
+                GEODE_UNWRAP_INTO(auto dep, Token::pull<Ident>(stream));
+                dependencies.push_back(dep);
+                GEODE_UNWRAP(Token::pullSemicolons(stream));
+                continue;
+            }
+            if (Token::draw(Keyword::Get, stream)) {
+                GEODE_UNWRAP(Token::pull(Op::Arrow, stream));
+                GEODE_UNWRAP_INTO(opaque.getterBody, Expr::pull(stream));
+                GEODE_UNWRAP(Token::pullSemicolons(stream));
+                continue;
+            }
+            if (Token::draw(Keyword::Set, stream)) {
+                GEODE_UNWRAP(Token::pull('(', stream));
+                GEODE_UNWRAP_INTO(opaque.setterParam, Token::pull<Ident>(stream));
+                // optional type
+                if (Token::draw(':', stream)) {
+                    GEODE_UNWRAP_INTO(opaque.setterType, TypeExpr::pull(stream));
+                }
+                // optional , for consistency with CallExpr
+                Token::draw(',', stream);
+                GEODE_UNWRAP(Token::pull(')', stream));
+                GEODE_UNWRAP(Token::pull(Op::Arrow, stream));
+                GEODE_UNWRAP_INTO(opaque.setterBody, Expr::pull(stream));
+                GEODE_UNWRAP(Token::pullSemicolons(stream));
+                continue;
+            }
+            break;
+        }
+        if (bool(opaque.getterBody) ^ bool(opaque.setterBody)) {
+            return rb.errorNextToken("A getter and setter need to both be defined");
+        }
+        GEODE_UNWRAP(Token::pull('}', stream));
+    }
+    else if (Token::draw(Op::Bind, stream)) {
+        if (Token::draw('{', stream)) {
+            while (true) {
+                GEODE_UNWRAP_INTO(auto dep, Token::pull<Ident>(stream));
+                dependencies.push_back(dep);
+                GEODE_UNWRAP_INTO(auto brk, Token::pullSeparator(',', '}', stream));
+                if (brk) {
+                    break;
+                }
+            }
+            GEODE_UNWRAP(Token::pull('}', stream));
+        }
+        else {
+            GEODE_UNWRAP_INTO(auto dep, Token::pull<Ident>(stream));
+            dependencies.push_back(dep);
+        }
+        Vec<Rc<PropExpr>> props;
+        for (auto& dep : dependencies) {
+            props.push_back(std::make_shared<PropExpr>(
+                dep, std::make_shared<MemberExpr>(
+                    std::make_shared<IdentExpr>("this"),
+                    dep, Range(stream.location())
+                ), Range(stream.location())
+            ));
+        }
+        opaque.getterBody = std::make_shared<NodeExpr>(
+            None, props, Vec<Rc<NodeExpr>> {}, Range(stream.location())
+        );
+        opaque.setterBody = std::make_shared<ListExpr>(Vec<Rc<Expr>> {
+        }, Range(stream.location()));
+        opaque.setterParam = "value";
+        opaque.setterType = None;
+    }
+    Option<GetterSetter> opaqueFinal;
+    if (opaque.getterBody) {
+        opaqueFinal = opaque;
+    }
+    return rb.commit<MemberDeclExpr>(ident, type, dependencies, opaqueFinal);
 }
 
 Type MemberDeclExpr::typecheck(UnitParser& state) const {
@@ -80,7 +155,9 @@ Type MemberDeclExpr::typecheck(UnitParser& state) const {
 std::string MemberDeclExpr::debug(size_t indent) const {
     return DebugPrint("MemberDeclExpr", indent)
         .member("name", name)
-        .member("type", type);
+        .member("type", type)
+        .member("dependencies", dependencies)
+        .member("opaque", opaque);
 }
 
 ExprResult<StructDeclExpr> StructDeclExpr::pull(Stream& stream) {
@@ -117,7 +194,7 @@ Type StructDeclExpr::typecheck(UnitParser& state) const {
         sty.members[mem->name] = PropType {
             .type = mty,
             .defaultValue = None,
-            .binding = None
+            .dependencies = {},
         };
     }
     if (ident) {

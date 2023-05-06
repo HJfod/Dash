@@ -17,8 +17,8 @@ namespace gdml::lang {
     struct GDML_DLL PropType {
         Box<Type> type;
         Option<Box<Value>> defaultValue;
-        // prop <=> full.path.to.another
-        Option<Vec<std::string>> binding;
+        Vec<Ident> dependencies;
+        bool opaque; // has getter and setter
 
         bool operator==(PropType const&) const = default;
     };

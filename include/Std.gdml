@@ -19,7 +19,21 @@ export struct CCRect {
     y: float;
     width: float;
     height: float;
-    origin: CCPoint <=> { x, y };
+    origin: CCPoint {
+        // dependent properties makes it so when the dependency is updated, 
+        // this property is updated aswell
+        depends x;
+        depends y;
+        get => {
+            x: this.x,
+            y: this.y
+        }
+        set(value) => {
+            this.x = value.x;
+            this.y = value.y;
+        }
+    }
+    // bindings offer very neat shorthand syntax for the above :3
     size: CCSize <=> { width, height };
 }
 

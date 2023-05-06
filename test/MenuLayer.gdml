@@ -1,8 +1,6 @@
 
 import { CCLabelBMFont } from "Std.gdml";
 
-// assert balls is Balls;
-
 CCLabelBMFont {
     text: "Omg god";
     pos: global.winSize / 2;

@@ -11,6 +11,7 @@ namespace gdml::lang {
         If, Else, Try,
         Function, Return, Break, Continue, From,
         Struct, Decl,
+        Get, Set, Depends,
         New, Const, Let,
         Export, Import, Extern,
         True, False, Null,
@@ -38,6 +39,7 @@ namespace gdml::lang {
         And,    // a && b
         Or,     // a || b
         Arrow,  // a => b
+        Bind,   // a <=> b
     };
 
     using VoidLit = std::monostate;
@@ -150,6 +152,22 @@ namespace gdml::lang {
                 "Expected '{}', got '{}'",
                 tokenToString(c), tk.toString()
             );
+        }
+
+        template <class T>
+        static Option<T> draw(Stream& stream) {
+            Rollback rb(stream);
+            auto res = Token::pull<T>(stream);
+            rb.clearMessages();
+            return res.ok();
+        }
+
+        template <class T>
+        static Option<T> draw(T c, Stream& stream) {
+            Rollback rb(stream);
+            auto res = Token::pull<T>(c, stream);
+            rb.clearMessages();
+            return res.ok();
         }
 
         template <class T>
