@@ -70,6 +70,12 @@ namespace gdml {
     using Rc = std::shared_ptr<T>;
 
     template <class T>
+    using Weak = std::weak_ptr<T>;
+
+    template <class T>
+    using Owned = std::unique_ptr<T>;
+
+    template <class T>
     using Option = std::optional<T>;
     constexpr auto None = std::nullopt;
 

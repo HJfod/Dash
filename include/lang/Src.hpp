@@ -5,7 +5,7 @@
 namespace gdml::lang {
     class Src;
     class Rollback;
-    class SrcParser;
+    class UnitParser;
     struct Token;
 
     struct GDML_DLL Location {
@@ -22,6 +22,12 @@ namespace gdml::lang {
         Location start;
         Location end;
         
+        Range(Rc<Src> src) : Range(Location {
+            .src = src,
+            .line = 0,
+            .column = 0,
+            .offset = 0,
+        }) {}
         Range(Location const& pos) : start(pos), end(pos) {}
         Range(Location const& start, Location const& end)
         : start(start), end(end) {}
@@ -47,12 +53,12 @@ namespace gdml::lang {
     class GDML_DLL Stream final {
     private:
         Rc<Src> m_file;
-        Rc<SrcParser> m_state;
+        UnitParser& m_state;
         size_t m_position = 0;
         size_t m_debugTickCounter = 0;
         Token* m_lastToken = nullptr;
 
-        Stream(Rc<Src> file, Rc<SrcParser> state);
+        Stream(Rc<Src> file, UnitParser& state);
 
         friend class SrcFile;
         friend class Rollback;
@@ -74,22 +80,20 @@ namespace gdml::lang {
         Rc<Src> src() const;
         size_t offset() const;
         Location location() const;
-        Rc<SrcParser> state() const;
+        UnitParser& state() const;
     };
 
     class GDML_DLL Src {
     public:
         virtual std::string getName() const = 0;
 
-        virtual Stream read(Rc<SrcParser> state) = 0;
+        virtual Stream read(UnitParser& state) = 0;
 
         virtual size_t size() const = 0;
         virtual char at(size_t offset) const = 0;
         virtual std::string from(size_t offset, size_t count) const = 0;
         virtual Location getLocation(size_t offset) = 0;
         virtual std::string getUnderlined(Range const& range) const = 0;
-
-        virtual bool onChanged(std::function<void(Rc<Src>)> callback) = 0;
 
         virtual ~Src() = default;
     };
@@ -98,7 +102,6 @@ namespace gdml::lang {
     private:
         ghc::filesystem::path m_path;
         std::string m_data;
-        std::unique_ptr<geode::EventListener<geode::utils::file::FileWatchFilter>> m_listener;
 
     public:
         SrcFile(ghc::filesystem::path const& path, std::string const& data);
@@ -111,9 +114,8 @@ namespace gdml::lang {
         size_t size() const override;
         char at(size_t offset) const override;
         std::string from(size_t offset, size_t count) const override;
-        Stream read(Rc<SrcParser> state) override;
+        Stream read(UnitParser& state) override;
         std::string getUnderlined(Range const& range) const override;
-        bool onChanged(std::function<void(Rc<Src>)> callback) override;
 
         ghc::filesystem::path getPath() const;
         std::string const& getData() const;

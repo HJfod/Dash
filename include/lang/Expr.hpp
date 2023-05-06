@@ -10,7 +10,7 @@ namespace gdml::lang {
         Expr(Range const& range) : range(range) {}
         virtual ~Expr() = default;
         
-        virtual TypeCheckResult typecheck(Rc<SrcParser> state) const = 0;
+        virtual TypeCheckResult typecheck(UnitParser& state) const = 0;
         virtual std::string debug(size_t indent = 0) const = 0;
 
         static ExprResult<Expr> pull(Stream& stream);
@@ -33,7 +33,7 @@ namespace gdml::lang {
         TypeIdentExpr(Ident const& ident, Range const& range)
             : AExpr(range), ident(ident) {}
         static ExprResult<TypeIdentExpr> pull(Stream& stream);
-        TypeCheckResult typecheck(Rc<SrcParser> state) const override;
+        TypeCheckResult typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
@@ -42,7 +42,7 @@ namespace gdml::lang {
         LitExpr(Lit const& value, Range const& range)
             : AExpr(range), value(value) {}
         static ExprResult<LitExpr> pull(Stream& stream);
-        TypeCheckResult typecheck(Rc<SrcParser> state) const override;
+        TypeCheckResult typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
@@ -51,7 +51,7 @@ namespace gdml::lang {
         IdentExpr(Ident const& ident, Range const& range)
             : AExpr(range), ident(ident) {}
         static ExprResult<IdentExpr> pull(Stream& stream);
-        TypeCheckResult typecheck(Rc<SrcParser> state) const override;
+        TypeCheckResult typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
@@ -63,7 +63,7 @@ namespace gdml::lang {
             : AExpr(range), lhs(lhs), rhs(rhs), op(op) {}
         static ExprResult<Expr> pull(Stream& stream, size_t prec, Rc<Expr> lhs);
         static ExprResult<Expr> pull(Stream& stream);
-        TypeCheckResult typecheck(Rc<SrcParser> state) const override;
+        TypeCheckResult typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
@@ -73,7 +73,7 @@ namespace gdml::lang {
         MemberExpr(Rc<Expr> target, Ident const& member, Range const& range)
             : AExpr(range), target(target), member(member) {}
         static ExprResult<MemberExpr> pull(Rc<Expr> target, Stream& stream);
-        TypeCheckResult typecheck(Rc<SrcParser> state) const override;
+        TypeCheckResult typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
@@ -83,7 +83,7 @@ namespace gdml::lang {
         CallExpr(Rc<Expr> target, Vec<Rc<Expr>> args, Range const& range)
             : AExpr(range), target(target), args(args) {}
         static ExprResult<CallExpr> pull(Rc<Expr> target, Stream& stream);
-        TypeCheckResult typecheck(Rc<SrcParser> state) const override;
+        TypeCheckResult typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
@@ -94,7 +94,7 @@ namespace gdml::lang {
         PropExpr(Ident const& prop, Rc<Expr> value, Ident const& node, Range const& range)
             : AExpr(range), prop(prop), value(value), node(node) {}
         static ExprResult<PropExpr> pull(Ident const& node, Stream& stream);
-        TypeCheckResult typecheck(Rc<SrcParser> state) const override;
+        TypeCheckResult typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
@@ -105,7 +105,7 @@ namespace gdml::lang {
         NodeExpr(Ident ident, Vec<Rc<PropExpr>> props, Vec<Rc<NodeExpr>> children, Range const& range)
             : AExpr(range), ident(ident), props(props), children(children) {}
         static ExprResult<NodeExpr> pull(Stream& stream);
-        TypeCheckResult typecheck(Rc<SrcParser> state) const override;
+        TypeCheckResult typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
@@ -115,7 +115,7 @@ namespace gdml::lang {
         MemberDeclExpr(Ident const& name, Rc<TypeExpr> type, Range const& range)
             : AExpr(range), name(name), type(type) {}
         static ExprResult<MemberDeclExpr> pull(Stream& stream);
-        TypeCheckResult typecheck(Rc<SrcParser> state) const override;
+        TypeCheckResult typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
@@ -125,7 +125,7 @@ namespace gdml::lang {
         StructDeclExpr(Option<Ident> const& ident, Vec<Rc<MemberDeclExpr>> const& members, Range const& range)
             : AExpr(range), ident(ident), members(members) {}
         static ExprResult<StructDeclExpr> pull(Stream& stream);
-        TypeCheckResult typecheck(Rc<SrcParser> state) const override;
+        TypeCheckResult typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
@@ -134,7 +134,7 @@ namespace gdml::lang {
         ListExpr(Vec<Rc<Expr>> const& exprs, Range const& range)
             : AExpr(range), exprs(exprs) {}
         static ExprResult<ListExpr> pull(Stream& stream);
-        TypeCheckResult typecheck(Rc<SrcParser> state) const override;
+        TypeCheckResult typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
@@ -143,7 +143,7 @@ namespace gdml::lang {
         AST(Vec<Rc<Expr>> const& exprs, Range const& range)
             : AExpr(range), exprs(exprs) {}
         static ExprResult<AST> pull(Stream& stream);
-        TypeCheckResult typecheck(Rc<SrcParser> state) const override;
+        TypeCheckResult typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 }

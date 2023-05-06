@@ -4,10 +4,25 @@
 #include "Type.hpp"
 #include "Src.hpp"
 
+class HotReloadNode;
+
 namespace gdml::lang {
     class AST;
-    class SrcParser;
-    class SharedParser;
+    class UnitParser;
+    class Parser;
+
+    class GDML_DLL ParsedSrc final {
+    private:
+        Rc<Src> m_src;
+        Rc<AST> m_ast;
+    
+        ParsedSrc(Rc<Src> src, Rc<AST> ast);
+
+        friend class UnitParser;
+
+    public:
+        Rc<AST> getAST() const;
+    };
 
     struct GDML_DLL Var final {
         std::string name;
@@ -19,20 +34,24 @@ namespace gdml::lang {
         Map<std::string, Var> vars;
     };
 
-    class GDML_DLL SrcParser final : public std::enable_shared_from_this<SrcParser> {
+    class GDML_DLL UnitParser final {
     private:
-        Rc<SharedParser> m_parser;
-        Rc<Src> m_src;
-        Rc<AST> m_ast;
+        Parser& m_parser;
         Vec<Scope> m_scopes;
 
-        friend class SharedParser;
+        UnitParser(Parser& parser);
+        UnitParser(UnitParser const&) = delete;
+        UnitParser(UnitParser&&) = delete;
+        UnitParser& operator=(UnitParser const&) = delete;
+        UnitParser& operator=(UnitParser&&) = delete;
+
+        friend class Parser;
 
     public:
-        SrcParser();
-        static ParseResult<Rc<SrcParser>> parse(Rc<SharedParser> parser, Rc<Src> src);
+        static ParseResult<ParsedSrc> parse(Parser& parser, Rc<Src> src);
+        static ParseResult<> typecheck(Parser& parser, ParsedSrc const& src);
 
-        Rc<SharedParser> getShared() const;
+        Parser& getShared() const;
 
         void pushType(Type const& type);
         Type* getType(std::string const& name, bool topOnly = false);
@@ -51,7 +70,7 @@ namespace gdml::lang {
                 .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
                 .range = range,
             };
-            this->getShared()->log(msg);
+            this->getShared().log(msg);
         }
 
         template <class... Args>
@@ -62,29 +81,37 @@ namespace gdml::lang {
                 .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
                 .range = range,
             };
-            this->getShared()->log(msg);
-            return geode::Err(this->getShared()->getErrors().size());
+            this->getShared().log(msg);
+            return geode::Err(this->getShared().getErrors().size());
         }
     };
 
-    class GDML_DLL SharedParser final : public std::enable_shared_from_this<SharedParser> {
+    class GDML_DLL Parser : public cocos2d::CCObject {
     private:
         Rc<Src> m_root;
-        Map<Rc<Src>, Rc<SrcParser>> m_states;
+        Map<Rc<Src>, Owned<geode::EventListenerProtocol>> m_watchers;
+        Map<Rc<Src>, ParsedSrc> m_srcs;
         Vec<std::pair<size_t, Message>> m_messages;
         // Rollback level starts at 1 because non-rollback messages have 0
         size_t m_rollbackLevel = 1;
 
-        ParseResult<> add(Rc<Src> src);
+        void add(Rc<Src> src);
+        void dispatchLogs() const;
+
+        friend class HotReloadNode;
+
+        Parser(Rc<Src> src);
+        Parser(Parser const&) = delete;
+        Parser& operator=(Parser const&) = delete;
 
     public:
-        SharedParser(Rc<Src> src);
-        static Rc<SharedParser> create(Rc<Src> src);
+        static Parser* create(Rc<Src> src);
+        static Parser* create(ghc::filesystem::path const& file);
 
-        ParseResult<> compile();
+        void compile();
+        void populate(cocos2d::CCNode* node);
 
         void log(Message const& message, size_t level = 0);
-        void dispatchLogs() const;
         size_t pushLogLevel();
         void popLogLevel();
         void popMessages(size_t level);

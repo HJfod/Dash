@@ -213,7 +213,7 @@ ParseResult<Token> Token::pull(Stream& stream) {
                     case '\'': lit += '\''; break;
                     case '\\': lit += '\\'; break;
                     case '{':  lit += '{'; break;
-                    default: stream.state()->warn(
+                    default: stream.state().warn(
                         Range(
                             stream.src()->getLocation(stream.offset() - 1),
                             stream.src()->getLocation(stream.offset())

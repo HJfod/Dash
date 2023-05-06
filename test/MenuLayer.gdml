@@ -1,4 +1,6 @@
 
+import CCLabelBMFont from "Std.gdml";
+
 CCLabelBMFont {
     text: "Omg god";
     pos: global.winSize / 2;
