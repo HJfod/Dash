@@ -38,6 +38,7 @@ ExprResult<ImportExpr> ImportExpr::pull(Stream& stream) {
         rb.clearMessages();
         GEODE_UNWRAP(Token::pull('{', stream));
         while (true) {
+            stream.debugTick();
             GEODE_UNWRAP_INTO(auto ident, Token::pull<Ident>(stream));
             imports.push_back(ident);
             GEODE_UNWRAP_INTO(auto brk, Token::pullSeparator(',', '}', stream));
@@ -97,6 +98,62 @@ std::string ImportExpr::debug(size_t indent) const {
     return DebugPrint("ImportExpr", indent)
         .member("from", from)
         .member("imports", imports);
+}
+
+ExprResult<ListExpr> ListExpr::pull(Stream& stream) {
+    Rollback rb(stream);
+    Vec<Rc<Expr>> list;
+    // handle just {}
+    if (Token::peek('}', stream)) {
+        return rb.commit<ListExpr>(list);
+    }
+    while (true) {
+        stream.debugTick();
+        GEODE_UNWRAP_INTO(auto expr, Expr::pull(stream));
+        list.push_back(expr);
+        // Allow omitting last semicolon
+        if (!Token::pullSemicolons(stream) && !Token::peek('}', stream)) {
+            return rb.error("Expected semicolon");
+        }
+        // End at EOF or }
+        if (!Token::peek(stream) || Token::peek('}', stream)) {
+            break;
+        }
+    }
+    return rb.commit<ListExpr>(list);
+}
+
+Type ListExpr::typecheck(UnitParser& state) const {
+    for (auto& expr : exprs) {
+        expr->typecheck(state);
+    }
+    // todo: return types
+    return Type(VoidType());
+}
+
+std::string ListExpr::debug(size_t indent) const {
+    return DebugPrint("ListExpr", indent)
+        .member("exprs", exprs);
+}
+
+ExprResult<BlockExpr> BlockExpr::pull(Stream& stream) {
+    Rollback rb(stream);
+    GEODE_UNWRAP(Token::pull('{', stream));
+    GEODE_UNWRAP_INTO(auto expr, ListExpr::pull(stream));
+    GEODE_UNWRAP(Token::pull('}', stream));
+    return rb.commit<BlockExpr>(expr);
+}
+
+Type BlockExpr::typecheck(UnitParser& state) const {
+    state.pushScope(false);
+    auto ret = expr->typecheck(state);
+    state.popScope();
+    return ret;
+}
+
+std::string BlockExpr::debug(size_t indent) const {
+    return DebugPrint("BlockExpr", indent)
+        .member("expr", expr);
 }
 
 ExprResult<AST> AST::pull(Stream& stream) {

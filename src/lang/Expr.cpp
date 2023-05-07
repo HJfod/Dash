@@ -20,42 +20,6 @@ using namespace gdml;
         return Ok(value);                                   \
     }
 
-ExprResult<ListExpr> ListExpr::pull(Stream& stream) {
-    Rollback rb(stream);
-    Vec<Rc<Expr>> list;
-    // handle just {}
-    if (Token::peek('}', stream)) {
-        return rb.commit<ListExpr>(list);
-    }
-    while (true) {
-        stream.debugTick();
-        GEODE_UNWRAP_INTO(auto expr, Expr::pull(stream));
-        list.push_back(expr);
-        // Allow omitting last semicolon
-        if (!Token::pullSemicolons(stream) && !Token::peek('}', stream)) {
-            return rb.error("Expected semicolon");
-        }
-        // End at EOF or }
-        if (!Token::peek(stream) || Token::peek('}', stream)) {
-            break;
-        }
-    }
-    return rb.commit<ListExpr>(list);
-}
-
-Type ListExpr::typecheck(UnitParser& state) const {
-    for (auto& expr : exprs) {
-        expr->typecheck(state);
-    }
-    // todo: return types
-    return Type(VoidType());
-}
-
-std::string ListExpr::debug(size_t indent) const {
-    return DebugPrint("ListExpr", indent)
-        .member("exprs", exprs);
-}
-
 ExprResult<Expr> Expr::pull(Stream& stream) {
     return BinOpExpr::pull(stream);
 }
@@ -84,14 +48,14 @@ ExprResult<Expr> Expr::pullPrimaryNonCall(Stream& stream) {
     Rollback rb(stream);
 
     // Parenthesis
-    if (Token::pull('(', stream)) {
+    if (Token::draw('(', stream)) {
         GEODE_UNWRAP_INTO(auto expr, Expr::pull(stream));
         GEODE_UNWRAP(Token::pull(')', stream));
         rb.commit();
         return Ok(expr);
     }
-    rb.clearMessages();
 
+    PULL_IF(BlockExpr, '{');
     PULL_IF(VarDeclExpr, Keyword::Let);
     PULL_IF(ImportExpr, Keyword::Import);
     PULL_IF(ExportExpr, Keyword::Export);

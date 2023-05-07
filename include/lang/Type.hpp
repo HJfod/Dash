@@ -48,7 +48,8 @@ namespace gdml::lang {
         Type() = default;
         Type(Value const& value) : kind(value) {}
 
-        bool operator==(Type const& other) const;
+        bool equal(Type const& other) const;
+        bool convertible(Type const& other) const;
         Option<Type> getMemberType(std::string const& name) const;
         Set<String> getRequiredMembers() const;
         std::string toString() const;

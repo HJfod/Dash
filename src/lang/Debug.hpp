@@ -12,17 +12,6 @@ std::string debugPrint(T const& t, size_t indent) {
     static_assert(!std::is_same_v<T, T>, "debugPrint not defined for type");
 }
 
-template <>
-std::string debugPrint(GetterSetter const& g, size_t indent) {
-    std::string ret = "{\n";
-    ret += std::string(indent + 4, ' ') + "getterBody: " + debugPrint(g.getterBody, indent + 4) + "\n";
-    ret += std::string(indent + 4, ' ') + "setterBody: " + debugPrint(g.setterBody, indent + 4) + "\n";
-    ret += std::string(indent + 4, ' ') + "setterParam: " + debugPrint(g.setterParam, indent + 4) + "\n";
-    ret += std::string(indent + 4, ' ') + "setterType: " + debugPrint(g.setterType, indent + 4) + "\n";
-    ret += std::string(indent, ' ') + "}";
-    return ret;
-}
-
 template <class T>
     requires requires {
         TokenTraits<T>::TYPE_NAME;
@@ -71,6 +60,16 @@ std::string debugPrint(Vec<T> const& vec, size_t i) {
     return ret;
 }
 
+template <>
+inline std::string debugPrint(Param const& p, size_t indent) {
+    std::string ret = "{\n";
+    ret += std::string(indent + 4, ' ') + "name: " + debugPrint(p.name, indent + 4) + "\n";
+    ret += std::string(indent + 4, ' ') + "type: " + debugPrint(p.type, indent + 4) + "\n";
+    ret += std::string(indent + 4, ' ') + "value: " + debugPrint(p.value, indent + 4) + "\n";
+    ret += std::string(indent, ' ') + "}";
+    return ret;
+}
+
 struct DebugPrint {
     size_t m_indent;
     std::string m_class;
@@ -96,3 +95,15 @@ struct DebugPrint {
         return ret;
     }
 };
+
+#define TRY_WITH_DEBINFO(...)                       \
+    try {                                           \
+        __VA_ARGS__                                 \
+    } catch (std::exception const& e) {             \
+        auto loc = std::source_location::current(); \
+        throw std::runtime_error(fmt::format(       \
+            "{} (from {}:{} in {})",                \
+            e.what(), loc.line(), loc.column(),     \
+            loc.file_name()                         \
+        ));                                         \
+    }

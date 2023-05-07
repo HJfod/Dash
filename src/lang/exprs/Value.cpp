@@ -103,7 +103,7 @@ Type NodeExpr::typecheck(UnitParser& state) const {
         auto ty = state.getType(ident.value());
         if (!ty) {
             // todo: hint that you can define nodes with decl
-            state.error(range, "Unknown node or struct \"{}\"", ident);
+            state.error(range, "Unknown node or struct \"{}\"", ident.value());
             return Type(UnkType());
         }
         Set<Ident> assigned;
@@ -114,7 +114,7 @@ Type NodeExpr::typecheck(UnitParser& state) const {
                 state.error(range, "Node or struct \"{}\" has no property \"{}\"", ident.value(), prop->prop);
                 return Type(UnkType());
             }
-            if (mem.value() != valty) {
+            if (mem.value().convertible(valty)) {
                 state.error(
                     range, "Attempted to assign '{}' to property of type '{}'",
                     valty.toString(), mem.value().toString()

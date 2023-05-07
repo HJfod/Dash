@@ -4,15 +4,20 @@ using namespace geode::prelude;
 using namespace gdml::lang;
 using namespace gdml;
 
-bool Type::operator==(Type const& other) const {
+bool Type::equal(Type const& other) const {
+    // unknown types are always equal to everything else
     if (
         std::holds_alternative<UnkType>(kind) ||
         std::holds_alternative<UnkType>(other.kind)
     ) {
         return true;
     }
-    if (kind.index() != other.kind.index()) {
-        return false;
+    return kind.index() == other.kind.index();
+}
+
+bool Type::convertible(Type const& other) const {
+    if (this->equal(other)) {
+        return true;
     }
     if (auto str = std::get_if<StructType>(&kind)) {
         return str->members == std::get<StructType>(other.kind).members;

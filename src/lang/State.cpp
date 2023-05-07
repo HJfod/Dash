@@ -1,5 +1,6 @@
 #include <lang/State.hpp>
 #include <lang/Expr.hpp>
+#include "Debug.hpp"
 
 using namespace geode::prelude;
 using namespace gdml::lang;
@@ -11,29 +12,29 @@ Rc<AST> ParsedSrc::getAST() const {
     return m_ast;
 }
 
-bool ParsedSrc::addExportedType(Type const& type) {
+bool ParsedSrc::addExportedType(Type const& type) {TRY_WITH_DEBINFO(
     auto name = type.toString();
     if (m_exportedTypes.contains(name)) {
         return false;
     }
     m_exportedTypes.insert({ name, type });
     return true;
-}
+)}
 
-Option<Type> ParsedSrc::getExportedType(Ident const& name) const {
+Option<Type> ParsedSrc::getExportedType(Ident const& name) const {TRY_WITH_DEBINFO(
     if (m_exportedTypes.contains(name)) {
         return m_exportedTypes.at(name);
     }
     return None;
-}
+)}
 
-Vec<Type> ParsedSrc::getExportedTypes() const {
+Vec<Type> ParsedSrc::getExportedTypes() const {TRY_WITH_DEBINFO(
     Vec<Type> types;
     for (auto& [_, ty] : m_exportedTypes) {
         types.push_back(ty);
     }
     return types;
-}
+)}
 
 UnitParser::UnitParser(Parser& parser, Rc<Src> src)
   : m_parser(parser), m_src(src), m_scopes({ Scope() })
@@ -71,11 +72,11 @@ Rc<ParsedSrc> UnitParser::getParsedSrc() const {
     return m_parsed;
 }
 
-void UnitParser::pushType(Type const& type) {
+void UnitParser::pushType(Type const& type) {TRY_WITH_DEBINFO(
     m_scopes.back().types.insert({ type.toString(), type });
-}
+)}
 
-Type* UnitParser::getType(std::string const& name, bool topOnly) {
+Type* UnitParser::getType(std::string const& name, bool topOnly) {TRY_WITH_DEBINFO(
     // Prefer topmost scope
     for (auto& scope : ranges::reverse(m_scopes)) {
         if (scope.types.contains(name)) {
@@ -86,13 +87,13 @@ Type* UnitParser::getType(std::string const& name, bool topOnly) {
         }
     }
     return nullptr;
-}
+)}
 
-void UnitParser::pushVar(Var const& var) {
+void UnitParser::pushVar(Var const& var) {TRY_WITH_DEBINFO(
     m_scopes.back().vars.insert({ var.name, var });
-}
+)}
 
-Var* UnitParser::getVar(std::string const& name, bool topOnly) {
+Var* UnitParser::getVar(std::string const& name, bool topOnly) {TRY_WITH_DEBINFO(
     // Prefer topmost scope
     for (auto& scope : ranges::reverse(m_scopes)) {
         if (scope.vars.contains(name)) {
@@ -103,18 +104,18 @@ Var* UnitParser::getVar(std::string const& name, bool topOnly) {
         }
     }
     return nullptr;
-}
+)}
 
-void UnitParser::pushScope() {
-    m_scopes.emplace_back();
-}
+void UnitParser::pushScope(bool function) {TRY_WITH_DEBINFO(
+    m_scopes.emplace_back().function = function;
+)}
 
-void UnitParser::popScope() {
+void UnitParser::popScope() {TRY_WITH_DEBINFO(
     m_scopes.pop_back();
     if (m_scopes.empty()) {
-        throw std::runtime_error("Internal Compiler Error: Scope stack is empty");
+        throw std::runtime_error("Scope stack is empty");
     }
-}
+)}
 
 bool UnitParser::isRootScope() const {
     return m_scopes.size() == 1;
@@ -151,7 +152,7 @@ void Parser::compile() {
         this->log(Message {
             .level = Level::Error,
             .src = m_root,
-            .info = e.what(),
+            .info = "Internal Compiler Error: " + std::string(e.what()),
             .range = Range(m_root->getLocation(0)),
         });
     }

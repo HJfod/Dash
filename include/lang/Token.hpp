@@ -38,7 +38,8 @@ namespace gdml::lang {
         Not,    // !a
         And,    // a && b
         Or,     // a || b
-        Arrow,  // a => b
+        Arrow,  // a -> b
+        Farrow, // a => b
         Bind,   // a <=> b
     };
 
@@ -167,6 +168,9 @@ namespace gdml::lang {
             Rollback rb(stream);
             auto res = Token::pull<T>(c, stream);
             rb.clearMessages();
+            if (res.isOk()) {
+                rb.commit();
+            }
             return res.ok();
         }
 

@@ -88,8 +88,32 @@ namespace gdml::lang {
         std::string debug(size_t indent = 0) const override;
     };
 
+    struct GDML_DLL Param {
+        Ident name;
+        Option<Rc<TypeExpr>> type;
+        Option<Rc<Expr>> value;
+        Range range;
+    };
+
     struct GDML_DLL FunDeclExpr : public AExpr<FunDeclExpr> {
         Option<Ident> name;
+        Vec<Param> params;
+        Rc<Expr> body;
+        Option<Rc<TypeExpr>> retType;
+
+        FunDeclExpr(
+            Option<Ident> const& name,
+            Vec<Param> const& params,
+            Rc<Expr> body,
+            Option<Rc<TypeExpr>> const& retType,
+            Range const& range
+        ) : AExpr(range), name(name), params(params), body(body), retType(retType) {}
+
+        static ExprResult<FunDeclExpr> pull(Stream& stream);
+        static ExprResult<FunDeclExpr> pullArrow(Stream& stream);
+        static ParseResult<> pullParams(Vec<Param>& target, Stream& stream, bool requireTypes);
+        Type typecheck(UnitParser& state) const override;
+        std::string debug(size_t indent = 0) const override;
     };
 
     struct GDML_DLL MemberExpr : public AExpr<MemberExpr> {
@@ -146,18 +170,20 @@ namespace gdml::lang {
         Rc<TypeExpr> type;
         Option<Rc<Expr>> defaultValue;
         Vec<Ident> dependencies;
-        Option<Rc<CallExpr>> opaque;
+        Option<Rc<FunDeclExpr>> getter;
+        Option<Rc<FunDeclExpr>> setter;
 
         MemberDeclExpr(
             Ident const& name,
             Rc<TypeExpr> type,
             Option<Rc<Expr>> const& defaultValue,
             Vec<Ident> const& dependencies,
-            Option<GetterSetter> const& opaque,
+            Option<Rc<FunDeclExpr>> getter,
+            Option<Rc<FunDeclExpr>> setter,
             Range const& range
         ) : AExpr(range), name(name), type(type),
             defaultValue(defaultValue), dependencies(dependencies),
-            opaque(opaque) {}
+            getter(getter), setter(setter) {}
 
         static ExprResult<MemberDeclExpr> pull(Stream& stream);
         Type typecheck(UnitParser& state) const override;
@@ -206,6 +232,17 @@ namespace gdml::lang {
             : AExpr(range), from(from), imports(imports) {}
 
         static ExprResult<ImportExpr> pull(Stream& stream);
+        Type typecheck(UnitParser& state) const override;
+        std::string debug(size_t indent = 0) const override;
+    };
+
+    struct GDML_DLL BlockExpr : public AExpr<BlockExpr> {
+        Rc<Expr> expr;
+
+        BlockExpr(Rc<Expr> expr, Range const& range)
+            : AExpr(range), expr(expr) {}
+        
+        static ExprResult<BlockExpr> pull(Stream& stream);
         Type typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };

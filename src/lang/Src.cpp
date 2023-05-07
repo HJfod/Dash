@@ -52,11 +52,7 @@ Result<Rc<SrcFile>> SrcFile::from(Path const& path) {
 
 Stream::Stream(Rc<Src> file, UnitParser& state) : m_file(file), m_state(state) {}
 
-Stream::~Stream() {
-    if (m_lastToken) {
-        delete m_lastToken;
-    }
-}
+Stream::~Stream() = default;
 
 char Stream::peek() const {
     if (m_position < m_file->size()) {
@@ -102,7 +98,7 @@ Location Stream::location() const {
 void Stream::debugTick(std::source_location const loc) {
     if (m_debugTickCounter++ > 10000000) {
         throw std::runtime_error(fmt::format(
-            "Internal Compiler Error: Debug tick level exceeded 10000000 limit. "
+            "Debug tick level exceeded 10000000 limit. "
             "This implies that the compiler ended up in an infinite loop - "
             "please report this bug! (Occurred in {} at {}:{} in {})",
             loc.file_name(), loc.line(), loc.column(), loc.function_name()
@@ -111,7 +107,7 @@ void Stream::debugTick(std::source_location const loc) {
 }
 
 void Stream::setLastToken(Token const& token) {
-    m_lastToken = new Token(token);
+    m_lastToken = std::make_unique<Token>(token);
 }
 
 Option<Token> Stream::last() const {
@@ -236,11 +232,17 @@ Rollback::Rollback(Stream& stream, std::source_location const loc)
     m_msgLevel(stream.state().getShared().pushLogLevel())
 {
     stream.debugTick(loc);
+    if (auto last = stream.last()) {
+        m_lastToken = std::make_unique<Token>(last.value());
+    }
 }
 
 Rollback::~Rollback() {
     if (!m_commit) {
         m_stream.navigate(m_offset);
+        if (m_lastToken) {
+            m_stream.setLastToken(*m_lastToken);
+        }
         m_commit = true;
     }
     m_stream.state().getShared().popLogLevel();

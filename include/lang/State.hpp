@@ -37,6 +37,7 @@ namespace gdml::lang {
     struct GDML_DLL Scope final {
         Map<std::string, Type> types;
         Map<std::string, Var> vars;
+        bool function;
     };
 
     class GDML_DLL UnitParser final {
@@ -67,7 +68,7 @@ namespace gdml::lang {
         void pushVar(Var const& var);
         Var* getVar(std::string const& name, bool topOnly = false);
 
-        void pushScope();
+        void pushScope(bool function);
         void popScope();
         bool isRootScope() const;
 

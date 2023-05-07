@@ -22,6 +22,7 @@ namespace gdml::lang {
         Location start;
         Location end;
         
+        Range() : Range(nullptr) {}
         Range(Rc<Src> src) : Range(Location {
             .src = src,
             .line = 0,
@@ -56,7 +57,7 @@ namespace gdml::lang {
         UnitParser& m_state;
         size_t m_position = 0;
         size_t m_debugTickCounter = 0;
-        Token* m_lastToken = nullptr;
+        std::unique_ptr<Token> m_lastToken = nullptr;
 
         Stream(Rc<Src> file, UnitParser& state);
 
@@ -81,6 +82,11 @@ namespace gdml::lang {
         size_t offset() const;
         Location location() const;
         UnitParser& state() const;
+
+        template <class E, class... Args>
+        Rc<E> make(Args&&... args) {
+            return std::make_shared<E>(std::forward<Args>(args)..., Range(this->location()));
+        }
     };
 
     class GDML_DLL Src {
@@ -133,6 +139,7 @@ namespace gdml::lang {
         bool m_commit = false;
         size_t m_offset;
         size_t m_msgLevel;
+        std::unique_ptr<Token> m_lastToken = nullptr;
 
     public:
         Rollback(Stream& stream, std::source_location const loc = std::source_location::current());

@@ -168,15 +168,15 @@ void Token::skipToNext(Stream& stream) {
 }
 
 ParseResult<> Token::pullSemicolons(Stream& stream) {
-    Rollback rb (stream);
+    Rollback rb(stream);
     if (stream.last() == Token(Punct('}'))) {
-        while (Token::pull(';', stream)) {}
+        while (Token::draw(';', stream)) {}
         rb.commit();
         return Ok();
     }
     else {
         GEODE_UNWRAP(Token::pull(';', stream));
-        while (Token::pull(';', stream)) {}
+        while (Token::draw(';', stream)) {}
         rb.commit();
         return Ok();
     }

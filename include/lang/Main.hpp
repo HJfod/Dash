@@ -91,6 +91,9 @@ namespace gdml {
 
     template <class K>
     using Set = std::unordered_set<K>;
+
+    template <class A, class B>
+    using Pair = std::pair<A, B>;
 }
 
 namespace gdml::lang {

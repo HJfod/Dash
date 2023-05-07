@@ -53,7 +53,7 @@ ExprResult<Expr> BinOpExpr::pull(Stream& stream) {
 Type BinOpExpr::typecheck(UnitParser& state) const {
     auto r = rhs->typecheck(state);
     auto l = lhs->typecheck(state);
-    if (r != l) {
+    if (r.convertible(l)) {
         state.error(range, "Mismatching types for binary operation");
     }
     return r;
