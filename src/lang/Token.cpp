@@ -1,6 +1,7 @@
 #include <lang/Token.hpp>
 #include <lang/Src.hpp>
 #include <lang/State.hpp>
+#include "Debug.hpp"
 
 using namespace geode::prelude;
 using namespace gdml::lang;
@@ -13,13 +14,15 @@ static std::unordered_map<Keyword, std::string> KEYWORDS {
     { Keyword::If,          "if" },
     { Keyword::Else,        "else" },
     { Keyword::Try,         "try" },
-    { Keyword::Function,    "function" },
+    { Keyword::Function,    "fun" },
     { Keyword::Return,      "return" },
     { Keyword::Break,       "break" },
     { Keyword::Continue,    "continue" },
     { Keyword::From,        "from" },
     { Keyword::Struct,      "struct" },
     { Keyword::Decl,        "decl" },
+    { Keyword::Extends,     "extends" },
+    { Keyword::Required,    "required" },
     { Keyword::Get,         "get" },
     { Keyword::Set,         "set" },
     { Keyword::Depends,     "depends" },
@@ -55,7 +58,8 @@ static std::unordered_map<Op, std::tuple<std::string, size_t, OpDir>> OPS {
     { Op::SubSeq,   { "-=",  1,  OpDir::RTL } },
     { Op::AddSeq,   { "+=",  1,  OpDir::RTL } },
     { Op::Seq,      { "=",   1,  OpDir::RTL } },
-    { Op::Arrow,    { "=>",  0,  OpDir::RTL } },
+    { Op::Arrow,    { "->",  0,  OpDir::RTL } },
+    { Op::Farrow,   { "=>",  0,  OpDir::RTL } },
     { Op::Bind,     { "<=>", 0,  OpDir::LTR } },
 };
 
@@ -360,6 +364,9 @@ Option<Token> Token::peek(Stream& stream, size_t offset) {
 }
 
 std::string lang::tokenToString(Keyword kw, bool debug) {
+    if (!KEYWORDS.contains(kw)) {
+        throw std::runtime_error(fmt::format("Missing string representation of keyword {}", static_cast<int>(kw)));
+    }
     if (debug) {
         return fmt::format("keyword({})", KEYWORDS.at(kw));
     }
@@ -406,6 +413,9 @@ std::string lang::tokenToString(Lit lit, bool debug) {
 }
 
 std::string lang::tokenToString(Op op, bool debug) {
+    if (!OPS.contains(op)) {
+        throw std::runtime_error(fmt::format("Missing string representation of operator {}", static_cast<int>(op)));
+    }
     if (debug) {
         return fmt::format("op({})", std::get<0>(OPS.at(op)));
     }

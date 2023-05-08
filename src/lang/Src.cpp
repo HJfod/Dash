@@ -228,9 +228,10 @@ Location SrcFile::getLocation(size_t offset) {
 
 Rollback::Rollback(Stream& stream, std::source_location const loc)
   : m_stream(stream),
-    m_offset(stream.offset()),
     m_msgLevel(stream.state().getShared().pushLogLevel())
 {
+    Token::skipToNext(stream);
+    m_offset = stream.offset();
     stream.debugTick(loc);
     if (auto last = stream.last()) {
         m_lastToken = std::make_unique<Token>(last.value());

@@ -77,7 +77,7 @@ std::string PropExpr::debug(size_t indent) const {
 
 ExprResult<NodeExpr> NodeExpr::pull(Stream& stream) {
     Rollback rb(stream);
-    GEODE_UNWRAP_INTO(auto ident, Token::pull<Ident>(stream));
+    auto ident = Token::draw<Ident>(stream);
     GEODE_UNWRAP(Token::pull('{', stream));
     Vec<Rc<PropExpr>> props;
     Vec<Rc<NodeExpr>> children;
@@ -150,9 +150,8 @@ Type NodeExpr::typecheck(UnitParser& state) const {
             else {
                 ty.members.insert({ prop->prop, PropType {
                     .type = valty,
-                    .defaultValue = None,
                     .dependencies = {},
-                    .opaque = false,
+                    .required = true,
                 }});
             }
         }

@@ -172,6 +172,7 @@ namespace gdml::lang {
         Vec<Ident> dependencies;
         Option<Rc<FunDeclExpr>> getter;
         Option<Rc<FunDeclExpr>> setter;
+        bool required;
 
         MemberDeclExpr(
             Ident const& name,
@@ -180,24 +181,34 @@ namespace gdml::lang {
             Vec<Ident> const& dependencies,
             Option<Rc<FunDeclExpr>> getter,
             Option<Rc<FunDeclExpr>> setter,
+            bool required,
             Range const& range
         ) : AExpr(range), name(name), type(type),
             defaultValue(defaultValue), dependencies(dependencies),
-            getter(getter), setter(setter) {}
+            getter(getter), setter(setter), required(required) {}
 
         static ExprResult<MemberDeclExpr> pull(Stream& stream);
         Type typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
-    struct GDML_DLL StructDeclExpr : public AExpr<StructDeclExpr> {
+    struct GDML_DLL NodeDeclExpr : public AExpr<NodeDeclExpr> {
         Option<Ident> ident;
         Vec<Rc<MemberDeclExpr>> members;
+        Option<Rc<IdentExpr>> extends;
+        bool isStruct;
+        bool isExtern;
 
-        StructDeclExpr(Option<Ident> const& ident, Vec<Rc<MemberDeclExpr>> const& members, Range const& range)
-            : AExpr(range), ident(ident), members(members) {}
+        NodeDeclExpr(
+            Option<Ident> const& ident,
+            Vec<Rc<MemberDeclExpr>> const& members,
+            Option<Rc<IdentExpr>> const& extends,
+            bool isStruct, 
+            bool isExtern, 
+            Range const& range
+        ) : AExpr(range), ident(ident), members(members), extends(extends), isStruct(isStruct), isExtern(isExtern) {}
 
-        static ExprResult<StructDeclExpr> pull(Stream& stream);
+        static ExprResult<NodeDeclExpr> pull(Stream& stream);
         Type typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
@@ -226,9 +237,9 @@ namespace gdml::lang {
 
     struct GDML_DLL ImportExpr : public AExpr<ImportExpr> {
         StrLit from;
-        Vec<Ident> imports; // empty is *
+        Vec<Rc<IdentExpr>> imports; // empty is *
 
-        ImportExpr(StrLit const& from, Vec<Ident> const& imports, Range const& range)
+        ImportExpr(StrLit const& from, Vec<Rc<IdentExpr>> const& imports, Range const& range)
             : AExpr(range), from(from), imports(imports) {}
 
         static ExprResult<ImportExpr> pull(Stream& stream);

@@ -130,13 +130,7 @@ ExprResult<FunDeclExpr> FunDeclExpr::pullArrow(Stream& stream) {
     }
     GEODE_UNWRAP(Token::pull(Op::Farrow, stream));
     Rc<Expr> body;
-    if (Token::draw('{', stream)) {
-        GEODE_UNWRAP_INTO(body, ListExpr::pull(stream));
-        GEODE_UNWRAP(Token::pull('}', stream));
-    }
-    else {
-        GEODE_UNWRAP_INTO(body, Expr::pull(stream));
-    }
+    GEODE_UNWRAP_INTO(body, Expr::pull(stream));
     return rb.commit<FunDeclExpr>(None, params, body, None);
 }
 
@@ -180,6 +174,7 @@ std::string FunDeclExpr::debug(size_t indent) const {
 
 ExprResult<MemberDeclExpr> MemberDeclExpr::pull(Stream& stream) {
     Rollback rb(stream);
+    auto required = Token::draw(Keyword::Required, stream).has_value();
     GEODE_UNWRAP_INTO(auto ident, Token::pull<Ident>(stream));
     GEODE_UNWRAP(Token::pull(':', stream));
     GEODE_UNWRAP_INTO(auto type, TypeExpr::pull(stream));
@@ -286,7 +281,7 @@ ExprResult<MemberDeclExpr> MemberDeclExpr::pull(Stream& stream) {
     if (Token::draw(Op::Eq, stream)) {
         GEODE_UNWRAP_INTO(defaultValue, Expr::pull(stream));
     }
-    return rb.commit<MemberDeclExpr>(ident, type, defaultValue, dependencies, getter, setter);
+    return rb.commit<MemberDeclExpr>(ident, type, defaultValue, dependencies, getter, setter, required);
 }
 
 Type MemberDeclExpr::typecheck(UnitParser& state) const {
@@ -320,14 +315,22 @@ std::string MemberDeclExpr::debug(size_t indent) const {
         .member("defaultValue", defaultValue)
         .member("dependencies", dependencies)
         .member("getter", getter)
-        .member("setter", setter);
+        .member("setter", setter)
+        .member("required", required);
 }
 
-ExprResult<StructDeclExpr> StructDeclExpr::pull(Stream& stream) {
+ExprResult<NodeDeclExpr> NodeDeclExpr::pull(Stream& stream) {
     Rollback rb(stream);
-    GEODE_UNWRAP(Token::pull(Keyword::Struct, stream));
-    auto ident = Token::pull<Ident>(stream).ok();
-    rb.clearMessages();
+    auto isExtern = Token::draw(Keyword::Extern, stream).has_value();
+    auto isStruct = Token::draw(Keyword::Struct, stream).has_value();
+    if (!isStruct) {
+        GEODE_UNWRAP(Token::pull(Keyword::Decl, stream));
+    }
+    auto ident = Token::draw<Ident>(stream);
+    Option<Rc<IdentExpr>> extends;
+    if (Token::draw(Keyword::Extends, stream)) {
+        GEODE_UNWRAP_INTO(extends, IdentExpr::pull(stream));
+    }
     GEODE_UNWRAP(Token::pull('{', stream));
     Vec<Rc<MemberDeclExpr>> members;
     while (true) {
@@ -340,34 +343,57 @@ ExprResult<StructDeclExpr> StructDeclExpr::pull(Stream& stream) {
         }
     }
     GEODE_UNWRAP(Token::pull('}', stream));
-    return rb.commit<StructDeclExpr>(ident, members);
+    return rb.commit<NodeDeclExpr>(ident, members, extends, isStruct, isExtern);
 }
 
-Type StructDeclExpr::typecheck(UnitParser& state) const {
+Type NodeDeclExpr::typecheck(UnitParser& state) const {
     if (ident) {
         if (state.getType(ident.value(), true)) {
-            state.error(range, "Struct type \"{}\" has already been defined in this scope", ident.value());
+            state.error(range, "Type \"{}\" has already been defined in this scope", ident.value());
             return Type(UnkType());
         }
     }
-    StructType sty;
-    sty.name = ident;
-    for (auto& mem : members) {
-        auto mty = mem->typecheck(state);
-        sty.members[mem->name] = PropType {
-            .type = mty,
-            .defaultValue = None,
-            .dependencies = {},
-        };
+    if (isStruct) {
+        StructType sty;
+        sty.name = ident;
+        for (auto& mem : members) {
+            auto mty = mem->typecheck(state);
+            sty.members[mem->name] = PropType {
+                .type = mty,
+                .dependencies = mem->dependencies,
+                .required = mem->defaultValue || mem->getter,
+            };
+        }
+        if (ident) {
+            state.pushType(Type(sty));
+        }
+        return Type(sty);
     }
-    if (ident) {
+    else {
+        if (!ident) {
+            state.error(range, "Anonymous nodes are not allowed");
+            return Type(UnkType());
+        }
+        NodeType sty;
+        sty.name = ident.value();
+        for (auto& mem : members) {
+            auto mty = mem->typecheck(state);
+            sty.props[mem->name] = PropType {
+                .type = mty,
+                .dependencies = mem->dependencies,
+                .required = false,
+            };
+        }
         state.pushType(Type(sty));
+        return Type(sty);
     }
-    return Type(sty);
 }
 
-std::string StructDeclExpr::debug(size_t indent) const {
-    return DebugPrint("StructDeclExpr", indent)
+std::string NodeDeclExpr::debug(size_t indent) const {
+    return DebugPrint("NodeDeclExpr", indent)
         .member("ident", ident)
-        .member("members", members);
+        .member("members", members)
+        .member("extends", extends)
+        .member("isStruct", isStruct)
+        .member("isExtern", isExtern);
 }

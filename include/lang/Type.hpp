@@ -16,9 +16,8 @@ namespace gdml::lang {
 
     struct GDML_DLL PropType {
         Box<Type> type;
-        Option<Box<Value>> defaultValue;
         Vec<Ident> dependencies;
-        bool opaque; // has getter and setter
+        bool required;
 
         bool operator==(PropType const&) const = default;
     };

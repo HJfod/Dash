@@ -33,13 +33,13 @@ std::string ExportExpr::debug(size_t indent) const {
 ExprResult<ImportExpr> ImportExpr::pull(Stream& stream) {
     Rollback rb(stream);
     GEODE_UNWRAP(Token::pull(Keyword::Import, stream));
-    Vec<Ident> imports;
+    Vec<Rc<IdentExpr>> imports;
     if (!Token::pull('*', stream)) {
         rb.clearMessages();
         GEODE_UNWRAP(Token::pull('{', stream));
         while (true) {
             stream.debugTick();
-            GEODE_UNWRAP_INTO(auto ident, Token::pull<Ident>(stream));
+            GEODE_UNWRAP_INTO(auto ident, IdentExpr::pull(stream));
             imports.push_back(ident);
             GEODE_UNWRAP_INTO(auto brk, Token::pullSeparator(',', '}', stream));
             if (brk) {
@@ -75,11 +75,11 @@ Type ImportExpr::typecheck(UnitParser& state) const {
     }
     else {
         for (auto& i : imports) {
-            if (auto ty = parsed->getExportedType(i)) {
+            if (auto ty = parsed->getExportedType(i->ident)) {
                 imported.push_back(ty.value());
             }
             else {
-                state.error(range, "Type \"{}\" not found in \"{}\"", i, from);
+                state.error(i->range, "Type \"{}\" not found in \"{}\"", i->ident, from);
             }
         }
     }

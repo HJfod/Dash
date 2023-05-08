@@ -10,8 +10,8 @@ namespace gdml::lang {
         For, In, While,
         If, Else, Try,
         Function, Return, Break, Continue, From,
-        Struct, Decl,
-        Get, Set, Depends,
+        Struct, Decl, Extends,
+        Required, Get, Set, Depends,
         New, Const, Let,
         Export, Import, Extern,
         True, False, Null,
@@ -160,6 +160,9 @@ namespace gdml::lang {
             Rollback rb(stream);
             auto res = Token::pull<T>(stream);
             rb.clearMessages();
+            if (res.isOk()) {
+                rb.commit();
+            }
             return res.ok();
         }
 

@@ -61,6 +61,11 @@ std::string debugPrint(Vec<T> const& vec, size_t i) {
 }
 
 template <>
+inline std::string debugPrint(bool const& b, size_t) {
+    return b ? "true" : "false";
+}
+
+template <>
 inline std::string debugPrint(Param const& p, size_t indent) {
     std::string ret = "{\n";
     ret += std::string(indent + 4, ' ') + "name: " + debugPrint(p.name, indent + 4) + "\n";

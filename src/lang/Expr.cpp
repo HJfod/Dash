@@ -55,11 +55,17 @@ ExprResult<Expr> Expr::pullPrimaryNonCall(Stream& stream) {
         return Ok(expr);
     }
 
+    // anonymous structs
+    if (Token::peek('{', stream)) {
+        TRY_PULL(NodeExpr);
+    }
     PULL_IF(BlockExpr, '{');
     PULL_IF(VarDeclExpr, Keyword::Let);
     PULL_IF(ImportExpr, Keyword::Import);
     PULL_IF(ExportExpr, Keyword::Export);
-    PULL_IF(StructDeclExpr, Keyword::Struct);
+    PULL_IF(NodeDeclExpr, Keyword::Struct);
+    PULL_IF(NodeDeclExpr, Keyword::Extern);
+    PULL_IF(NodeDeclExpr, Keyword::Decl);
     if (Token::peek<Ident>(stream) && Token::peek('{', stream, 1)) {
         GEODE_UNWRAP_INTO(auto expr, NodeExpr::pull(stream));
         rb.commit();

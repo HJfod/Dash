@@ -20,13 +20,13 @@ export struct CCRect {
     width: float;
     height: float;
     origin: CCPoint {
-        // dependent properties makes it so when the dependency is updated, 
+        // dependent properties make it so when the dependency is updated, 
         // this property is updated aswell
         depends x;
         depends y;
         get => {
-            x: this.x,
-            y: this.y
+            x: this.x;
+            y: this.y;
         }
         set(value) => {
             this.x = value.x;
@@ -55,6 +55,11 @@ export extern struct global {
     winSize: CCSize;
 }
 
+export enum Layout {
+
+}
+using Layout;
+
 // extern struct Layout {}
 // extern struct RowLayout extends Layout {}
 // extern struct ColumnLayout extends Layout {}
@@ -69,8 +74,6 @@ export extern decl CCNode {
     size: CCSize <=> { width, height };
     // layout: Layout;
 }
-// All decls implicitly extend CCNode
-decl default extends CCNode;
 
 // extern decl CCLayer {}
 
@@ -80,7 +83,7 @@ decl default extends CCNode;
 //     clicked: fun () => void;
 // }
 
-export extern decl CCLabelBMFont {
+export extern decl CCLabelBMFont extends CCNode {
     text: string;
     font: string;
 }
