@@ -6,6 +6,28 @@
 namespace gdml::lang {
     struct Type;
     struct Value;
+    class Expr;
+
+    struct IdentPath {
+        Ident name;
+        Vec<Ident> path;
+        bool absolute = false;
+
+        constexpr IdentPath() = default;
+        explicit constexpr IdentPath(Ident const& name) : name(name) {}
+
+        constexpr bool operator==(IdentPath const& other) const = default;
+        constexpr std::string toString() const {
+            std::string start = absolute ? "::" : "";
+            if (path.empty()) {
+                return start + name;
+            }
+            return start + fmt::format("{}::{}", fmt::join(path, "::"), name);
+        }
+        constexpr bool isSingle() const {
+            return path.empty() && !absolute;
+        }
+    };
 
     struct GDML_DLL UnkType {};
     struct GDML_DLL VoidType {};
@@ -13,6 +35,18 @@ namespace gdml::lang {
     struct GDML_DLL IntType {};
     struct GDML_DLL FloatType {};
     struct GDML_DLL StrType {};
+
+    struct GDML_DLL ParamType {
+        Ident name;
+        Box<Type> type; // may be unknown - remember to check at call site that function body is valid!!!
+    };
+
+    struct GDML_DLL FunType {
+        Option<IdentPath> name;
+        Vec<ParamType> params;
+        Box<Type> retType;
+        bool isExtern;
+    };
 
     struct GDML_DLL PropType {
         Box<Type> type;
@@ -23,35 +57,62 @@ namespace gdml::lang {
     };
 
     struct GDML_DLL StructType {
-        Option<std::string> name;
-        Map<std::string, PropType> members;
+        Option<IdentPath> name;
+        Map<Ident, PropType> members;
+        bool isExtern;
     };
+    
     struct GDML_DLL NodeType {
-        std::string name;
-        Map<std::string, PropType> props;
+        IdentPath name;
+        Map<Ident, PropType> props;
     };
+
+    struct GDML_DLL EnumType {
+        Option<IdentPath> name;
+        Map<Ident, Type> variants;
+        bool isExtern;
+    };
+
     struct GDML_DLL RefType {
         Box<Type> type;
+    };
+
+    struct GDML_DLL AliasType {
+        IdentPath alias;
+        Box<Type> type;
+    };
+
+    enum class Primitive {
+        Unk,
+        Void,
+        Bool,
+        Int,
+        Float,
+        Str,
     };
 
     struct GDML_DLL Type {
         std::variant<
             UnkType,
-            VoidType,
-            BoolType, IntType, FloatType, StrType,
-            StructType, NodeType, RefType
+            VoidType, BoolType, IntType, FloatType, StrType,
+            FunType,
+            StructType, NodeType, EnumType,
+            RefType, AliasType
         > kind;
+        Rc<const Expr> decl;
 
         using Value = decltype(kind);
 
         Type() = default;
-        Type(Value const& value) : kind(value) {}
+        Type(Value const& value, Rc<const Expr> decl);
+        Type(Primitive type, std::source_location const loc = std::source_location::current());
 
-        bool equal(Type const& other) const;
+        Type realize() const;
         bool convertible(Type const& other) const;
         Option<Type> getMemberType(std::string const& name) const;
         Set<String> getRequiredMembers() const;
         std::string toString() const;
+        Option<IdentPath> getName() const;
         bool isExportable() const;
     };
 
@@ -85,3 +146,8 @@ namespace gdml::lang {
     
     using TypeCheckResult = ParseResult<Type>;
 }
+
+template <>
+struct std::hash<gdml::lang::IdentPath> {
+    std::size_t operator()(gdml::lang::IdentPath const& path) const noexcept;
+};

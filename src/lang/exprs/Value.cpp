@@ -15,19 +15,19 @@ ExprResult<LitExpr> LitExpr::pull(Stream& stream) {
 Type LitExpr::typecheck(UnitParser&) const {
     return std::visit(makeVisitor {
         [](VoidLit const&) {
-            return Type(VoidType());
+            return Primitive::Void;
         },
         [](BoolLit const&) {
-            return Type(BoolType());
+            return Primitive::Bool;
         },
         [](IntLit const&) {
-            return Type(IntType());
+            return Primitive::Int;
         },
         [](FloatLit const&) {
-            return Type(FloatType());
+            return Primitive::Float;
         },
         [](StrLit const&) {
-            return Type(StrType());
+            return Primitive::Str;
         },
     }, value);
 }
@@ -39,22 +39,36 @@ std::string LitExpr::debug(size_t indent) const {
 
 ExprResult<IdentExpr> IdentExpr::pull(Stream& stream) {
     Rollback rb(stream);
-    GEODE_UNWRAP_INTO(auto value, Token::pull<Ident>(stream));
-    return rb.commit<IdentExpr>(value);
+    IdentPath path;
+    path.absolute = Token::draw(Op::Scope, stream).has_value();
+    while (true) {
+        stream.debugTick();
+        GEODE_UNWRAP_INTO(auto value, Token::pull<Ident>(stream));
+        path.path.push_back(value);
+        if (!Token::draw(Op::Scope, stream)) {
+            break;
+        }
+    }
+    if (path.path.empty()) {
+        return rb.error("Expected identifier");
+    }
+    path.name = path.path.front();
+    path.path.erase(path.path.begin());
+    return rb.commit<IdentExpr>(path);
 }
 
 Type IdentExpr::typecheck(UnitParser& state) const {
-    auto var = state.getVar(ident);
+    auto var = state.getVar(path);
     if (!var) {
-        state.error(range, "Unknown identifier \"{}\"", ident);
-        return Type(UnkType());
+        state.error(range, "Unknown identifier \"{}\"", path);
+        return Type(UnkType(), nullptr);
     }
     return var->type;
 }
 
 std::string IdentExpr::debug(size_t indent) const {
     return DebugPrint("IdentExpr", indent)
-        .member("ident", ident);
+        .member("path", path);
 }
 
 ExprResult<PropExpr> PropExpr::pull(Stream& stream) {
@@ -77,7 +91,8 @@ std::string PropExpr::debug(size_t indent) const {
 
 ExprResult<NodeExpr> NodeExpr::pull(Stream& stream) {
     Rollback rb(stream);
-    auto ident = Token::draw<Ident>(stream);
+    auto ident = IdentExpr::pull(stream).ok();
+    rb.clearMessages();
     GEODE_UNWRAP(Token::pull('{', stream));
     Vec<Rc<PropExpr>> props;
     Vec<Rc<NodeExpr>> children;
@@ -100,19 +115,19 @@ ExprResult<NodeExpr> NodeExpr::pull(Stream& stream) {
 
 Type NodeExpr::typecheck(UnitParser& state) const {
     if (ident) {
-        auto ty = state.getType(ident.value());
+        auto ty = state.getType(ident.value()->path);
         if (!ty) {
             // todo: hint that you can define nodes with decl
-            state.error(range, "Unknown node or struct \"{}\"", ident.value());
-            return Type(UnkType());
+            state.error(ident.value()->range, "Unknown node or struct \"{}\"", ident.value()->path);
+            return Type(UnkType(), nullptr);
         }
         Set<Ident> assigned;
         for (auto& prop : props) {
             auto valty = prop->typecheck(state);
             auto mem = ty->getMemberType(prop->prop);
             if (!mem) {
-                state.error(range, "Node or struct \"{}\" has no property \"{}\"", ident.value(), prop->prop);
-                return Type(UnkType());
+                state.error(range, "Node or struct \"{}\" has no property \"{}\"", ident.value()->path, prop->prop);
+                return Type(UnkType(), nullptr);
             }
             if (mem.value().convertible(valty)) {
                 state.error(
@@ -161,7 +176,7 @@ Type NodeExpr::typecheck(UnitParser& state) const {
         for (auto& child : children) {
             child->typecheck(state);
         }
-        return Type(ty);
+        return Type(ty, shared_from_this());
     }
 }
 

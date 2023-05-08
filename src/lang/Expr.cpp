@@ -20,6 +20,13 @@ using namespace gdml;
         return Ok(value);                                   \
     }
 
+#define PULL_IF_2(expr, cond, cond2)                                    \
+    if (Token::peek(cond, stream) && Token::peek(cond2, stream, 1)) {   \
+        GEODE_UNWRAP_INTO(auto value, expr::pull(stream));              \
+        rb.commit();                                                    \
+        return Ok(value);                                               \
+    }
+
 ExprResult<Expr> Expr::pull(Stream& stream) {
     return BinOpExpr::pull(stream);
 }
@@ -61,11 +68,15 @@ ExprResult<Expr> Expr::pullPrimaryNonCall(Stream& stream) {
     }
     PULL_IF(BlockExpr, '{');
     PULL_IF(VarDeclExpr, Keyword::Let);
+    PULL_IF(AliasExpr, Keyword::Using);
     PULL_IF(ImportExpr, Keyword::Import);
     PULL_IF(ExportExpr, Keyword::Export);
     PULL_IF(NodeDeclExpr, Keyword::Struct);
-    PULL_IF(NodeDeclExpr, Keyword::Extern);
+    PULL_IF_2(NodeDeclExpr, Keyword::Extern, Keyword::Struct);
     PULL_IF(NodeDeclExpr, Keyword::Decl);
+    PULL_IF_2(NodeDeclExpr, Keyword::Extern, Keyword::Decl);
+    PULL_IF(EnumDeclExpr, Keyword::Enum);
+    PULL_IF_2(EnumDeclExpr, Keyword::Extern, Keyword::Enum);
     if (Token::peek<Ident>(stream) && Token::peek('{', stream, 1)) {
         GEODE_UNWRAP_INTO(auto expr, NodeExpr::pull(stream));
         rb.commit();
@@ -81,4 +92,9 @@ ExprResult<Expr> Expr::pullPrimaryNonCall(Stream& stream) {
     else {
         return Err(token.unwrapErr());
     }
+}
+
+ExprResult<TypeExpr> TypeExpr::pull(Stream& stream) {
+    GEODE_UNWRAP_INTO(auto ty, TypeIdentExpr::pull(stream));
+    return Ok(ty);
 }

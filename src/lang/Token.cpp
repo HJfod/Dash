@@ -21,6 +21,7 @@ static std::unordered_map<Keyword, std::string> KEYWORDS {
     { Keyword::From,        "from" },
     { Keyword::Struct,      "struct" },
     { Keyword::Decl,        "decl" },
+    { Keyword::Enum,        "enum" },
     { Keyword::Extends,     "extends" },
     { Keyword::Required,    "required" },
     { Keyword::Get,         "get" },
@@ -29,6 +30,7 @@ static std::unordered_map<Keyword, std::string> KEYWORDS {
     { Keyword::New,         "new" },
     { Keyword::Const,       "const" },
     { Keyword::Let,         "let" },
+    { Keyword::Using,       "using" },
     { Keyword::Export,      "export" },
     { Keyword::Import,      "import" },
     { Keyword::Extern,      "extern" },
@@ -61,6 +63,7 @@ static std::unordered_map<Op, std::tuple<std::string, size_t, OpDir>> OPS {
     { Op::Arrow,    { "->",  0,  OpDir::RTL } },
     { Op::Farrow,   { "=>",  0,  OpDir::RTL } },
     { Op::Bind,     { "<=>", 0,  OpDir::LTR } },
+    { Op::Scope,    { "::",  0,  OpDir::LTR } },
 };
 
 static std::string INVALID_IDENT_CHARS = ".,;(){}[]@`\\´¨'\"";
@@ -271,7 +274,6 @@ ParseResult<Token> Token::pull(Stream& stream) {
         }
         if (foundDot) {
             try {
-                rb.commit();
                 return done(Token(std::stod(num)));
             }
             catch(...) {
@@ -280,19 +282,12 @@ ParseResult<Token> Token::pull(Stream& stream) {
         }
         else {
             try {
-                rb.commit();
                 return done(Token(std::stoul(num)));
             }
             catch(...) {
                 return rb.error("Invalid integer literal");
             }
         }
-    }
-
-    // punctuation
-    if (std::string("()[]{}:;,.@").find_first_of(stream.peek()) != std::string::npos) {
-        rb.commit();
-        return done(Token(Punct(stream.next())));
     }
 
     // other
@@ -304,15 +299,22 @@ ParseResult<Token> Token::pull(Stream& stream) {
     // idents can't contain any of the same characters as operators
     if (ident.empty()) {
         std::string maybeOp;
+        auto first = stream.peek();
+        auto pos = stream.offset();
         while (isOpCh(stream.peek())) {
             maybeOp += stream.next();
         }
         
         for (auto const& [op, va] : OPS) {
             if (std::get<0>(va) == maybeOp) {
-                rb.commit();
                 return done(Token(op));
             }
+        }
+
+        // punctuation
+        if (std::string("()[]{}:;,.@").find_first_of(first) != std::string::npos) {
+            stream.navigate(pos + 1);
+            return done(Token(Punct(first)));
         }
 
         return rb.error("Invalid operator '{}'", ident);
@@ -320,29 +322,24 @@ ParseResult<Token> Token::pull(Stream& stream) {
 
     // special literals
     if (ident == "true") {
-        rb.commit();
         return done(Token(Lit(true)));
     }
     if (ident == "false") {
-        rb.commit();
         return done(Token(Lit(false)));
     }
     if (ident == "void") {
-        rb.commit();
         return done(Token(Lit(VoidLit())));
     }
 
     // keyword
     for (auto const& [kw, va] : KEYWORDS) {
         if (va == ident) {
-            rb.commit();
             return done(Token(kw));
         }
     }
 
     // identifier
     if (isIdent(ident)) {
-        rb.commit();
         return done(Token(ident));
     }
 

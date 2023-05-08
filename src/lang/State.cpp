@@ -12,38 +12,48 @@ Rc<AST> ParsedSrc::getAST() const {
     return m_ast;
 }
 
-bool ParsedSrc::addExportedType(Type const& type) {TRY_WITH_DEBINFO(
-    auto name = type.toString();
-    if (m_exportedTypes.contains(name)) {
+bool ParsedSrc::addExportedType(Type const& type) {
+    auto name = type.getName();
+    if (!name || m_exportedTypes.contains(name.value())) {
         return false;
     }
-    m_exportedTypes.insert({ name, type });
+    m_exportedTypes.insert({ name.value(), type });
     return true;
-)}
+}
 
-Option<Type> ParsedSrc::getExportedType(Ident const& name) const {TRY_WITH_DEBINFO(
+Option<Type> ParsedSrc::getExportedType(IdentPath const& name) const {
     if (m_exportedTypes.contains(name)) {
         return m_exportedTypes.at(name);
     }
     return None;
-)}
+}
 
-Vec<Type> ParsedSrc::getExportedTypes() const {TRY_WITH_DEBINFO(
+Vec<Type> ParsedSrc::getExportedTypes() const {
     Vec<Type> types;
     for (auto& [_, ty] : m_exportedTypes) {
         types.push_back(ty);
     }
     return types;
-)}
+}
+
+void Scope::pushType(Type const& type) {
+    if (auto name = type.getName()) {
+        this->types.insert({ name.value(), type });
+    }
+}
+
+void Scope::pushVar(Var const& var) {
+    this->vars.insert({ var.name, var });
+}
 
 UnitParser::UnitParser(Parser& parser, Rc<Src> src)
   : m_parser(parser), m_src(src), m_scopes({ Scope() })
 {
-    this->pushType(Type(VoidType()));
-    this->pushType(Type(BoolType()));
-    this->pushType(Type(IntType()));
-    this->pushType(Type(FloatType()));
-    this->pushType(Type(StrType()));
+    this->pushType(Primitive::Void);
+    this->pushType(Primitive::Bool);
+    this->pushType(Primitive::Int);
+    this->pushType(Primitive::Float);
+    this->pushType(Primitive::Str);
 }
 
 Rc<ParsedSrc> UnitParser::parse(Parser& shared, Rc<Src> src) {
@@ -72,11 +82,19 @@ Rc<ParsedSrc> UnitParser::getParsedSrc() const {
     return m_parsed;
 }
 
-void UnitParser::pushType(Type const& type) {TRY_WITH_DEBINFO(
-    m_scopes.back().types.insert({ type.toString(), type });
-)}
+bool UnitParser::verifyCanPush(Rc<IdentExpr> name) {
+    if (m_scopes.back().types.contains(name->path) || m_scopes.back().vars.contains(name->path)) {
+        this->error(name->range, "Type \"{}\" already exists in this scope", name->path);
+        return false;
+    }
+    return true;
+}
 
-Type* UnitParser::getType(std::string const& name, bool topOnly) {TRY_WITH_DEBINFO(
+void UnitParser::pushType(Type const& type) {
+    m_scopes.back().pushType(type);
+}
+
+Type* UnitParser::getType(IdentPath const& name, bool topOnly) {
     // Prefer topmost scope
     for (auto& scope : ranges::reverse(m_scopes)) {
         if (scope.types.contains(name)) {
@@ -87,13 +105,13 @@ Type* UnitParser::getType(std::string const& name, bool topOnly) {TRY_WITH_DEBIN
         }
     }
     return nullptr;
-)}
+}
 
-void UnitParser::pushVar(Var const& var) {TRY_WITH_DEBINFO(
-    m_scopes.back().vars.insert({ var.name, var });
-)}
+void UnitParser::pushVar(Var const& var) {
+    m_scopes.back().pushVar(var);
+}
 
-Var* UnitParser::getVar(std::string const& name, bool topOnly) {TRY_WITH_DEBINFO(
+Var* UnitParser::getVar(IdentPath const& name, bool topOnly) {
     // Prefer topmost scope
     for (auto& scope : ranges::reverse(m_scopes)) {
         if (scope.vars.contains(name)) {
@@ -104,21 +122,44 @@ Var* UnitParser::getVar(std::string const& name, bool topOnly) {TRY_WITH_DEBINFO
         }
     }
     return nullptr;
-)}
+}
 
-void UnitParser::pushScope(bool function) {TRY_WITH_DEBINFO(
+void UnitParser::pushNamespace(Ident const& ns) {
+    m_namespace.push_back(ns);
+}
+
+void UnitParser::popNamespace(std::source_location const loc) {
+    if (m_namespace.empty()) {
+        throw std::runtime_error(fmt::format("Namespace stack is empty (tried to pop from {})", loc));
+    }
+    m_namespace.pop_back();
+}
+
+void UnitParser::pushScope(bool function) {
     m_scopes.emplace_back().function = function;
-)}
+}
 
-void UnitParser::popScope() {TRY_WITH_DEBINFO(
+void UnitParser::popScope(std::source_location const loc) {
     m_scopes.pop_back();
     if (m_scopes.empty()) {
-        throw std::runtime_error("Scope stack is empty");
+        throw std::runtime_error(fmt::format("Scope stack is empty (tried to pop from {})", loc));
     }
-)}
+}
 
 bool UnitParser::isRootScope() const {
     return m_scopes.size() == 1;
+}
+
+Scope& UnitParser::scope(size_t depth) {
+    try {
+        return m_scopes.at(m_scopes.size() - depth - 1);
+    }
+    catch(...) {
+        throw std::runtime_error(fmt::format(
+            "Attempted to access scope past bounds ({}) at depth {}",
+            m_scopes.size(), depth
+        ));
+    }
 }
 
 Parser::Parser(Rc<Src> src) : m_root(src) {

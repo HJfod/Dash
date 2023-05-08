@@ -28,17 +28,6 @@ namespace gdml::lang {
         AExpr(Range const& range) : Base(range) {}
     };
 
-    struct GDML_DLL TypeIdentExpr : public AExpr<TypeIdentExpr, TypeExpr> {
-        Ident ident;
-
-        TypeIdentExpr(Ident const& ident, Range const& range)
-            : AExpr(range), ident(ident) {}
-
-        static ExprResult<TypeIdentExpr> pull(Stream& stream);
-        Type typecheck(UnitParser& state) const override;
-        std::string debug(size_t indent = 0) const override;
-    };
-
     struct GDML_DLL LitExpr : public AExpr<LitExpr> {
         Lit value;
 
@@ -51,22 +40,45 @@ namespace gdml::lang {
     };
 
     struct GDML_DLL IdentExpr : public AExpr<IdentExpr> {
-        Ident ident;
+        IdentPath path;
 
-        IdentExpr(Ident const& ident, Range const& range)
-            : AExpr(range), ident(ident) {}
+        IdentExpr(IdentPath const& path, Range const& range)
+            : AExpr(range), path(path) {}
 
         static ExprResult<IdentExpr> pull(Stream& stream);
         Type typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
 
+    struct GDML_DLL TypeIdentExpr : public AExpr<TypeIdentExpr, TypeExpr> {
+        Rc<IdentExpr> expr;
+
+        TypeIdentExpr(Rc<IdentExpr> const& expr, Range const& range)
+            : AExpr(range), expr(expr) {}
+
+        static ExprResult<TypeIdentExpr> pull(Stream& stream);
+        Type typecheck(UnitParser& state) const override;
+        std::string debug(size_t indent = 0) const override;
+    };
+
+    struct GDML_DLL AliasExpr : public AExpr<AliasExpr> {
+        Rc<IdentExpr> alias;
+        Rc<TypeExpr> type;
+
+        AliasExpr(Rc<IdentExpr> alias, Rc<TypeExpr> type, Range const& range)
+            : AExpr(range), alias(alias), type(type) {}
+
+        static ExprResult<AliasExpr> pull(Stream& stream);
+        Type typecheck(UnitParser& state) const override;
+        std::string debug(size_t indent = 0) const override;
+    };
+
     struct GDML_DLL VarDeclExpr : public AExpr<VarDeclExpr> {
-        Ident ident;
+        Rc<IdentExpr> ident;
         Option<Rc<TypeExpr>> type;
         Option<Rc<Expr>> value;
 
-        VarDeclExpr(Ident const& ident, Option<Rc<TypeExpr>> type, Option<Rc<Expr>> value, Range const& range)
+        VarDeclExpr(Rc<IdentExpr> const& ident, Option<Rc<TypeExpr>> type, Option<Rc<Expr>> value, Range const& range)
             : AExpr(range), ident(ident), type(type), value(value) {}
 
         static ExprResult<VarDeclExpr> pull(Stream& stream);
@@ -84,34 +96,6 @@ namespace gdml::lang {
 
         static ExprResult<Expr> pull(Stream& stream, size_t prec, Rc<Expr> lhs);
         static ExprResult<Expr> pull(Stream& stream);
-        Type typecheck(UnitParser& state) const override;
-        std::string debug(size_t indent = 0) const override;
-    };
-
-    struct GDML_DLL Param {
-        Ident name;
-        Option<Rc<TypeExpr>> type;
-        Option<Rc<Expr>> value;
-        Range range;
-    };
-
-    struct GDML_DLL FunDeclExpr : public AExpr<FunDeclExpr> {
-        Option<Ident> name;
-        Vec<Param> params;
-        Rc<Expr> body;
-        Option<Rc<TypeExpr>> retType;
-
-        FunDeclExpr(
-            Option<Ident> const& name,
-            Vec<Param> const& params,
-            Rc<Expr> body,
-            Option<Rc<TypeExpr>> const& retType,
-            Range const& range
-        ) : AExpr(range), name(name), params(params), body(body), retType(retType) {}
-
-        static ExprResult<FunDeclExpr> pull(Stream& stream);
-        static ExprResult<FunDeclExpr> pullArrow(Stream& stream);
-        static ParseResult<> pullParams(Vec<Param>& target, Stream& stream, bool requireTypes);
         Type typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };
@@ -140,6 +124,35 @@ namespace gdml::lang {
         std::string debug(size_t indent = 0) const override;
     };
 
+    struct GDML_DLL Param {
+        Ident name;
+        Option<Rc<TypeExpr>> type;
+        Option<Rc<Expr>> value;
+        Range range;
+    };
+
+    struct GDML_DLL FunDeclExpr : public AExpr<FunDeclExpr> {
+        Option<Rc<IdentExpr>> name;
+        Vec<Param> params;
+        Rc<Expr> body;
+        Option<Rc<TypeExpr>> retType;
+        bool isExtern;
+
+        FunDeclExpr(
+            Option<Rc<IdentExpr>> const& name,
+            Vec<Param> const& params,
+            Rc<Expr> body,
+            Option<Rc<TypeExpr>> const& retType,
+            Range const& range
+        ) : AExpr(range), name(name), params(params), body(body), retType(retType) {}
+
+        static ExprResult<FunDeclExpr> pull(Stream& stream);
+        static ExprResult<FunDeclExpr> pullArrow(Stream& stream);
+        static ParseResult<> pullParams(Vec<Param>& target, Stream& stream, bool requireTypes);
+        Type typecheck(UnitParser& state) const override;
+        std::string debug(size_t indent = 0) const override;
+    };
+
     struct GDML_DLL PropExpr : public AExpr<PropExpr> {
         Ident prop;
         Rc<Expr> value;
@@ -153,11 +166,11 @@ namespace gdml::lang {
     };
 
     struct GDML_DLL NodeExpr : public AExpr<NodeExpr> {
-        Option<Ident> ident;
+        Option<Rc<IdentExpr>> ident;
         Vec<Rc<PropExpr>> props;
         Vec<Rc<NodeExpr>> children;
 
-        NodeExpr(Option<Ident> ident, Vec<Rc<PropExpr>> props, Vec<Rc<NodeExpr>> children, Range const& range)
+        NodeExpr(Option<Rc<IdentExpr>> ident, Vec<Rc<PropExpr>> props, Vec<Rc<NodeExpr>> children, Range const& range)
             : AExpr(range), ident(ident), props(props), children(children) {}
 
         static ExprResult<NodeExpr> pull(Stream& stream);
@@ -193,14 +206,14 @@ namespace gdml::lang {
     };
 
     struct GDML_DLL NodeDeclExpr : public AExpr<NodeDeclExpr> {
-        Option<Ident> ident;
+        Option<Rc<IdentExpr>> ident;
         Vec<Rc<MemberDeclExpr>> members;
         Option<Rc<IdentExpr>> extends;
         bool isStruct;
         bool isExtern;
 
         NodeDeclExpr(
-            Option<Ident> const& ident,
+            Option<Rc<IdentExpr>> const& ident,
             Vec<Rc<MemberDeclExpr>> const& members,
             Option<Rc<IdentExpr>> const& extends,
             bool isStruct, 
@@ -208,7 +221,24 @@ namespace gdml::lang {
             Range const& range
         ) : AExpr(range), ident(ident), members(members), extends(extends), isStruct(isStruct), isExtern(isExtern) {}
 
-        static ExprResult<NodeDeclExpr> pull(Stream& stream);
+        static ExprResult<NodeDeclExpr> pull(Stream& stream, bool implicitStruct = false);
+        Type typecheck(UnitParser& state) const override;
+        std::string debug(size_t indent = 0) const override;
+    };
+
+    struct GDML_DLL EnumDeclExpr : public AExpr<EnumDeclExpr> {
+        Option<Rc<IdentExpr>> ident;
+        Vec<Rc<NodeDeclExpr>> variants;
+        bool isExtern;
+
+        EnumDeclExpr(
+            Option<Rc<IdentExpr>> const& ident,
+            Vec<Rc<NodeDeclExpr>> const& variants,
+            bool isExtern,
+            Range const& range
+        ) : AExpr(range), ident(ident), variants(variants), isExtern(isExtern) {}
+
+        static ExprResult<EnumDeclExpr> pull(Stream& stream);
         Type typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };

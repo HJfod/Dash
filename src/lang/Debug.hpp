@@ -66,6 +66,11 @@ inline std::string debugPrint(bool const& b, size_t) {
 }
 
 template <>
+inline std::string debugPrint(IdentPath const& p, size_t) {
+    return p.toString();
+}
+
+template <>
 inline std::string debugPrint(Param const& p, size_t indent) {
     std::string ret = "{\n";
     ret += std::string(indent + 4, ' ') + "name: " + debugPrint(p.name, indent + 4) + "\n";
@@ -101,14 +106,22 @@ struct DebugPrint {
     }
 };
 
-#define TRY_WITH_DEBINFO(...)                       \
-    try {                                           \
-        __VA_ARGS__                                 \
-    } catch (std::exception const& e) {             \
-        auto loc = std::source_location::current(); \
-        throw std::runtime_error(fmt::format(       \
-            "{} (from {}:{} in {})",                \
-            e.what(), loc.line(), loc.column(),     \
-            loc.file_name()                         \
-        ));                                         \
+template <>
+class fmt::formatter<gdml::lang::IdentPath> {
+public:
+    constexpr auto parse (format_parse_context& ctx) { return ctx.begin(); }
+    template <typename Context>
+    constexpr auto format (gdml::lang::IdentPath const& path, Context& ctx) const {
+        return format_to(ctx.out(), "{}", path.toString());
     }
+};
+
+template <>
+class fmt::formatter<std::source_location> {
+public:
+    constexpr auto parse (format_parse_context& ctx) { return ctx.begin(); }
+    template <typename Context>
+    constexpr auto format (std::source_location const& loc, Context& ctx) const {
+        return format_to(ctx.out(), "{}::{}:{} in {}", loc.function_name(), loc.line(), loc.column(), loc.file_name());
+    }
+};

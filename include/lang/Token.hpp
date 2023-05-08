@@ -10,9 +10,9 @@ namespace gdml::lang {
         For, In, While,
         If, Else, Try,
         Function, Return, Break, Continue, From,
-        Struct, Decl, Extends,
+        Struct, Decl, Enum, Extends,
         Required, Get, Set, Depends,
-        New, Const, Let,
+        New, Const, Let, Using,
         Export, Import, Extern,
         True, False, Null,
     };
@@ -41,6 +41,7 @@ namespace gdml::lang {
         Arrow,  // a -> b
         Farrow, // a => b
         Bind,   // a <=> b
+        Scope,  // a::b
     };
 
     using VoidLit = std::monostate;

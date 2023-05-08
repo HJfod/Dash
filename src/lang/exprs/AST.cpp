@@ -63,7 +63,7 @@ Type ImportExpr::typecheck(UnitParser& state) const {
     auto src = SrcFile::from(file);
     if (!src) {
         state.error(range, "{}", src.unwrapErr());
-        return Type(VoidType());
+        return Type(VoidType(), nullptr);
     }
     auto parsed = UnitParser::parse(state.getShared(), src.unwrap());
     Vec<Type> imported;
@@ -75,23 +75,25 @@ Type ImportExpr::typecheck(UnitParser& state) const {
     }
     else {
         for (auto& i : imports) {
-            if (auto ty = parsed->getExportedType(i->ident)) {
+            if (auto ty = parsed->getExportedType(i->path)) {
                 imported.push_back(ty.value());
             }
             else {
-                state.error(i->range, "Type \"{}\" not found in \"{}\"", i->ident, from);
+                state.error(i->range, "Type \"{}\" not found in \"{}\"", i->path, from);
             }
         }
     }
     for (auto& ty : imported) {
-        if (state.getType(ty.toString(), true)) {
-            state.error(range, "Type \"{}\" already exists in this scope", ty.toString());
-        }
-        else {
-            state.pushType(ty);
+        if (auto name = ty.getName()) {
+            if (state.getType(name.value(), true)) {
+                state.error(range, "Type \"{}\" already exists in this scope", ty.toString());
+            }
+            else {
+                state.pushType(ty);
+            }
         }
     }
-    return Type(VoidType());
+    return Type(VoidType(), nullptr);
 }
 
 std::string ImportExpr::debug(size_t indent) const {
@@ -128,7 +130,7 @@ Type ListExpr::typecheck(UnitParser& state) const {
         expr->typecheck(state);
     }
     // todo: return types
-    return Type(VoidType());
+    return Type(VoidType(), nullptr);
 }
 
 std::string ListExpr::debug(size_t indent) const {
@@ -176,7 +178,7 @@ Type AST::typecheck(UnitParser& state) const {
     for (auto& expr : exprs) {
         expr->typecheck(state);
     }
-    return Type(VoidType());
+    return Type(VoidType(), nullptr);
 }
 
 std::string AST::debug(size_t indent) const {

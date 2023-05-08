@@ -10,12 +10,14 @@ namespace gdml::lang {
     class AST;
     class UnitParser;
     class Parser;
+    class Expr;
+    class IdentExpr;
 
     class GDML_DLL ParsedSrc final {
     private:
         Rc<Src> m_src;
         Rc<AST> m_ast;
-        Map<Ident, Type> m_exportedTypes;
+        Map<IdentPath, Type> m_exportedTypes;
 
         friend class UnitParser;
 
@@ -25,19 +27,23 @@ namespace gdml::lang {
         Rc<AST> getAST() const;
 
         bool addExportedType(Type const& type);
-        Option<Type> getExportedType(Ident const& name) const;
+        Option<Type> getExportedType(IdentPath const& name) const;
         Vec<Type> getExportedTypes() const;
     };
 
     struct GDML_DLL Var final {
-        std::string name;
+        IdentPath name;
         Type type;
+        Rc<const Expr> decl;
     };
 
     struct GDML_DLL Scope final {
-        Map<std::string, Type> types;
-        Map<std::string, Var> vars;
+        Map<IdentPath, Type> types;
+        Map<IdentPath, Var> vars;
         bool function;
+
+        void pushType(Type const& type);
+        void pushVar(Var const& var);
     };
 
     class GDML_DLL UnitParser final {
@@ -46,6 +52,7 @@ namespace gdml::lang {
         Vec<Scope> m_scopes;
         Rc<Src> m_src;
         Rc<ParsedSrc> m_parsed;
+        Vec<Ident> m_namespace;
 
         UnitParser(Parser& parser, Rc<Src> src);
         UnitParser(UnitParser const&) = delete;
@@ -62,15 +69,21 @@ namespace gdml::lang {
         Rc<Src> getSrc() const;
         Rc<ParsedSrc> getParsedSrc() const;
 
+        bool verifyCanPush(Rc<IdentExpr> name);
+
         void pushType(Type const& type);
-        Type* getType(std::string const& name, bool topOnly = false);
+        Type* getType(IdentPath const& name, bool topOnly = false);
 
         void pushVar(Var const& var);
-        Var* getVar(std::string const& name, bool topOnly = false);
+        Var* getVar(IdentPath const& name, bool topOnly = false);
+
+        void pushNamespace(Ident const& ns);
+        void popNamespace(std::source_location const = std::source_location::current());
 
         void pushScope(bool function);
-        void popScope();
+        void popScope(std::source_location const = std::source_location::current());
         bool isRootScope() const;
+        Scope& scope(size_t depth);
 
         template <class... Args>
         void warn(Range const& range, std::string const& fmt, Args&&... args) {
