@@ -124,6 +124,18 @@ namespace gdml::lang {
         std::string debug(size_t indent = 0) const override;
     };
 
+    struct GDML_DLL ReturnExpr : public AExpr<ReturnExpr> {
+        Option<Rc<Expr>> expr;
+        Option<Rc<IdentExpr>> from;
+
+        ReturnExpr(Option<Rc<Expr>> const& expr, Option<Rc<IdentExpr>> const& from, Range const& range)
+            : AExpr(range), expr(expr), from(from) {}
+        
+        static ExprResult<ReturnExpr> pull(Rc<Expr> target, Stream& stream);
+        Type typecheck(UnitParser& state) const override;
+        std::string debug(size_t indent = 0) const override;
+    };
+
     struct GDML_DLL Param {
         Ident name;
         Option<Rc<TypeExpr>> type;
@@ -132,14 +144,17 @@ namespace gdml::lang {
     };
 
     struct GDML_DLL FunDeclExpr : public AExpr<FunDeclExpr> {
-        Option<Rc<IdentExpr>> name;
+        using AsName = std::monostate;
+        using Name = std::variant<std::nullopt_t, Rc<IdentExpr>, Op, AsName>;
+
+        Name name;
         Vec<Param> params;
         Rc<Expr> body;
         Option<Rc<TypeExpr>> retType;
         bool isExtern;
 
         FunDeclExpr(
-            Option<Rc<IdentExpr>> const& name,
+            Name const& name,
             Vec<Param> const& params,
             Rc<Expr> body,
             Option<Rc<TypeExpr>> const& retType,

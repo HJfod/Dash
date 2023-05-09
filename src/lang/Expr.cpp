@@ -71,6 +71,7 @@ ExprResult<Expr> Expr::pullPrimaryNonCall(Stream& stream) {
     PULL_IF(AliasExpr, Keyword::Using);
     PULL_IF(ImportExpr, Keyword::Import);
     PULL_IF(ExportExpr, Keyword::Export);
+    PULL_IF(FunDeclExpr, Keyword::Function);
     PULL_IF(NodeDeclExpr, Keyword::Struct);
     PULL_IF_2(NodeDeclExpr, Keyword::Extern, Keyword::Struct);
     PULL_IF(NodeDeclExpr, Keyword::Decl);

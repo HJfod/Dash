@@ -90,15 +90,58 @@ ParseResult<> FunDeclExpr::pullParams(Vec<Param>& target, Stream& stream, bool r
 ExprResult<FunDeclExpr> FunDeclExpr::pull(Stream& stream) {
     Rollback rb(stream);
     GEODE_UNWRAP(Token::pull(Keyword::Function, stream));
-    auto name = IdentExpr::pull(stream).ok();
-    rb.clearMessages();
-    GEODE_UNWRAP(Token::pull('(', stream));
+    Name name = None;
     Vec<Param> params;
-    GEODE_UNWRAP(FunDeclExpr::pullParams(params, stream, true));
-    GEODE_UNWRAP(Token::pull(')', stream));
     Option<Rc<TypeExpr>> ret;
-    if (Token::draw(Op::Arrow, stream)) {
-        GEODE_UNWRAP_INTO(ret, TypeExpr::pull(stream));
+    // special operator syntax `fun <ident>: <type> <op> <ident>: <type>`
+    if (Token::peek<Ident>(stream) && Token::peek(':', stream, 1)) {
+        auto p1start = stream.location();
+        GEODE_UNWRAP_INTO(auto ident1, Token::pull<Ident>(stream));
+        GEODE_UNWRAP(Token::pull(':', stream));
+        GEODE_UNWRAP_INTO(auto type1, TypeExpr::pull(stream));
+        auto p1end = stream.location();
+        params.push_back(Param {
+            .name = ident1,
+            .type = type1,
+            .value = None,
+            .range = Range(p1start, p1end),
+        });
+        if (Token::draw(Keyword::As, stream)) {
+            name = AsName();
+            GEODE_UNWRAP_INTO(ret, TypeExpr::pull(stream));
+        }
+        else {
+            GEODE_UNWRAP_INTO(name, Token::pull<Op>(stream));
+            auto p2start = stream.location();
+            GEODE_UNWRAP_INTO(auto ident2, Token::pull<Ident>(stream));
+            GEODE_UNWRAP(Token::pull(':', stream));
+            GEODE_UNWRAP_INTO(auto type2, TypeExpr::pull(stream));
+            auto p2end = stream.location();
+            params.push_back(Param {
+                .name = ident2,
+                .type = type2,
+                .value = None,
+                .range = Range(p2start, p2end),
+            });
+            if (Token::draw(Op::Arrow, stream)) {
+                GEODE_UNWRAP_INTO(ret, TypeExpr::pull(stream));
+            }
+        }
+    }
+    else {
+        if (auto ident = IdentExpr::pull(stream)) {
+            name = ident.unwrap();
+        }
+        else if (auto op = Token::pull<Op>(stream)) {
+            name = op.unwrap();
+        }
+        rb.clearMessages();
+        GEODE_UNWRAP(Token::pull('(', stream));
+        GEODE_UNWRAP(FunDeclExpr::pullParams(params, stream, true));
+        GEODE_UNWRAP(Token::pull(')', stream));
+        if (Token::draw(Op::Arrow, stream)) {
+            GEODE_UNWRAP_INTO(ret, TypeExpr::pull(stream));
+        }
     }
     GEODE_UNWRAP(Token::pull('{', stream));
     GEODE_UNWRAP_INTO(auto body, ListExpr::pull(stream));
@@ -133,13 +176,13 @@ ExprResult<FunDeclExpr> FunDeclExpr::pullArrow(Stream& stream) {
 
 Type FunDeclExpr::typecheck(UnitParser& state) const {
     FunType fun;
-    if (name) {
-        fun.name = name.value()->path;
+    if (std::holds_alternative<Rc<IdentExpr>>(name)) {
+        fun.name = std::get<Rc<IdentExpr>>(name)->path;
     }
     fun.isExtern = isExtern;
 
-    if (name) {
-        state.verifyCanPush(name.value());
+    if (std::holds_alternative<Rc<IdentExpr>>(name)) {
+        state.verifyCanPush(std::get<Rc<IdentExpr>>(name));
     }
 
     state.pushScope(true);
@@ -174,7 +217,7 @@ Type FunDeclExpr::typecheck(UnitParser& state) const {
     auto ret = Type(fun, shared_from_this());
 
     // allow recursion by pushing fun type before body check
-    state.scope(1).pushType(ret);
+    state.scope(1).push(ret);
 
     if (!body->typecheck(state).convertible(fun.retType)) {
         state.error(body->range, "Function body does not match return type");
@@ -186,9 +229,24 @@ Type FunDeclExpr::typecheck(UnitParser& state) const {
 
 std::string FunDeclExpr::debug(size_t indent) const {
     return DebugPrint("FunDeclExpr", indent)
-        .member("name", name)
+        .member("name", std::visit(makeVisitor {
+            [](std::nullopt_t const&) {
+                return std::string("none");
+            },
+            [](Rc<IdentExpr> const& expr) {
+                return expr->path.toString();
+            },
+            [](Op const& op) {
+                return tokenToString(op, true);
+            },
+            [](AsName const&) {
+                return std::string("as");
+            },
+        }, name))
         .member("params", params)
-        .member("body", body);
+        .member("body", body)
+        .member("retType", retType)
+        .member("isExtern", isExtern);
 }
 
 ExprResult<MemberDeclExpr> MemberDeclExpr::pull(Stream& stream) {

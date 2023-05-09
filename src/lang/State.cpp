@@ -36,18 +36,29 @@ Vec<Type> ParsedSrc::getExportedTypes() const {
     return types;
 }
 
-void Scope::pushType(Type const& type) {
+Scope::Scope(Option<Ident> const& name, bool function, UnitParser& parser)
+  : m_name(name), m_function(function), m_parser(parser) {}
+
+void Scope::push(Type const& type) {
     if (auto name = type.getName()) {
-        this->types.insert({ name.value(), type });
+        this->m_entities.insert({ name.value(), type });
     }
 }
 
-void Scope::pushVar(Var const& var) {
-    this->vars.insert({ var.name, var });
+void Scope::push(Var const& var) {
+    this->m_entities.insert({ var.name, var });
+}
+
+void Scope::push(Fun const& fun) {
+    this->m_entities.insert({ fun.name, fun });
+}
+
+void Scope::push(Namespace const& ns) {
+    this->m_entities.insert({ ns.name, ns });
 }
 
 UnitParser::UnitParser(Parser& parser, Rc<Src> src)
-  : m_parser(parser), m_src(src), m_scopes({ Scope() })
+  : m_parser(parser), m_src(src), m_scopes({ Scope(None, false, *this) })
 {
     this->pushType(Primitive::Void);
     this->pushType(Primitive::Bool);
@@ -83,60 +94,52 @@ Rc<ParsedSrc> UnitParser::getParsedSrc() const {
 }
 
 bool UnitParser::verifyCanPush(Rc<IdentExpr> name) {
-    if (m_scopes.back().types.contains(name->path) || m_scopes.back().vars.contains(name->path)) {
-        this->error(name->range, "Type \"{}\" already exists in this scope", name->path);
+    if (m_scopes.back().m_entities.contains(name->path)) {
+        this->error(name->range, "Type or variable \"{}\" already exists in this scope", name->path);
         return false;
     }
     return true;
 }
 
+Result<FullIdentPath> UnitParser::resolve(IdentPath const& name) {
+}
+
 void UnitParser::pushType(Type const& type) {
-    m_scopes.back().pushType(type);
+    m_scopes.back().push(type);
 }
 
 Type* UnitParser::getType(IdentPath const& name, bool topOnly) {
     // Prefer topmost scope
     for (auto& scope : ranges::reverse(m_scopes)) {
-        if (scope.types.contains(name)) {
-            return &scope.types.at(name);
+        if (scope.m_entities.contains(name)) {
+            return std::get_if<Type>(&scope.m_entities.at(name));
         }
         if (topOnly) {
-            return nullptr;
+            break;
         }
     }
     return nullptr;
 }
 
 void UnitParser::pushVar(Var const& var) {
-    m_scopes.back().pushVar(var);
+    m_scopes.back().push(var);
 }
 
 Var* UnitParser::getVar(IdentPath const& name, bool topOnly) {
     // Prefer topmost scope
     for (auto& scope : ranges::reverse(m_scopes)) {
-        if (scope.vars.contains(name)) {
-            return &scope.vars.at(name);
+        if (scope.m_entities.contains(name)) {
+            return std::get_if<Var>(&scope.m_entities.at(name));
         }
         if (topOnly) {
-            return nullptr;
+            break;
         }
     }
     return nullptr;
 }
 
-void UnitParser::pushNamespace(Ident const& ns) {
-    m_namespace.push_back(ns);
-}
-
-void UnitParser::popNamespace(std::source_location const loc) {
-    if (m_namespace.empty()) {
-        throw std::runtime_error(fmt::format("Namespace stack is empty (tried to pop from {})", loc));
-    }
-    m_namespace.pop_back();
-}
-
-void UnitParser::pushScope(bool function) {
-    m_scopes.emplace_back().function = function;
+void UnitParser::pushScope(Option<Ident> const& name, bool function) {
+    m_scopes.emplace_back(name, function, *this);
 }
 
 void UnitParser::popScope(std::source_location const loc) {

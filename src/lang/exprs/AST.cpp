@@ -138,6 +138,33 @@ std::string ListExpr::debug(size_t indent) const {
         .member("exprs", exprs);
 }
 
+ExprResult<ReturnExpr> ReturnExpr::pull(Rc<Expr> target, Stream& stream) {
+    Rollback rb(stream);
+    GEODE_UNWRAP(Token::pull(Keyword::Return, stream));
+    auto expr = Expr::pull(stream).ok();
+    rb.clearMessages();
+    Option<Rc<IdentExpr>> from;
+    if (Token::draw(Keyword::From, stream)) {
+        GEODE_UNWRAP_INTO(from, IdentExpr::pull(stream));
+    }
+    return rb.commit<ReturnExpr>(expr, from);
+}
+
+Type ReturnExpr::typecheck(UnitParser& state) const {
+    if (expr) {
+        return expr.value()->typecheck(state);
+    }
+    else {
+        return Primitive::Void;
+    }
+}
+
+std::string ReturnExpr::debug(size_t indent) const {
+    return DebugPrint("ReturnExpr", indent)
+        .member("expr", expr)
+        .member("from", from);
+}
+
 ExprResult<BlockExpr> BlockExpr::pull(Stream& stream) {
     Rollback rb(stream);
     GEODE_UNWRAP(Token::pull('{', stream));

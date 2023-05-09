@@ -13,11 +13,13 @@ namespace gdml::lang {
     class Expr;
     class IdentExpr;
 
+    using FullIdentPath = IdentPath;
+
     class GDML_DLL ParsedSrc final {
     private:
         Rc<Src> m_src;
         Rc<AST> m_ast;
-        Map<IdentPath, Type> m_exportedTypes;
+        Map<FullIdentPath, Type> m_exportedTypes;
 
         friend class UnitParser;
 
@@ -27,7 +29,7 @@ namespace gdml::lang {
         Rc<AST> getAST() const;
 
         bool addExportedType(Type const& type);
-        Option<Type> getExportedType(IdentPath const& name) const;
+        Option<Type> getExportedType(FullIdentPath const& name) const;
         Vec<Type> getExportedTypes() const;
     };
 
@@ -37,13 +39,35 @@ namespace gdml::lang {
         Rc<const Expr> decl;
     };
 
-    struct GDML_DLL Scope final {
-        Map<IdentPath, Type> types;
-        Map<IdentPath, Var> vars;
-        bool function;
+    struct GDML_DLL Fun final {
+        IdentPath name;
+        FunType type;
+        Rc<const Expr> decl;
+    };
 
-        void pushType(Type const& type);
-        void pushVar(Var const& var);
+    struct GDML_DLL Namespace final {
+        IdentPath name;
+        Rc<const Expr> decl;
+    };
+
+    using Entity = std::variant<Var, Fun, Type, Namespace>;
+
+    class GDML_DLL Scope final {
+    private:
+        UnitParser& m_parser;
+        Option<Ident> m_name;
+        Map<FullIdentPath, Entity> m_entities;
+        bool m_function;
+
+        Scope(Option<Ident> const& name, bool function, UnitParser& parser);
+
+        friend class UnitParser;
+
+    public:
+        void push(Type const& type);
+        void push(Var const& var);
+        void push(Namespace const& ns);
+        void push(Fun const& fun);
     };
 
     class GDML_DLL UnitParser final {
@@ -52,7 +76,6 @@ namespace gdml::lang {
         Vec<Scope> m_scopes;
         Rc<Src> m_src;
         Rc<ParsedSrc> m_parsed;
-        Vec<Ident> m_namespace;
 
         UnitParser(Parser& parser, Rc<Src> src);
         UnitParser(UnitParser const&) = delete;
@@ -70,6 +93,7 @@ namespace gdml::lang {
         Rc<ParsedSrc> getParsedSrc() const;
 
         bool verifyCanPush(Rc<IdentExpr> name);
+        Result<FullIdentPath> resolve(IdentPath const& name);
 
         void pushType(Type const& type);
         Type* getType(IdentPath const& name, bool topOnly = false);
@@ -77,13 +101,10 @@ namespace gdml::lang {
         void pushVar(Var const& var);
         Var* getVar(IdentPath const& name, bool topOnly = false);
 
-        void pushNamespace(Ident const& ns);
-        void popNamespace(std::source_location const = std::source_location::current());
-
-        void pushScope(bool function);
+        void pushScope(Option<Ident> const& name, bool function);
         void popScope(std::source_location const = std::source_location::current());
         bool isRootScope() const;
-        Scope& scope(size_t depth);
+        Scope& scope(size_t depth = 0);
 
         template <class... Args>
         void warn(Range const& range, std::string const& fmt, Args&&... args) {

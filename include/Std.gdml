@@ -118,7 +118,7 @@ export fun point: CCPoint * factor: float -> CCPoint {
 export fun size: CCSize as CCPoint {
     return { x: size.width, y: size.height };
 }
-export fun size: CCSize / factor: int -> CCSize {
+export fun /(size: CCSize, factor: int) -> CCSize {
     return { width: size.width / factor, height: size.height / factor };
 }
 export fun size: CCSize / factor: float -> CCSize {

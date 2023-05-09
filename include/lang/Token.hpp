@@ -14,6 +14,7 @@ namespace gdml::lang {
         Required, Get, Set, Depends,
         New, Const, Let, Using,
         Export, Import, Extern,
+        As, Is, Typeof,
         True, False, Null,
     };
 
