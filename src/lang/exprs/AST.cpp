@@ -18,6 +18,19 @@ ExprResult<AttrExpr> AttrExpr::pull(Stream& stream) {
     return rb.commit<AttrExpr>(ident, value);
 }
 
+Type AttrExpr::typecheck(UnitParser& state) const {
+    if (value) {
+        value.value()->typecheck(state);
+    }
+    return Primitive::Void;
+}
+
+std::string AttrExpr::debug(size_t indent) const {
+    return DebugPrint("AttrExpr", indent)
+        .member("attribute", attribute)
+        .member("value", value);
+}
+
 ExprResult<ExportExpr> ExportExpr::pull(Stream& stream) {
     Rollback rb(stream);
     GEODE_UNWRAP(Token::pull(Keyword::Export, stream));
@@ -150,11 +163,13 @@ std::string ListExpr::debug(size_t indent) const {
         .member("exprs", exprs);
 }
 
-ExprResult<ReturnExpr> ReturnExpr::pull(Rc<Expr> target, Stream& stream) {
+ExprResult<ReturnExpr> ReturnExpr::pull(Stream& stream) {
     Rollback rb(stream);
     GEODE_UNWRAP(Token::pull(Keyword::Return, stream));
-    auto expr = Expr::pull(stream).ok();
-    rb.clearMessages();
+    Option<Rc<Expr>> expr;
+    if (!Token::peek(';', stream)) {
+        GEODE_UNWRAP_INTO(expr, Expr::pull(stream));
+    }
     Option<Rc<IdentExpr>> from;
     if (Token::draw(Keyword::From, stream)) {
         GEODE_UNWRAP_INTO(from, IdentExpr::pull(stream));
@@ -186,7 +201,8 @@ ExprResult<BlockExpr> BlockExpr::pull(Stream& stream) {
 }
 
 Type BlockExpr::typecheck(UnitParser& state) const {
-    state.pushScope(false);
+    // todo: get label from attribute
+    state.pushScope(None, false);
     auto ret = expr->typecheck(state);
     state.popScope();
     return ret;

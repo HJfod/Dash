@@ -53,11 +53,11 @@ namespace gdml::lang {
     class GDML_DLL Scope final {
     private:
         UnitParser& m_parser;
-        Option<Ident> m_name;
+        Option<FullIdentPath> m_name;
         Map<FullIdentPath, Entity> m_entities;
         bool m_function;
 
-        Scope(Option<Ident> const& name, bool function, UnitParser& parser);
+        Scope(Option<IdentPath> const& name, bool function, UnitParser& parser);
 
         friend class UnitParser;
 
@@ -99,7 +99,7 @@ namespace gdml::lang {
         void pushVar(Var const& var);
         Var* getVar(IdentPath const& name, bool topOnly = false);
 
-        void pushScope(Option<Ident> const& name, bool function);
+        void pushScope(Option<IdentPath> const& name, bool function);
         void popScope(std::source_location const = std::source_location::current());
         bool isRootScope() const;
         Scope& scope(size_t depth = 0);

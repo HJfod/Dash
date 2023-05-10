@@ -100,7 +100,10 @@ ExprResult<NodeExpr> NodeExpr::pull(Stream& stream) {
         stream.debugTick();
         if (Token::peek<Ident>(stream) && Token::peek(':', stream, 1)) {
             GEODE_UNWRAP_INTO(auto prop, PropExpr::pull(stream));
-            GEODE_UNWRAP(Token::pullSemicolons(stream));
+            // allow either ; or , as separator
+            if (!Token::peek('}', stream) && !Token::draw(',', stream)) {
+                GEODE_UNWRAP(Token::pullSemicolons(stream));
+            }
             props.push_back(prop);
         }
         else {

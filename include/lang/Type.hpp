@@ -19,15 +19,19 @@ namespace gdml::lang {
         bool operator==(IdentPath const& other) const;
         std::string toString() const;
         bool isSingle() const;
+        Vec<Ident> getComponents() const;
     };
 
     struct GDML_DLL FullIdentPath {
         Vec<Ident> path;
 
+        FullIdentPath(Vec<Ident> const& components);
         explicit FullIdentPath(IdentPath const& path);
 
         bool operator==(FullIdentPath const& other) const;
         std::string toString() const;
+
+        Option<FullIdentPath> resolve(IdentPath const& path) const;
     };
 
     struct GDML_DLL UnkType {};

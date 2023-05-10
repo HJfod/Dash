@@ -25,12 +25,16 @@ namespace gdml::lang {
             : IExpr(range), attribute(attr), value(value) {}
 
         static ExprResult<AttrExpr> pull(Stream& stream);
+        Type typecheck(UnitParser& state) const override;
+        std::string debug(size_t indent = 0) const override;
     };
 
     struct GDML_DLL Expr : public IExpr {
         Vec<Rc<AttrExpr>> attrs;
 
         Expr(Range const& range) : IExpr(range) {}
+
+        bool hasAttribute(IdentPath const& path) const;
 
         static ExprResult<Expr> pull(Stream& stream);
         static ExprResult<Expr> pullPrimary(Stream& stream);
@@ -150,7 +154,7 @@ namespace gdml::lang {
         ReturnExpr(Option<Rc<Expr>> const& expr, Option<Rc<IdentExpr>> const& from, Range const& range)
             : AExpr(range), expr(expr), from(from) {}
         
-        static ExprResult<ReturnExpr> pull(Rc<Expr> target, Stream& stream);
+        static ExprResult<ReturnExpr> pull(Stream& stream);
         Type typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };

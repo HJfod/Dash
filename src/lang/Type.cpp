@@ -22,6 +22,14 @@ bool IdentPath::isSingle() const {
     return path.empty() && !absolute;
 }
 
+Vec<Ident> IdentPath::getComponents() const {
+    auto ret = path;
+    ret.push_back(name);
+    return ret;
+}
+
+FullIdentPath::FullIdentPath(Vec<Ident> const& components) : path(components) {}
+
 FullIdentPath::FullIdentPath(IdentPath const& path) : path(path.path) {
     this->path.push_back(path.name);
 }
@@ -30,6 +38,30 @@ bool FullIdentPath::operator==(FullIdentPath const& other) const = default;
 
 std::string FullIdentPath::toString() const {
     return fmt::format("::{}", fmt::join(path, "::"));
+}
+
+Option<FullIdentPath> FullIdentPath::resolve(IdentPath const& path) const {
+    if (path.absolute) {
+        if (FullIdentPath(path) == *this) {
+            return FullIdentPath(path);
+        }
+        else {
+            return None;
+        }
+    }
+    auto comps = path.getComponents();
+    if (comps.size() > this->path.size()) {
+        return None;
+    }
+    for (size_t i = comps.size(); i > 0; i--) {
+        if (this->path[i - 1] != comps[i - 1]) {
+            return None;
+        }
+    }
+    auto ret = this->path;
+    ret.erase(ret.begin() + (this->path.size() - comps.size()), ret.end());
+    ranges::push(ret, comps);
+    return ret;
 }
 
 Type::Type(Value const& value, Rc<const Expr> decl)

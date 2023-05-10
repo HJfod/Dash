@@ -43,8 +43,13 @@ Vec<Type> ParsedSrc::getExportedTypes() const {
     return types;
 }
 
-Scope::Scope(Option<Ident> const& name, bool function, UnitParser& parser)
-  : m_name(name), m_function(function), m_parser(parser) {}
+Scope::Scope(Option<IdentPath> const& name, bool function, UnitParser& parser)
+    : m_function(function), m_parser(parser)
+{
+    if (name) {
+        m_name = parser.resolve(name.value()).ok();
+    }
+}
 
 void Scope::push(Type const& type) {
     if (auto name = type.getName()) {
@@ -110,7 +115,10 @@ Rc<ParsedSrc> UnitParser::getParsedSrc() const {
 
 bool UnitParser::verifyCanPush(Rc<IdentExpr> name) {
     auto path = this->resolve(name->path);
-    if (!path) return false;
+    if (!path) {
+        this->error(name->range, "{}", path.unwrapErr());
+        return false;
+    }
     if (m_scopes.back().m_entities.contains(path.unwrap())) {
         this->error(name->range, "Type or variable \"{}\" already exists in this scope", name->path);
         return false;
@@ -119,6 +127,29 @@ bool UnitParser::verifyCanPush(Rc<IdentExpr> name) {
 }
 
 Result<FullIdentPath> UnitParser::resolve(IdentPath const& name) {
+    for (auto& scope : ranges::reverse(m_scopes)) {
+        if (scope.m_name) {
+            if (auto resolved = scope.m_name.value().resolve(name)) {
+                log::debug("Scope resolved {} -> {}", name.toString(), resolved.value().toString());
+                return Ok(resolved.value());
+            }
+        }
+        for (auto& [path, entity] : scope.m_entities) {
+            if (auto resolved = path.resolve(name)) {
+                if (
+                    std::holds_alternative<Namespace>(entity) ||
+                    std::holds_alternative<Fun>(entity)
+                ) {
+                    log::debug("Entity resolved {} -> {}", name.toString(), resolved.value().toString());
+                    return Ok(resolved.value());
+                }
+                else {
+                    return Err("Cannot add sub-entities to a non-namespace or function");
+                }
+            }
+        }
+    }
+    return Err("Unknown namespace \"{}\"", fmt::join(name.path, "::"));
 }
 
 void UnitParser::pushType(Type const& type) {
@@ -159,7 +190,7 @@ Var* UnitParser::getVar(IdentPath const& name, bool topOnly) {
     return nullptr;
 }
 
-void UnitParser::pushScope(Option<Ident> const& name, bool function) {
+void UnitParser::pushScope(Option<IdentPath> const& name, bool function) {
     m_scopes.push_back(Scope(name, function, *this));
 }
 

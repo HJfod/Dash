@@ -92,6 +92,7 @@ ExprResult<Expr> Expr::pullPrimaryNonCall(Stream& stream) {
         rb.commit();
         return Ok(expr);
     }
+    PULL_IF(ReturnExpr, Keyword::Return);
     TRY_PULL(LitExpr);
     TRY_PULL(IdentExpr);
 

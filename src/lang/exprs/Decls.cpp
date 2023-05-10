@@ -185,7 +185,7 @@ Type FunDeclExpr::typecheck(UnitParser& state) const {
         state.verifyCanPush(std::get<Rc<IdentExpr>>(name));
     }
 
-    state.pushScope(true);
+    state.pushScope(fun.name, true);
     for (auto& param : params) {
         Type pty = Type(UnkType(), nullptr);
         if (param.type) {

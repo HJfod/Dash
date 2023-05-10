@@ -21,7 +21,7 @@ std::string debugPrint(T const& t, size_t) {
 }
 
 template <class E>
-    requires std::is_base_of_v<Expr, E>
+    requires std::is_base_of_v<IExpr, E>
 std::string debugPrint(Rc<E> const& expr, size_t indent) {
     return expr->debug(indent);
 }
@@ -117,7 +117,7 @@ public:
 };
 
 template <>
-class fmt::formatter<std::source_location> : fmt::formatter<std::string> {
+class fmt::formatter<std::source_location> : public fmt::formatter<std::string> {
 public:
     template <typename Context>
     constexpr auto format (std::source_location const& loc, Context& ctx) const {
