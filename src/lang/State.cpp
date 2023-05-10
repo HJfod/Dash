@@ -12,16 +12,23 @@ Rc<AST> ParsedSrc::getAST() const {
     return m_ast;
 }
 
-bool ParsedSrc::addExportedType(Type const& type) {
+bool ParsedSrc::addExportedType(UnitParser& state, Type const& type) {
     auto name = type.getName();
-    if (!name || m_exportedTypes.contains(name.value())) {
+    if (!name) {
         return false;
     }
-    m_exportedTypes.insert({ name.value(), type });
+    auto path = state.resolve(name.value());
+    if (!path) {
+        return false;
+    }
+    if (!m_exportedTypes.contains(path.unwrap())) {
+        return false;
+    }
+    m_exportedTypes.insert({ path.unwrap(), type });
     return true;
 }
 
-Option<Type> ParsedSrc::getExportedType(IdentPath const& name) const {
+Option<Type> ParsedSrc::getExportedType(FullIdentPath const& name) const {
     if (m_exportedTypes.contains(name)) {
         return m_exportedTypes.at(name);
     }
@@ -41,20 +48,28 @@ Scope::Scope(Option<Ident> const& name, bool function, UnitParser& parser)
 
 void Scope::push(Type const& type) {
     if (auto name = type.getName()) {
-        this->m_entities.insert({ name.value(), type });
+        if (auto path = m_parser.resolve(name.value())) {
+            this->m_entities.insert({ path.unwrap(), type });
+        }
     }
 }
 
 void Scope::push(Var const& var) {
-    this->m_entities.insert({ var.name, var });
+    if (auto path = m_parser.resolve(var.name)) {
+        this->m_entities.insert({ path.unwrap(), var });
+    }
 }
 
 void Scope::push(Fun const& fun) {
-    this->m_entities.insert({ fun.name, fun });
+    if (auto path = m_parser.resolve(fun.name)) {
+        this->m_entities.insert({ path.unwrap(), fun });
+    }
 }
 
 void Scope::push(Namespace const& ns) {
-    this->m_entities.insert({ ns.name, ns });
+    if (auto path = m_parser.resolve(ns.name)) {
+        this->m_entities.insert({ path.unwrap(), ns });
+    }
 }
 
 UnitParser::UnitParser(Parser& parser, Rc<Src> src)
@@ -94,7 +109,9 @@ Rc<ParsedSrc> UnitParser::getParsedSrc() const {
 }
 
 bool UnitParser::verifyCanPush(Rc<IdentExpr> name) {
-    if (m_scopes.back().m_entities.contains(name->path)) {
+    auto path = this->resolve(name->path);
+    if (!path) return false;
+    if (m_scopes.back().m_entities.contains(path.unwrap())) {
         this->error(name->range, "Type or variable \"{}\" already exists in this scope", name->path);
         return false;
     }
@@ -109,13 +126,15 @@ void UnitParser::pushType(Type const& type) {
 }
 
 Type* UnitParser::getType(IdentPath const& name, bool topOnly) {
-    // Prefer topmost scope
-    for (auto& scope : ranges::reverse(m_scopes)) {
-        if (scope.m_entities.contains(name)) {
-            return std::get_if<Type>(&scope.m_entities.at(name));
-        }
-        if (topOnly) {
-            break;
+    if (auto path = this->resolve(name)) {
+        // Prefer topmost scope
+        for (auto& scope : ranges::reverse(m_scopes)) {
+            if (scope.m_entities.contains(path.unwrap())) {
+                return std::get_if<Type>(&scope.m_entities.at(path.unwrap()));
+            }
+            if (topOnly) {
+                break;
+            }
         }
     }
     return nullptr;
@@ -126,20 +145,22 @@ void UnitParser::pushVar(Var const& var) {
 }
 
 Var* UnitParser::getVar(IdentPath const& name, bool topOnly) {
-    // Prefer topmost scope
-    for (auto& scope : ranges::reverse(m_scopes)) {
-        if (scope.m_entities.contains(name)) {
-            return std::get_if<Var>(&scope.m_entities.at(name));
-        }
-        if (topOnly) {
-            break;
+    if (auto path = this->resolve(name)) {
+        // Prefer topmost scope
+        for (auto& scope : ranges::reverse(m_scopes)) {
+            if (scope.m_entities.contains(path.unwrap())) {
+                return std::get_if<Var>(&scope.m_entities.at(path.unwrap()));
+            }
+            if (topOnly) {
+                break;
+            }
         }
     }
     return nullptr;
 }
 
 void UnitParser::pushScope(Option<Ident> const& name, bool function) {
-    m_scopes.emplace_back(name, function, *this);
+    m_scopes.push_back(Scope(name, function, *this));
 }
 
 void UnitParser::popScope(std::source_location const loc) {

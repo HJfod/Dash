@@ -117,11 +117,13 @@ public:
 };
 
 template <>
-class fmt::formatter<std::source_location> {
+class fmt::formatter<std::source_location> : fmt::formatter<std::string> {
 public:
-    constexpr auto parse (format_parse_context& ctx) { return ctx.begin(); }
     template <typename Context>
     constexpr auto format (std::source_location const& loc, Context& ctx) const {
-        return format_to(ctx.out(), "{}::{}:{} in {}", loc.function_name(), loc.line(), loc.column(), loc.file_name());
+        return fmt::formatter<std::string>::format(fmt::format(
+            "{}::{}:{} in {}",
+            loc.function_name(), loc.line(), loc.column(), loc.file_name()
+        ), ctx);
     }
 };

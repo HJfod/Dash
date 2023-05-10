@@ -13,8 +13,6 @@ namespace gdml::lang {
     class Expr;
     class IdentExpr;
 
-    using FullIdentPath = IdentPath;
-
     class GDML_DLL ParsedSrc final {
     private:
         Rc<Src> m_src;
@@ -28,7 +26,7 @@ namespace gdml::lang {
 
         Rc<AST> getAST() const;
 
-        bool addExportedType(Type const& type);
+        bool addExportedType(UnitParser& state, Type const& type);
         Option<Type> getExportedType(FullIdentPath const& name) const;
         Vec<Type> getExportedTypes() const;
     };
@@ -93,7 +91,7 @@ namespace gdml::lang {
         Rc<ParsedSrc> getParsedSrc() const;
 
         bool verifyCanPush(Rc<IdentExpr> name);
-        Result<FullIdentPath> resolve(IdentPath const& name);
+        geode::Result<FullIdentPath> resolve(IdentPath const& name);
 
         void pushType(Type const& type);
         Type* getType(IdentPath const& name, bool topOnly = false);

@@ -6,6 +6,18 @@ using namespace geode::prelude;
 using namespace gdml::lang;
 using namespace gdml;
 
+ExprResult<AttrExpr> AttrExpr::pull(Stream& stream) {
+    Rollback rb(stream);
+    GEODE_UNWRAP(Token::pull('@', stream));
+    GEODE_UNWRAP_INTO(auto ident, IdentExpr::pull(stream));
+    Option<Rc<Expr>> value;
+    if (Token::draw('(', stream)) {
+        GEODE_UNWRAP_INTO(value, Expr::pull(stream));
+        GEODE_UNWRAP(Token::pull(')', stream));
+    }
+    return rb.commit<AttrExpr>(ident, value);
+}
+
 ExprResult<ExportExpr> ExportExpr::pull(Stream& stream) {
     Rollback rb(stream);
     GEODE_UNWRAP(Token::pull(Keyword::Export, stream));
@@ -21,7 +33,7 @@ Type ExportExpr::typecheck(UnitParser& state) const {
     if (!state.isRootScope()) {
         state.error(range, "Export statements may only appear at top-level");
     }
-    state.getParsedSrc()->addExportedType(ty);
+    state.getParsedSrc()->addExportedType(state, ty);
     return ty;
 }
 
@@ -75,7 +87,7 @@ Type ImportExpr::typecheck(UnitParser& state) const {
     }
     else {
         for (auto& i : imports) {
-            if (auto ty = parsed->getExportedType(i->path)) {
+            if (auto ty = parsed->getExportedType(FullIdentPath(i->path))) {
                 imported.push_back(ty.value());
             }
             else {

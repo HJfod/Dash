@@ -28,7 +28,16 @@ using namespace gdml;
     }
 
 ExprResult<Expr> Expr::pull(Stream& stream) {
-    return BinOpExpr::pull(stream);
+    Rollback rb(stream);
+    Vec<Rc<AttrExpr>> attrs;
+    while (Token::peek('@', stream)) {
+        GEODE_UNWRAP_INTO(auto attr, AttrExpr::pull(stream));
+        attrs.push_back(attr);
+    }
+    GEODE_UNWRAP_INTO(auto binop, BinOpExpr::pull(stream));
+    binop->attrs = std::move(attrs);
+    rb.commit();
+    return Ok(binop);
 }
 
 ExprResult<Expr> Expr::pullPrimary(Stream& stream) {

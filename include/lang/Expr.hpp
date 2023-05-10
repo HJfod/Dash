@@ -5,21 +5,40 @@
 #include "Type.hpp"
 
 namespace gdml::lang {
-    struct GDML_DLL Expr {
+    struct Expr;
+    struct IdentExpr;
+
+    struct GDML_DLL IExpr {
         Range range;
-        Expr(Range const& range) : range(range) {}
-        virtual ~Expr() = default;
+        IExpr(Range const& range) : range(range) {}
+        virtual ~IExpr() = default;
         
         virtual Type typecheck(UnitParser& state) const = 0;
         virtual std::string debug(size_t indent = 0) const = 0;
+    };
+
+    struct GDML_DLL AttrExpr : public IExpr {
+        Rc<IdentExpr> attribute;
+        Option<Rc<Expr>> value;
+
+        AttrExpr(Rc<IdentExpr> attr, Option<Rc<Expr>> const& value, Range const& range)
+            : IExpr(range), attribute(attr), value(value) {}
+
+        static ExprResult<AttrExpr> pull(Stream& stream);
+    };
+
+    struct GDML_DLL Expr : public IExpr {
+        Vec<Rc<AttrExpr>> attrs;
+
+        Expr(Range const& range) : IExpr(range) {}
 
         static ExprResult<Expr> pull(Stream& stream);
         static ExprResult<Expr> pullPrimary(Stream& stream);
         static ExprResult<Expr> pullPrimaryNonCall(Stream& stream);
     };
 
-    struct GDML_DLL TypeExpr : public Expr {
-        TypeExpr(Range const& range) : Expr(range) {}
+    struct GDML_DLL TypeExpr : public IExpr {
+        TypeExpr(Range const& range) : IExpr(range) {}
         static ExprResult<TypeExpr> pull(Stream& stream);
     };
 

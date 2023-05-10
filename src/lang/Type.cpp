@@ -5,6 +5,33 @@ using namespace geode::prelude;
 using namespace gdml::lang;
 using namespace gdml;
 
+IdentPath::IdentPath() = default;
+IdentPath::IdentPath(Ident const& name) : name(name) {}
+
+bool IdentPath::operator==(IdentPath const& other) const = default;
+
+std::string IdentPath::toString() const {
+    std::string start = absolute ? "::" : "";
+    if (path.empty()) {
+        return start + name;
+    }
+    return start + fmt::format("{}::{}", fmt::join(path, "::"), name);
+}
+
+bool IdentPath::isSingle() const {
+    return path.empty() && !absolute;
+}
+
+FullIdentPath::FullIdentPath(IdentPath const& path) : path(path.path) {
+    this->path.push_back(path.name);
+}
+
+bool FullIdentPath::operator==(FullIdentPath const& other) const = default;
+
+std::string FullIdentPath::toString() const {
+    return fmt::format("::{}", fmt::join(path, "::"));
+}
+
 Type::Type(Value const& value, Rc<const Expr> decl)
   : kind(value), decl(decl) {}
 
@@ -256,5 +283,9 @@ Type Value::getType() const {
 }
 
 std::size_t std::hash<IdentPath>::operator()(IdentPath const& path) const noexcept {
+    return std::hash<Ident>()(path.toString());
+}
+
+std::size_t std::hash<FullIdentPath>::operator()(FullIdentPath const& path) const noexcept {
     return std::hash<Ident>()(path.toString());
 }

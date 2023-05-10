@@ -8,25 +8,26 @@ namespace gdml::lang {
     struct Value;
     class Expr;
 
-    struct IdentPath {
+    struct GDML_DLL IdentPath {
         Ident name;
         Vec<Ident> path;
         bool absolute = false;
 
-        constexpr IdentPath() = default;
-        explicit constexpr IdentPath(Ident const& name) : name(name) {}
+        IdentPath();
+        explicit IdentPath(Ident const& name);
 
-        constexpr bool operator==(IdentPath const& other) const = default;
-        constexpr std::string toString() const {
-            std::string start = absolute ? "::" : "";
-            if (path.empty()) {
-                return start + name;
-            }
-            return start + fmt::format("{}::{}", fmt::join(path, "::"), name);
-        }
-        constexpr bool isSingle() const {
-            return path.empty() && !absolute;
-        }
+        bool operator==(IdentPath const& other) const;
+        std::string toString() const;
+        bool isSingle() const;
+    };
+
+    struct GDML_DLL FullIdentPath {
+        Vec<Ident> path;
+
+        explicit FullIdentPath(IdentPath const& path);
+
+        bool operator==(FullIdentPath const& other) const;
+        std::string toString() const;
     };
 
     struct GDML_DLL UnkType {};
@@ -150,4 +151,9 @@ namespace gdml::lang {
 template <>
 struct std::hash<gdml::lang::IdentPath> {
     std::size_t operator()(gdml::lang::IdentPath const& path) const noexcept;
+};
+
+template <>
+struct std::hash<gdml::lang::FullIdentPath> {
+    std::size_t operator()(gdml::lang::FullIdentPath const& path) const noexcept;
 };

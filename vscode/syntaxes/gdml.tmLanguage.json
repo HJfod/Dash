@@ -42,7 +42,7 @@
 					"name": "variable.other.constant.gdml"
 				},
 				{
-					"match": "(?<=(new|as|struct|extends|is|namespace|using|decl(\\s+[a-zA-Z0-9]+\\s*=)?|:)\\s*)[a-zA-Z0-9_]+",
+					"match": "(?<=(new|as|struct|extends|is|namespace|using|decl(\\s+[a-zA-Z0-9]+\\s*=)?|[^:]:)\\s*)[a-zA-Z0-9_]+",
 					"name": "entity.name.type.gdml"
 				},
 				{
@@ -71,7 +71,7 @@
 				},
 				{
 					"name": "keyword.control.meta.gdml",
-					"match": "(@([a-zA-Z]+))\\b"
+					"match": "@(::)?([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+\\b"
 				},
 				{
 					"name": "storage.type.gdml",
