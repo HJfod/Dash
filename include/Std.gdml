@@ -4,6 +4,8 @@
 
 // All .gdml files do `import * from "@hjfod.gdml/Std.gdml";` by default
 
+@!debug("entities");
+
 export struct CCPoint {
     x: float;
     y: float;
@@ -36,6 +38,8 @@ export struct CCRect {
     // bindings offer very neat shorthand syntax for the above :3
     size: CCSize <=> { width, height };
 }
+
+@!debug("entities");
 
 export struct ccColor3B {
     r: int;

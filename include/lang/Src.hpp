@@ -138,6 +138,7 @@ namespace gdml::lang {
         Stream& m_stream;
         bool m_commit = false;
         size_t m_offset;
+        size_t m_realOffset;
         size_t m_msgLevel;
         std::unique_ptr<Token> m_lastToken = nullptr;
 

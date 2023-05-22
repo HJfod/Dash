@@ -230,6 +230,7 @@ Rollback::Rollback(Stream& stream, std::source_location const loc)
   : m_stream(stream),
     m_msgLevel(stream.state().getShared().pushLogLevel())
 {
+    m_realOffset = stream.offset();
     Token::skipToNext(stream);
     m_offset = stream.offset();
     stream.debugTick(loc);
@@ -240,7 +241,7 @@ Rollback::Rollback(Stream& stream, std::source_location const loc)
 
 Rollback::~Rollback() {
     if (!m_commit) {
-        m_stream.navigate(m_offset);
+        m_stream.navigate(m_realOffset);
         if (m_lastToken) {
             m_stream.setLastToken(*m_lastToken);
         }

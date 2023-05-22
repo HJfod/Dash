@@ -3,6 +3,7 @@
 #include "Main.hpp"
 #include "Token.hpp"
 #include "Type.hpp"
+#include "State.hpp"
 
 namespace gdml::lang {
     struct Expr;
@@ -35,6 +36,7 @@ namespace gdml::lang {
         Expr(Range const& range) : IExpr(range) {}
 
         bool hasAttribute(IdentPath const& path) const;
+        virtual Option<Entity> typecheckEntity(UnitParser& state) const;
 
         static ExprResult<Expr> pull(Stream& stream);
         static ExprResult<Expr> pullPrimary(Stream& stream);
@@ -113,6 +115,7 @@ namespace gdml::lang {
         static ExprResult<VarDeclExpr> pull(Stream& stream);
         Type typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
+        Option<Entity> typecheckEntity(UnitParser& state) const override;
     };
 
     struct GDML_DLL BinOpExpr : public AExpr<BinOpExpr> {
@@ -189,13 +192,15 @@ namespace gdml::lang {
             Option<Rc<TypeExpr>> const& retType,
             bool isExtern,
             Range const& range
-        ) : AExpr(range), name(name), params(params), body(body), retType(retType), isExtern(isExtern) {}
+        ) : AExpr(range), name(name), params(params),
+            body(body), retType(retType), isExtern(isExtern) {}
 
         static ExprResult<FunDeclExpr> pull(Stream& stream);
         static ExprResult<FunDeclExpr> pullArrow(Stream& stream);
         static ParseResult<> pullParams(Vec<Param>& target, Stream& stream, bool requireTypes);
         Type typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
+        Option<Entity> typecheckEntity(UnitParser& state) const override;
     };
 
     struct GDML_DLL PropExpr : public AExpr<PropExpr> {
@@ -269,6 +274,7 @@ namespace gdml::lang {
         static ExprResult<NodeDeclExpr> pull(Stream& stream, bool implicitStruct = false);
         Type typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
+        Option<Entity> typecheckEntity(UnitParser& state) const override;
     };
 
     struct GDML_DLL EnumDeclExpr : public AExpr<EnumDeclExpr> {
@@ -286,6 +292,7 @@ namespace gdml::lang {
         static ExprResult<EnumDeclExpr> pull(Stream& stream);
         Type typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
+        Option<Entity> typecheckEntity(UnitParser& state) const override;
     };
 
     struct GDML_DLL ListExpr : public AExpr<ListExpr> {
@@ -329,6 +336,17 @@ namespace gdml::lang {
             : AExpr(range), expr(expr) {}
         
         static ExprResult<BlockExpr> pull(Stream& stream);
+        Type typecheck(UnitParser& state) const override;
+        std::string debug(size_t indent = 0) const override;
+    };
+
+    struct GDML_DLL DebugExpr : public AExpr<DebugExpr> {
+        StrLit what;
+
+        DebugExpr(StrLit const& what, Range const& range)
+            : AExpr(range), what(what) {}
+        
+        static ExprResult<DebugExpr> pull(Stream& stream);
         Type typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
     };

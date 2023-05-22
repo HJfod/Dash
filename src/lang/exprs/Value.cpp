@@ -149,7 +149,7 @@ Type NodeExpr::typecheck(UnitParser& state) const {
             }
         }
         for (auto& child : children) {
-            if (!std::holds_alternative<NodeType>(ty->kind)) {
+            if (!ty->template has<NodeType>()) {
                 state.error(child->range, "Only nodes may contain children");
             }
             child->typecheck(state);

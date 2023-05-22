@@ -27,10 +27,15 @@ using namespace gdml;
         return Ok(value);                                               \
     }
 
+Option<Entity> Expr::typecheckEntity(UnitParser& state) const {
+    this->typecheck(state);
+    return None;
+}
+
 ExprResult<Expr> Expr::pull(Stream& stream) {
     Rollback rb(stream);
     Vec<Rc<AttrExpr>> attrs;
-    while (Token::peek('@', stream)) {
+    while (Token::peek('@', stream) && !Token::peek(Op::Not, stream, 1)) {
         GEODE_UNWRAP_INTO(auto attr, AttrExpr::pull(stream));
         attrs.push_back(attr);
     }
@@ -95,6 +100,7 @@ ExprResult<Expr> Expr::pullPrimaryNonCall(Stream& stream) {
         return Ok(expr);
     }
     PULL_IF(ReturnExpr, Keyword::Return);
+    PULL_IF_2(DebugExpr, '@', Op::Not);
     TRY_PULL(LitExpr);
     TRY_PULL(IdentExpr);
 

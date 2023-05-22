@@ -230,10 +230,35 @@ Option<IdentPath> Type::getName() const {
         [](NodeType const& node) -> Option<IdentPath> {
             return node.name;
         },
-        [](auto const&) -> Option<IdentPath> {
+        [](VoidType const&) -> Option<IdentPath> {
+            return IdentPath("void");
+        },
+        [](BoolType const&) -> Option<IdentPath> {
+            return IdentPath("bool");
+        },
+        [](IntType const&) -> Option<IdentPath> {
+            return IdentPath("int");
+        },
+        [](FloatType const&) -> Option<IdentPath> {
+            return IdentPath("float");
+        },
+        [](StrType const&) -> Option<IdentPath> {
+            return IdentPath("string");
+        },
+        [](RefType const&) -> Option<IdentPath> {
+            return None;
+        },
+        [](AliasType const& alias) -> Option<IdentPath> {
+            return alias.alias;
+        },
+        [](UnkType const&) -> Option<IdentPath> {
             return None;
         },
     }, kind);
+}
+
+Rc<const Expr> Type::getDecl() const {
+    return this->decl;
 }
 
 Option<Type> Type::getMemberType(std::string const& name) const {
@@ -323,6 +348,18 @@ Type Value::getType() const {
             return Type(str.type, nullptr);
         },
     }, kind);
+}
+
+std::string lang::opFunName(Op op, Type a) {
+    return fmt::format("[{} {}]", tokenToString(op), a.toString());
+}
+
+std::string lang::opFunName(Op op, Type a, Type b) {
+    return fmt::format("[{} {} {}]", a.toString(), tokenToString(op), b.toString());
+}
+
+std::string lang::asFunName(Type a, Type b) {
+    return fmt::format("[{} as {}]", a.toString(), b.toString());
 }
 
 std::size_t std::hash<IdentPath>::operator()(IdentPath const& path) const noexcept {

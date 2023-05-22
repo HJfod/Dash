@@ -49,7 +49,7 @@ Type VarDeclExpr::typecheck(UnitParser& state) const {
         varty = value.value()->typecheck(state);
     }
     state.verifyCanPush(ident);
-    state.pushVar(Var {
+    state.push(Var {
         .name = ident->path,
         .type = varty,
         .isExtern = isExtern,
@@ -63,6 +63,15 @@ std::string VarDeclExpr::debug(size_t indent) const {
         .member("ident", ident)
         .member("type", type)
         .member("value", value);
+}
+
+Option<Entity> VarDeclExpr::typecheckEntity(UnitParser& state) const {
+    return Var {
+        .name = ident->path,
+        .type = this->typecheck(state),
+        .isExtern = isExtern,
+        .decl = shared_from_this(),
+    };
 }
 
 ParseResult<> FunDeclExpr::pullParams(Vec<Param>& target, Stream& stream, bool requireTypes) {
@@ -162,6 +171,12 @@ ExprResult<FunDeclExpr> FunDeclExpr::pullArrow(Stream& stream) {
     Option<Rc<TypeExpr>> ret;
     if (!Token::draw(Keyword::Get, stream)) {
         if (Token::draw(Keyword::Set, stream)) {
+            params.push_back(Param {
+                .name = "this",
+                .type = None,
+                .value = None,
+                .range = stream.location(),
+            });
             GEODE_UNWRAP(Token::pull('(', stream));
             GEODE_UNWRAP(FunDeclExpr::pullParams(params, stream, false));
             GEODE_UNWRAP(Token::pull(')', stream));
@@ -176,6 +191,14 @@ ExprResult<FunDeclExpr> FunDeclExpr::pullArrow(Stream& stream) {
             params.push_back(param);
         }
     }
+    else {
+        params.push_back(Param {
+            .name = "this",
+            .type = None,
+            .value = None,
+            .range = stream.location(),
+        });
+    }
     if (Token::draw(Op::Arrow, stream)) {
         GEODE_UNWRAP_INTO(ret, TypeExpr::pull(stream));
     }
@@ -187,9 +210,6 @@ ExprResult<FunDeclExpr> FunDeclExpr::pullArrow(Stream& stream) {
 
 Type FunDeclExpr::typecheck(UnitParser& state) const {
     FunType fun;
-    if (std::holds_alternative<Rc<IdentExpr>>(name)) {
-        fun.name = std::get<Rc<IdentExpr>>(name)->path;
-    }
     fun.isExtern = isExtern;
 
     if (std::holds_alternative<Rc<IdentExpr>>(name)) {
@@ -211,7 +231,7 @@ Type FunDeclExpr::typecheck(UnitParser& state) const {
                 state.error(param.range, "Default value type does not match parameter type");
             }
         }
-        state.pushVar(Var {
+        state.push(Var {
             .name = IdentPath(param.name),
             .type = pty,
             .decl = shared_from_this(),
@@ -224,6 +244,52 @@ Type FunDeclExpr::typecheck(UnitParser& state) const {
     if (retType) {
         fun.retType = retType.value()->typecheck(state);
     }
+    
+    std::visit(makeVisitor {
+        [&](Rc<IdentExpr> const& expr) {
+            fun.name = expr->path;
+        },
+        [&](Op const& op) {
+            if (isUnOp(op)) {
+                if (fun.params.size() == 1) {
+                    fun.name = IdentPath(opFunName(
+                        op, TRY_FUN(fun.params.at(0).type)
+                    ));
+                }
+                else {
+                    state.error(range, "Unary operators must have one parameter");
+                }
+            }
+            else {
+                if (fun.params.size() == 2) {
+                    fun.name = IdentPath(opFunName(
+                        op,
+                        TRY_FUN(fun.params.at(0).type),
+                        TRY_FUN(fun.params.at(1).type)
+                    ));
+                }
+                else {
+                    state.error(range, "Binary operators must have two parameters");
+                }
+            }
+        },
+        [&](AsName const&) {
+            if (fun.params.size() == 1) {
+                if (fun.retType) {
+                    fun.name = IdentPath(asFunName(
+                        TRY_FUN(fun.params.at(0).type), fun.retType.value()
+                    ));
+                }
+                else {
+                    state.error(range, "As operator must have an explicit return type");
+                }
+            }
+            else {
+                state.error(range, "As operator must have one parameter");
+            }
+        },
+        [&](std::nullopt_t const&) {},
+    }, this->name);
 
     auto ret = Type(fun, shared_from_this());
 
@@ -264,6 +330,10 @@ std::string FunDeclExpr::debug(size_t indent) const {
         .member("body", body)
         .member("retType", retType)
         .member("isExtern", isExtern);
+}
+
+Option<Entity> FunDeclExpr::typecheckEntity(UnitParser& state) const {
+    return this->typecheck(state);
 }
 
 ExprResult<MemberDeclExpr> MemberDeclExpr::pull(Stream& stream) {
@@ -470,7 +540,7 @@ Type NodeDeclExpr::typecheck(UnitParser& state) const {
         }
         auto ret = Type(sty, shared_from_this());
         if (ident) {
-            state.pushType(ret);
+            state.push(ret);
         }
         return ret;
     }
@@ -490,9 +560,13 @@ Type NodeDeclExpr::typecheck(UnitParser& state) const {
             };
         }
         auto ret = Type(sty, shared_from_this());
-        state.pushType(ret);
+        state.push(ret);
         return ret;
     }
+}
+
+Option<Entity> NodeDeclExpr::typecheckEntity(UnitParser& state) const {
+    return this->typecheck(state);
 }
 
 std::string NodeDeclExpr::debug(size_t indent) const {
@@ -553,9 +627,13 @@ Type EnumDeclExpr::typecheck(UnitParser& state) const {
     }
     auto ret = Type(ty, shared_from_this());
     if (ident) {
-        state.pushType(ret);
+        state.push(ret);
     }
     return ret;
+}
+
+Option<Entity> EnumDeclExpr::typecheckEntity(UnitParser& state) const {
+    return this->typecheck(state);
 }
 
 std::string EnumDeclExpr::debug(size_t indent) const {

@@ -74,6 +74,10 @@
 					"match": "@(::)?([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+\\b"
 				},
 				{
+					"name": "keyword.control.less.gdml",
+					"match": "@!(::)?([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+\\b"
+				},
+				{
 					"name": "storage.type.gdml",
 					"match": "\\b(void|bool|int|float|string)\\b"
 				},

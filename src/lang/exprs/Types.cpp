@@ -42,7 +42,7 @@ Type AliasExpr::typecheck(UnitParser& state) const {
     ty.alias = alias->path;
     ty.type = type->typecheck(state);
     auto ret = Type(ty, shared_from_this());
-    state.pushType(ret);
+    state.push(ret);
     return ret;
 }
 

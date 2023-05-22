@@ -118,6 +118,17 @@ public:
 };
 
 template <>
+class fmt::formatter<gdml::lang::FullIdentPath> : public fmt::formatter<std::string> {
+public:
+    template <typename Context>
+    constexpr auto format (gdml::lang::FullIdentPath const& path, Context& ctx) const {
+        return fmt::formatter<std::string>::format(fmt::format(
+            "{}", path.toString()
+        ), ctx);
+    }
+};
+
+template <>
 class fmt::formatter<std::source_location> : public fmt::formatter<std::string> {
 public:
     template <typename Context>
@@ -128,3 +139,17 @@ public:
         ), ctx);
     }
 };
+
+template <class Fun>
+decltype(auto) tryWithSourceInfo(
+    Fun&& fun, std::source_location loc = std::source_location::current()
+) {
+    try {
+        return fun();
+    }
+    catch(std::exception& e) {
+        throw std::runtime_error(fmt::format("{} (at {})", e.what(), loc));
+    }
+}
+
+#define TRY_FUN(...) tryWithSourceInfo([=] { return __VA_ARGS__; })

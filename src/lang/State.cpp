@@ -6,38 +6,76 @@ using namespace geode::prelude;
 using namespace gdml::lang;
 using namespace gdml;
 
+Option<IdentPath> Entity::getName() const {
+    return std::visit(makeVisitor {
+        [](Type const& ty) {
+            return ty.getName();
+        },
+        [](auto const& obj) -> Option<IdentPath> {
+            return obj.name;
+        },
+    }, value);
+}
+
+Rc<const Expr> Entity::getDecl() const {
+    return std::visit(makeVisitor {
+        [](Type const& ty) {
+            return ty.getDecl();
+        },
+        [](auto const& obj) {
+            return obj.decl;
+        },
+    }, value);
+}
+
+Option<Type> Entity::getType() const {
+    return std::visit(makeVisitor {
+        [](Type const& ty) -> Option<Type> {
+            return ty;
+        },
+        [](Var const& var) -> Option<Type> {
+            return var.type;
+        },
+        [](Fun const& fun) -> Option<Type> {
+            return Type(fun.type, fun.decl);
+        },
+        [](Namespace const& ns) -> Option<Type> {
+            return None;
+        },
+    }, value);
+}
+
 ParsedSrc::ParsedSrc(Rc<Src> src, Rc<AST> ast) : m_src(src), m_ast(ast) {}
 
 Rc<AST> ParsedSrc::getAST() const {
     return m_ast;
 }
 
-bool ParsedSrc::addExportedType(UnitParser& state, Type const& type) {
-    auto name = type.getName();
+void ParsedSrc::addExported(UnitParser& parser, Range const& range, Entity const& ent) {
+    auto name = ent.getName();
     if (!name) {
-        return false;
+        return parser.error(range, "Can't export anonymous entities");
     }
-    auto path = state.resolve(name.value(), false);
+    auto path = parser.resolve(name.value(), false);
     if (!path) {
-        return false;
+        return parser.error(range, "Can't export an entity in this scope");
     }
-    if (!m_exportedTypes.contains(path.unwrap())) {
-        return false;
+    if (m_exported.contains(path.unwrap())) {
+        return parser.error(range, "\"{}\" has already been exported", path.unwrap());
     }
-    m_exportedTypes.insert({ path.unwrap(), type });
-    return true;
+    m_exported.insert({ path.unwrap(), ent });
 }
 
-Option<Type> ParsedSrc::getExportedType(FullIdentPath const& name) const {
-    if (m_exportedTypes.contains(name)) {
-        return m_exportedTypes.at(name);
+Option<Entity> ParsedSrc::getExported(FullIdentPath const& name) const {
+    if (m_exported.contains(name)) {
+        return m_exported.at(name);
     }
     return None;
 }
 
-Vec<Type> ParsedSrc::getExportedTypes() const {
-    Vec<Type> types;
-    for (auto& [_, ty] : m_exportedTypes) {
+Vec<Entity> ParsedSrc::getAllExported() const {
+    Vec<Entity> types;
+    for (auto& [_, ty] : m_exported) {
         types.push_back(ty);
     }
     return types;
@@ -51,40 +89,26 @@ Scope::Scope(Option<IdentPath> const& name, bool function, UnitParser& parser)
     }
 }
 
-void Scope::push(Type const& type) {
-    if (auto name = type.getName()) {
+void Scope::push(Entity const& ent) {
+    if (auto name = ent.getName()) {
         if (auto path = m_parser.resolve(name.value(), false)) {
-            this->m_entities.insert({ path.unwrap(), type });
+            this->m_entities.insert({ path.unwrap(), ent });
         }
     }
 }
 
-void Scope::push(Var const& var) {
-    if (auto path = m_parser.resolve(var.name, false)) {
-        this->m_entities.insert({ path.unwrap(), var });
-    }
-}
-
-void Scope::push(Fun const& fun) {
-    if (auto path = m_parser.resolve(fun.name, false)) {
-        this->m_entities.insert({ path.unwrap(), fun });
-    }
-}
-
-void Scope::push(Namespace const& ns) {
-    if (auto path = m_parser.resolve(ns.name, false)) {
-        this->m_entities.insert({ path.unwrap(), ns });
-    }
+Vec<Entity> Scope::getEntities() const {
+    return map::values(m_entities);
 }
 
 UnitParser::UnitParser(Parser& parser, Rc<Src> src)
   : m_parser(parser), m_src(src), m_scopes({ Scope(None, false, *this) })
 {
-    this->pushType(Primitive::Void);
-    this->pushType(Primitive::Bool);
-    this->pushType(Primitive::Int);
-    this->pushType(Primitive::Float);
-    this->pushType(Primitive::Str);
+    this->push(Type(Primitive::Void));
+    this->push(Type(Primitive::Bool));
+    this->push(Type(Primitive::Int));
+    this->push(Type(Primitive::Float));
+    this->push(Type(Primitive::Str));
 }
 
 Rc<ParsedSrc> UnitParser::parse(Parser& shared, Rc<Src> src) {
@@ -138,64 +162,47 @@ Result<FullIdentPath> UnitParser::resolve(IdentPath const& name, bool existing) 
     for (auto& scope : ranges::reverse(m_scopes)) {
         if (scope.m_name) {
             if (auto resolved = scope.m_name.value().resolve(name, existing)) {
-                log::debug("Scope resolved {} -> {}", name.toString(), resolved.value().toString());
                 return Ok(resolved.value());
             }
         }
         for (auto& [path, entity] : scope.m_entities) {
             if (auto resolved = path.resolve(name, existing)) {
-                if (
-                    std::holds_alternative<Namespace>(entity) ||
-                    std::holds_alternative<Fun>(entity)
-                ) {
-                    log::debug("Entity resolved {} -> {}", name.toString(), resolved.value().toString());
-                    return Ok(resolved.value());
-                }
-                else {
-                    return Err("Cannot add sub-entities to a non-namespace or function");
-                }
+                return Ok(resolved.value());
             }
         }
     }
     return Err("Unknown namespace \"{}\"", fmt::join(name.path, "::"));
 }
 
-void UnitParser::pushType(Type const& type) {
-    m_scopes.back().push(type);
+void UnitParser::push(Entity const& entity) {
+    m_scopes.back().push(entity);
+}
+
+Entity* UnitParser::getEntity(IdentPath const& name, bool topOnly) {
+    if (auto path = this->resolve(name, true)) {
+        // Prefer topmost scope
+        for (auto& scope : ranges::reverse(m_scopes)) {
+            if (scope.m_entities.contains(path.unwrap())) {
+                return &scope.m_entities.at(path.unwrap());
+            }
+            if (topOnly) {
+                break;
+            }
+        }
+    }
+    return nullptr;
 }
 
 Type* UnitParser::getType(IdentPath const& name, bool topOnly) {
-    if (auto path = this->resolve(name, true)) {
-        // Prefer topmost scope
-        for (auto& scope : ranges::reverse(m_scopes)) {
-            if (scope.m_entities.contains(path.unwrap())) {
-                return std::get_if<Type>(&scope.m_entities.at(path.unwrap()));
-            }
-            if (topOnly) {
-                break;
-            }
-        }
-    }
-    return nullptr;
-}
-
-void UnitParser::pushVar(Var const& var) {
-    m_scopes.back().push(var);
+    return this->template get<Type>(name, topOnly);
 }
 
 Var* UnitParser::getVar(IdentPath const& name, bool topOnly) {
-    if (auto path = this->resolve(name, true)) {
-        // Prefer topmost scope
-        for (auto& scope : ranges::reverse(m_scopes)) {
-            if (scope.m_entities.contains(path.unwrap())) {
-                return std::get_if<Var>(&scope.m_entities.at(path.unwrap()));
-            }
-            if (topOnly) {
-                break;
-            }
-        }
-    }
-    return nullptr;
+    return this->template get<Var>(name, topOnly);
+}
+
+Fun* UnitParser::getFun(IdentPath const& name, bool topOnly) {
+    return this->template get<Fun>(name, topOnly);
 }
 
 void UnitParser::pushScope(Option<IdentPath> const& name, bool function) {
@@ -223,6 +230,10 @@ Scope& UnitParser::scope(size_t depth) {
             m_scopes.size(), depth
         ));
     }
+}
+
+Vec<Scope> const& UnitParser::getScopes() const {
+    return m_scopes;
 }
 
 Parser::Parser(Rc<Src> src) : m_root(src) {
@@ -288,19 +299,19 @@ void Parser::dispatchLogs() const {
     for (auto& [_, msg] : m_messages) {
         switch (msg.level) {
             default:
-            case Level::Info:
+            case Level::Info: {
                 log::info("{}", msg.toString());
-                break;
+            } break;
 
-            case Level::Error:   
+            case Level::Error: {
                 log::error("{}", msg.toString());
                 errorCount += 1;
-                break;
+            } break;
 
-            case Level::Warning: 
+            case Level::Warning: { 
                 log::warn("{}", msg.toString());
                 warnCount += 1;
-                break;
+            } break;
         }
     }
     log::info("Finished with {} errors and {} warnings", errorCount, warnCount);

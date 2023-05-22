@@ -97,7 +97,8 @@ namespace gdml::lang {
         Str,
     };
 
-    struct GDML_DLL Type {
+    class GDML_DLL Type final {
+    private:
         std::variant<
             UnkType,
             VoidType, BoolType, IntType, FloatType, StrType,
@@ -107,6 +108,7 @@ namespace gdml::lang {
         > kind;
         Rc<const Expr> decl;
 
+    public:
         using Value = decltype(kind);
 
         Type() = default;
@@ -119,8 +121,18 @@ namespace gdml::lang {
         Set<String> getRequiredMembers() const;
         std::string toString() const;
         Option<IdentPath> getName() const;
+        Rc<const Expr> getDecl() const;
         bool isExportable() const;
+
+        template <class T>
+        bool has() const {
+            return std::holds_alternative<T>(this->kind);
+        }
     };
+
+    GDML_DLL std::string opFunName(Op op, Type a);
+    GDML_DLL std::string opFunName(Op op, Type a, Type b);
+    GDML_DLL std::string asFunName(Type a, Type b);
 
     struct GDML_DLL PropValue {
         Box<Value> value;

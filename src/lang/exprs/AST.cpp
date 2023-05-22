@@ -39,15 +39,17 @@ ExprResult<ExportExpr> ExportExpr::pull(Stream& stream) {
 }
 
 Type ExportExpr::typecheck(UnitParser& state) const {
-    auto ty = expr->typecheck(state);
-    if (!ty.isExportable()) {
-        state.error(range, "Only named structs and nodes are exportable");
+    if (auto ent = expr->typecheckEntity(state)) {
+        state.getParsedSrc()->addExported(state, range, ent.value());
+        return ent.value().getType().value_or(Primitive::Unk);
+    }
+    else {
+        state.error(range, "Only declarations are exportable");
     }
     if (!state.isRootScope()) {
         state.error(range, "Export statements may only appear at top-level");
     }
-    state.getParsedSrc()->addExportedType(state, ty);
-    return ty;
+    return Primitive::Unk;
 }
 
 std::string ExportExpr::debug(size_t indent) const {
@@ -91,16 +93,16 @@ Type ImportExpr::typecheck(UnitParser& state) const {
         return Type(VoidType(), nullptr);
     }
     auto parsed = UnitParser::parse(state.getShared(), src.unwrap());
-    Vec<Type> imported;
+    Vec<Entity> imported;
     // empty = import everything
     if (imports.empty()) {
-        for (auto& ty : parsed->getExportedTypes()) {
+        for (auto& ty : parsed->getAllExported()) {
             imported.push_back(ty);
         }
     }
     else {
         for (auto& i : imports) {
-            if (auto ty = parsed->getExportedType(FullIdentPath(i->path))) {
+            if (auto ty = parsed->getExported(FullIdentPath(i->path))) {
                 imported.push_back(ty.value());
             }
             else {
@@ -108,14 +110,13 @@ Type ImportExpr::typecheck(UnitParser& state) const {
             }
         }
     }
-    for (auto& ty : imported) {
-        if (auto name = ty.getName()) {
-            if (state.getType(name.value(), true)) {
-                state.error(range, "Type \"{}\" already exists in this scope", ty.toString());
-            }
-            else {
-                state.pushType(ty);
-            }
+    for (auto& ent : imported) {
+        // it shouldn't be possible for an anonymous entity to be exported
+        if (state.getEntity(TRY_FUN(ent.getName().value()), true)) {
+            state.error(range, "Entity \"{}\" already exists in this scope", ent.getName().value());
+        }
+        else {
+            state.push(ent);
         }
     }
     return Type(VoidType(), nullptr);
@@ -211,6 +212,52 @@ Type BlockExpr::typecheck(UnitParser& state) const {
 std::string BlockExpr::debug(size_t indent) const {
     return DebugPrint("BlockExpr", indent)
         .member("expr", expr);
+}
+
+ExprResult<DebugExpr> DebugExpr::pull(Stream& stream) {
+    Rollback rb(stream);
+    GEODE_UNWRAP(Token::pull('@', stream));
+    GEODE_UNWRAP(Token::pull(Op::Not, stream));
+    GEODE_UNWRAP_INTO(auto ident, Token::pull<Ident>(stream));
+    if (ident != "debug") {
+        return rb.error("Expected 'debug'");
+    }
+    GEODE_UNWRAP(Token::pull('(', stream));
+    Rollback litrb(stream);
+    GEODE_UNWRAP_INTO(auto lit, Token::pull<Lit>(stream));
+    if (!std::holds_alternative<StrLit>(lit)) {
+        return litrb.error("Expected string literal");
+    }
+    litrb.commit();
+    GEODE_UNWRAP(Token::pull(')', stream));
+    return rb.commit<DebugExpr>(std::get<StrLit>(lit));
+}
+
+Type DebugExpr::typecheck(UnitParser& state) const {
+    switch (hash(what.c_str())) {
+        case hash("entities"): {
+            std::string msg = "";
+            size_t i = 0;
+            for (auto const& scope : state.getScopes()) {
+                msg += fmt::format("Scope {}\n", i);
+                for (auto const& ent : scope.getEntities()) {
+                    msg += ent.getName().value_or(IdentPath("<anonymous entity>")).toString() + "\n";
+                }
+                i += 1;
+            }
+            state.log(range, "== Start of Scope Dump ==\n{}== End of Scope Dump ==", msg);
+        } break;
+
+        default: {
+            state.error(range, "Invalid debug option \"{}\", valid are: \"entities\"", what);
+        } break;
+    }
+    return Primitive::Unk;
+}
+
+std::string DebugExpr::debug(size_t indent) const {
+    return DebugPrint("DebugExpr", indent)
+        .member("what", what);
 }
 
 ExprResult<AST> AST::pull(Stream& stream) {

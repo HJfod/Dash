@@ -71,6 +71,7 @@ static std::unordered_map<Op, std::tuple<std::string, size_t, OpDir>> OPS {
 
 static std::string INVALID_IDENT_CHARS = ".,;(){}[]@`\\´¨'\"";
 static std::string VALID_OP_CHARS = "=+-/*<>!#?&|%:~^";
+static std::string PUNCTUATION = "()[]{}:;,.@";
 static std::unordered_set<std::string> SPECIAL_IDENTS { "this", "super", "root" };
 
 bool lang::isIdentCh(char ch) {
@@ -315,7 +316,7 @@ ParseResult<Token> Token::pull(Stream& stream) {
         }
 
         // punctuation
-        if (std::string("()[]{}:;,.@").find_first_of(first) != std::string::npos) {
+        if (PUNCTUATION.find_first_of(first) != std::string::npos) {
             stream.navigate(pos + 1);
             return done(Token(Punct(first)));
         }
