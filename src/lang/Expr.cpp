@@ -76,11 +76,13 @@ ExprResult<Expr> Expr::pullPrimaryNonCall(Stream& stream) {
         TRY_PULL(NodeExpr);
     }
     PULL_IF(BlockExpr, '{');
-    PULL_IF(VarDeclExpr, Keyword::Let);
     PULL_IF(AliasExpr, Keyword::Using);
     PULL_IF(ImportExpr, Keyword::Import);
     PULL_IF(ExportExpr, Keyword::Export);
+    PULL_IF(VarDeclExpr, Keyword::Let);
+    PULL_IF_2(VarDeclExpr, Keyword::Extern, Keyword::Let);
     PULL_IF(FunDeclExpr, Keyword::Function);
+    PULL_IF_2(FunDeclExpr, Keyword::Extern, Keyword::Function);
     PULL_IF(NodeDeclExpr, Keyword::Struct);
     PULL_IF_2(NodeDeclExpr, Keyword::Extern, Keyword::Struct);
     PULL_IF(NodeDeclExpr, Keyword::Decl);

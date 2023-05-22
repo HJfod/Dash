@@ -1,7 +1,7 @@
 
-import { CCLabelBMFont } from "Std.gdml";
+import { CCLabelBMFont, winSize } from "Std.gdml";
 
 CCLabelBMFont {
     text: "Omg god";
-    pos: global.winSize / 2;
+    pos: winSize / 2;
 }

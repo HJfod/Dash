@@ -31,7 +31,8 @@ namespace gdml::lang {
         bool operator==(FullIdentPath const& other) const;
         std::string toString() const;
 
-        Option<FullIdentPath> resolve(IdentPath const& path) const;
+        Option<FullIdentPath> resolve(IdentPath const& path, bool existing) const;
+        FullIdentPath join(Ident const& component) const;
     };
 
     struct GDML_DLL UnkType {};
@@ -49,7 +50,7 @@ namespace gdml::lang {
     struct GDML_DLL FunType {
         Option<IdentPath> name;
         Vec<ParamType> params;
-        Box<Type> retType;
+        Option<Box<Type>> retType;
         bool isExtern;
     };
 

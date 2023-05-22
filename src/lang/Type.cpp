@@ -40,16 +40,16 @@ std::string FullIdentPath::toString() const {
     return fmt::format("::{}", fmt::join(path, "::"));
 }
 
-Option<FullIdentPath> FullIdentPath::resolve(IdentPath const& path) const {
+Option<FullIdentPath> FullIdentPath::resolve(IdentPath const& path, bool existing) const {
     if (path.absolute) {
-        if (FullIdentPath(path) == *this) {
+        if (existing ? FullIdentPath(path) == *this : FullIdentPath(path.path) == *this) {
             return FullIdentPath(path);
         }
         else {
             return None;
         }
     }
-    auto comps = path.getComponents();
+    auto comps = existing ? path.getComponents() : path.path;
     if (comps.size() > this->path.size()) {
         return None;
     }
@@ -61,7 +61,16 @@ Option<FullIdentPath> FullIdentPath::resolve(IdentPath const& path) const {
     auto ret = this->path;
     ret.erase(ret.begin() + (this->path.size() - comps.size()), ret.end());
     ranges::push(ret, comps);
+    if (!existing) {
+        ret.push_back(path.name);
+    }
     return ret;
+}
+
+FullIdentPath FullIdentPath::join(Ident const& component) const {
+    auto comps = path;
+    comps.push_back(component);
+    return comps;
 }
 
 Type::Type(Value const& value, Rc<const Expr> decl)
@@ -152,7 +161,9 @@ std::string Type::toString() const {
                 first = false;
                 ret += param.name + ": " + param.type->toString();
             }
-            ret += ") -> " + fun.retType->toString();
+            if (fun.retType) {
+                ret += ") -> " + fun.retType.value()->toString();
+            }
             return ret;
         },
         [](StructType const& str) -> std::string {

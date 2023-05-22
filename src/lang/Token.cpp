@@ -71,7 +71,7 @@ static std::unordered_map<Op, std::tuple<std::string, size_t, OpDir>> OPS {
 
 static std::string INVALID_IDENT_CHARS = ".,;(){}[]@`\\´¨'\"";
 static std::string VALID_OP_CHARS = "=+-/*<>!#?&|%:~^";
-static std::unordered_set<std::string> SPECIAL_IDENTS { "this", "super", "root", "global" };
+static std::unordered_set<std::string> SPECIAL_IDENTS { "this", "super", "root" };
 
 bool lang::isIdentCh(char ch) {
     return

@@ -51,9 +51,7 @@ export struct ccColor4B {
     rgb: ccColor3B <=> { r, g, b };
 }
 
-export extern struct global {
-    winSize: CCSize;
-}
+export extern let winSize: CCSize;
 
 export extern enum Layout {
     Row {}

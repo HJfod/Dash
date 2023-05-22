@@ -17,7 +17,7 @@ bool ParsedSrc::addExportedType(UnitParser& state, Type const& type) {
     if (!name) {
         return false;
     }
-    auto path = state.resolve(name.value());
+    auto path = state.resolve(name.value(), false);
     if (!path) {
         return false;
     }
@@ -47,32 +47,32 @@ Scope::Scope(Option<IdentPath> const& name, bool function, UnitParser& parser)
     : m_function(function), m_parser(parser)
 {
     if (name) {
-        m_name = parser.resolve(name.value()).ok();
+        m_name = parser.resolve(name.value(), false).ok();
     }
 }
 
 void Scope::push(Type const& type) {
     if (auto name = type.getName()) {
-        if (auto path = m_parser.resolve(name.value())) {
+        if (auto path = m_parser.resolve(name.value(), false)) {
             this->m_entities.insert({ path.unwrap(), type });
         }
     }
 }
 
 void Scope::push(Var const& var) {
-    if (auto path = m_parser.resolve(var.name)) {
+    if (auto path = m_parser.resolve(var.name, false)) {
         this->m_entities.insert({ path.unwrap(), var });
     }
 }
 
 void Scope::push(Fun const& fun) {
-    if (auto path = m_parser.resolve(fun.name)) {
+    if (auto path = m_parser.resolve(fun.name, false)) {
         this->m_entities.insert({ path.unwrap(), fun });
     }
 }
 
 void Scope::push(Namespace const& ns) {
-    if (auto path = m_parser.resolve(ns.name)) {
+    if (auto path = m_parser.resolve(ns.name, false)) {
         this->m_entities.insert({ path.unwrap(), ns });
     }
 }
@@ -114,7 +114,7 @@ Rc<ParsedSrc> UnitParser::getParsedSrc() const {
 }
 
 bool UnitParser::verifyCanPush(Rc<IdentExpr> name) {
-    auto path = this->resolve(name->path);
+    auto path = this->resolve(name->path, false);
     if (!path) {
         this->error(name->range, "{}", path.unwrapErr());
         return false;
@@ -126,16 +126,24 @@ bool UnitParser::verifyCanPush(Rc<IdentExpr> name) {
     return true;
 }
 
-Result<FullIdentPath> UnitParser::resolve(IdentPath const& name) {
+Result<FullIdentPath> UnitParser::resolve(IdentPath const& name, bool existing) {
+    if (name.isSingle() && !existing) {
+        for (auto& scope : ranges::reverse(m_scopes)) {
+            if (scope.m_name) {
+                return Ok(scope.m_name.value().join(name.name));
+            }
+        }
+        return Ok(FullIdentPath(name));
+    }
     for (auto& scope : ranges::reverse(m_scopes)) {
         if (scope.m_name) {
-            if (auto resolved = scope.m_name.value().resolve(name)) {
+            if (auto resolved = scope.m_name.value().resolve(name, existing)) {
                 log::debug("Scope resolved {} -> {}", name.toString(), resolved.value().toString());
                 return Ok(resolved.value());
             }
         }
         for (auto& [path, entity] : scope.m_entities) {
-            if (auto resolved = path.resolve(name)) {
+            if (auto resolved = path.resolve(name, existing)) {
                 if (
                     std::holds_alternative<Namespace>(entity) ||
                     std::holds_alternative<Fun>(entity)
@@ -157,7 +165,7 @@ void UnitParser::pushType(Type const& type) {
 }
 
 Type* UnitParser::getType(IdentPath const& name, bool topOnly) {
-    if (auto path = this->resolve(name)) {
+    if (auto path = this->resolve(name, true)) {
         // Prefer topmost scope
         for (auto& scope : ranges::reverse(m_scopes)) {
             if (scope.m_entities.contains(path.unwrap())) {
@@ -176,7 +184,7 @@ void UnitParser::pushVar(Var const& var) {
 }
 
 Var* UnitParser::getVar(IdentPath const& name, bool topOnly) {
-    if (auto path = this->resolve(name)) {
+    if (auto path = this->resolve(name, true)) {
         // Prefer topmost scope
         for (auto& scope : ranges::reverse(m_scopes)) {
             if (scope.m_entities.contains(path.unwrap())) {
@@ -275,14 +283,27 @@ void Parser::populate(CCNode* node) {
 }
 
 void Parser::dispatchLogs() const {
+    size_t errorCount = 0;
+    size_t warnCount = 0;
     for (auto& [_, msg] : m_messages) {
         switch (msg.level) {
             default:
-            case Level::Info:    log::info("{}", msg.toString()); break;
-            case Level::Error:   log::error("{}", msg.toString()); break;
-            case Level::Warning: log::warn("{}", msg.toString()); break;
+            case Level::Info:
+                log::info("{}", msg.toString());
+                break;
+
+            case Level::Error:   
+                log::error("{}", msg.toString());
+                errorCount += 1;
+                break;
+
+            case Level::Warning: 
+                log::warn("{}", msg.toString());
+                warnCount += 1;
+                break;
         }
     }
+    log::info("Finished with {} errors and {} warnings", errorCount, warnCount);
 }
 
 void Parser::log(Message const& message, size_t level) {

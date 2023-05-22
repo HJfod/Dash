@@ -34,6 +34,7 @@ namespace gdml::lang {
     struct GDML_DLL Var final {
         IdentPath name;
         Type type;
+        bool isExtern;
         Rc<const Expr> decl;
     };
 
@@ -91,7 +92,7 @@ namespace gdml::lang {
         Rc<ParsedSrc> getParsedSrc() const;
 
         bool verifyCanPush(Rc<IdentExpr> name);
-        geode::Result<FullIdentPath> resolve(IdentPath const& name);
+        geode::Result<FullIdentPath> resolve(IdentPath const& name, bool existing);
 
         void pushType(Type const& type);
         Type* getType(IdentPath const& name, bool topOnly = false);

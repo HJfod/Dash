@@ -61,7 +61,7 @@ Type IdentExpr::typecheck(UnitParser& state) const {
     auto var = state.getVar(path);
     if (!var) {
         state.error(range, "Unknown identifier \"{}\"", path);
-        return Type(UnkType(), nullptr);
+        return Primitive::Unk;
     }
     return var->type;
 }
@@ -122,7 +122,7 @@ Type NodeExpr::typecheck(UnitParser& state) const {
         if (!ty) {
             // todo: hint that you can define nodes with decl
             state.error(ident.value()->range, "Unknown node or struct \"{}\"", ident.value()->path);
-            return Type(UnkType(), nullptr);
+            return Primitive::Unk;
         }
         Set<Ident> assigned;
         for (auto& prop : props) {
@@ -130,7 +130,7 @@ Type NodeExpr::typecheck(UnitParser& state) const {
             auto mem = ty->getMemberType(prop->prop);
             if (!mem) {
                 state.error(range, "Node or struct \"{}\" has no property \"{}\"", ident.value()->path, prop->prop);
-                return Type(UnkType(), nullptr);
+                return Primitive::Unk;
             }
             if (mem.value().convertible(valty)) {
                 state.error(

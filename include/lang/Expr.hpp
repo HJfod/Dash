@@ -100,9 +100,15 @@ namespace gdml::lang {
         Rc<IdentExpr> ident;
         Option<Rc<TypeExpr>> type;
         Option<Rc<Expr>> value;
+        bool isExtern;
 
-        VarDeclExpr(Rc<IdentExpr> const& ident, Option<Rc<TypeExpr>> type, Option<Rc<Expr>> value, Range const& range)
-            : AExpr(range), ident(ident), type(type), value(value) {}
+        VarDeclExpr(
+            Rc<IdentExpr> ident,
+            Option<Rc<TypeExpr>> const& type,
+            Option<Rc<Expr>> const& value,
+            bool isExtern,
+            Range const& range
+        ) : AExpr(range), ident(ident), type(type), value(value), isExtern(isExtern) {}
 
         static ExprResult<VarDeclExpr> pull(Stream& stream);
         Type typecheck(UnitParser& state) const override;
@@ -172,17 +178,18 @@ namespace gdml::lang {
 
         Name name;
         Vec<Param> params;
-        Rc<Expr> body;
+        Option<Rc<Expr>> body;
         Option<Rc<TypeExpr>> retType;
         bool isExtern;
 
         FunDeclExpr(
             Name const& name,
             Vec<Param> const& params,
-            Rc<Expr> body,
+            Option<Rc<Expr>> const& body,
             Option<Rc<TypeExpr>> const& retType,
+            bool isExtern,
             Range const& range
-        ) : AExpr(range), name(name), params(params), body(body), retType(retType) {}
+        ) : AExpr(range), name(name), params(params), body(body), retType(retType), isExtern(isExtern) {}
 
         static ExprResult<FunDeclExpr> pull(Stream& stream);
         static ExprResult<FunDeclExpr> pullArrow(Stream& stream);

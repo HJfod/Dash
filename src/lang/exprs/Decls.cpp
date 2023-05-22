@@ -8,29 +8,28 @@ using namespace gdml;
 
 ExprResult<VarDeclExpr> VarDeclExpr::pull(Stream& stream) {
     Rollback rb(stream);
+    bool isExtern = Token::draw(Keyword::Extern, stream).has_value();
     GEODE_UNWRAP(Token::pull(Keyword::Let, stream));
     GEODE_UNWRAP_INTO(auto ident, IdentExpr::pull(stream));
 
     Option<Rc<TypeExpr>> type;
-    if (Token::pull(':', stream)) {
+    if (Token::draw(':', stream)) {
         GEODE_UNWRAP_INTO(type, TypeExpr::pull(stream));
     }
-    rb.clearMessages();
 
     Option<Rc<Expr>> value;
-    if (Token::pull(Op::Seq, stream)) {
+    if (Token::draw(Op::Seq, stream)) {
         GEODE_UNWRAP_INTO(value, Expr::pull(stream));
     }
-    rb.clearMessages();
 
-    return rb.commit<VarDeclExpr>(ident, type, value);
+    return rb.commit<VarDeclExpr>(ident, type, value, isExtern);
 }
 
 Type VarDeclExpr::typecheck(UnitParser& state) const {
     Type varty;
     if (!type && !value) {
         state.error(range, "Variable needs an explicit type or value");
-        varty = Type(UnkType(), nullptr);
+        varty = Primitive::Unk;
     }
     if (type) {
         auto ty = type.value()->typecheck(state);
@@ -44,12 +43,17 @@ Type VarDeclExpr::typecheck(UnitParser& state) const {
         varty = ty;
     }
     if (value) {
+        if (isExtern) {
+            state.error(value.value()->range, "Extern variables may not have a value");
+        }
         varty = value.value()->typecheck(state);
     }
     state.verifyCanPush(ident);
     state.pushVar(Var {
         .name = ident->path,
         .type = varty,
+        .isExtern = isExtern,
+        .decl = shared_from_this(),
     });
     return varty;
 }
@@ -89,6 +93,7 @@ ParseResult<> FunDeclExpr::pullParams(Vec<Param>& target, Stream& stream, bool r
 
 ExprResult<FunDeclExpr> FunDeclExpr::pull(Stream& stream) {
     Rollback rb(stream);
+    bool isExtern = Token::draw(Keyword::Extern, stream).has_value();
     GEODE_UNWRAP(Token::pull(Keyword::Function, stream));
     Name name = None;
     Vec<Param> params;
@@ -143,15 +148,18 @@ ExprResult<FunDeclExpr> FunDeclExpr::pull(Stream& stream) {
             GEODE_UNWRAP_INTO(ret, TypeExpr::pull(stream));
         }
     }
-    GEODE_UNWRAP(Token::pull('{', stream));
-    GEODE_UNWRAP_INTO(auto body, ListExpr::pull(stream));
-    GEODE_UNWRAP(Token::pull('}', stream));
-    return rb.commit<FunDeclExpr>(name, params, body, ret);
+    Option<Rc<Expr>> body;
+    if (Token::draw('{', stream)) {
+        GEODE_UNWRAP_INTO(body, ListExpr::pull(stream));
+        GEODE_UNWRAP(Token::pull('}', stream));
+    }
+    return rb.commit<FunDeclExpr>(name, params, body, ret, isExtern);
 }
 
 ExprResult<FunDeclExpr> FunDeclExpr::pullArrow(Stream& stream) {
     Rollback rb(stream);
     Vec<Param> params;
+    Option<Rc<TypeExpr>> ret;
     if (!Token::draw(Keyword::Get, stream)) {
         if (Token::draw(Keyword::Set, stream)) {
             GEODE_UNWRAP(Token::pull('(', stream));
@@ -168,10 +176,13 @@ ExprResult<FunDeclExpr> FunDeclExpr::pullArrow(Stream& stream) {
             params.push_back(param);
         }
     }
+    if (Token::draw(Op::Arrow, stream)) {
+        GEODE_UNWRAP_INTO(ret, TypeExpr::pull(stream));
+    }
     GEODE_UNWRAP(Token::pull(Op::Farrow, stream));
     Rc<Expr> body;
     GEODE_UNWRAP_INTO(body, Expr::pull(stream));
-    return rb.commit<FunDeclExpr>(None, params, body, None);
+    return rb.commit<FunDeclExpr>(None, params, body, ret, false);
 }
 
 Type FunDeclExpr::typecheck(UnitParser& state) const {
@@ -187,7 +198,7 @@ Type FunDeclExpr::typecheck(UnitParser& state) const {
 
     state.pushScope(fun.name, true);
     for (auto& param : params) {
-        Type pty = Type(UnkType(), nullptr);
+        Type pty = Primitive::Unk;
         if (param.type) {
             pty = param.type.value()->typecheck(state);
         }
@@ -219,8 +230,14 @@ Type FunDeclExpr::typecheck(UnitParser& state) const {
     // allow recursion by pushing fun type before body check
     state.scope(1).push(ret);
 
-    if (!body->typecheck(state).convertible(fun.retType)) {
-        state.error(body->range, "Function body does not match return type");
+    if (body) {
+        if (isExtern) {
+            state.error(body.value()->range, "Extern functions may not have a body");
+        }
+        auto ret = body.value()->typecheck(state);
+        if (fun.retType && !ret.convertible(fun.retType.value())) {
+            state.error(body.value()->range, "Function body does not match return type");
+        }
     }
     state.popScope();
 
@@ -322,7 +339,8 @@ ExprResult<MemberDeclExpr> MemberDeclExpr::pull(Stream& stream) {
             getter = stream.make<FunDeclExpr>(
                 None, Vec<Param>(),
                 stream.make<NodeExpr>(None, props, Vec<Rc<NodeExpr>>()),
-                stream.make<TypeIdentExpr>(stream.make<IdentExpr>(IdentPath(ident)))
+                stream.make<TypeIdentExpr>(stream.make<IdentExpr>(IdentPath(ident))),
+                false
             );
             setter = stream.make<FunDeclExpr>(
                 None, Vec<Param> { Param {
@@ -330,7 +348,8 @@ ExprResult<MemberDeclExpr> MemberDeclExpr::pull(Stream& stream) {
                     .type = stream.make<TypeIdentExpr>(stream.make<IdentExpr>(IdentPath(ident)))
                 } },
                 stream.make<ListExpr>(exprs),
-                None
+                None,
+                false
             );
         }
         else {
@@ -339,7 +358,8 @@ ExprResult<MemberDeclExpr> MemberDeclExpr::pull(Stream& stream) {
             getter = stream.make<FunDeclExpr>(
                 None, Vec<Param>(),
                 stream.make<MemberExpr>(stream.make<IdentExpr>(IdentPath("this")), dep),
-                stream.make<TypeIdentExpr>(stream.make<IdentExpr>(IdentPath(ident)))
+                stream.make<TypeIdentExpr>(stream.make<IdentExpr>(IdentPath(ident))),
+                false
             );
             setter = stream.make<FunDeclExpr>(
                 None, Vec<Param> { Param {
@@ -351,7 +371,7 @@ ExprResult<MemberDeclExpr> MemberDeclExpr::pull(Stream& stream) {
                     stream.make<IdentExpr>(IdentPath("value")),
                     Op::Seq
                 ),
-                None
+                None, false
             );
         }
     }
@@ -457,7 +477,7 @@ Type NodeDeclExpr::typecheck(UnitParser& state) const {
     else {
         if (!ident) {
             state.error(range, "Anonymous nodes are not allowed");
-            return Type(UnkType(), nullptr);
+            return Primitive::Unk;
         }
         NodeType sty;
         sty.name = ident.value()->path;

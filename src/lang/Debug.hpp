@@ -107,12 +107,13 @@ struct DebugPrint {
 };
 
 template <>
-class fmt::formatter<gdml::lang::IdentPath> {
+class fmt::formatter<gdml::lang::IdentPath> : public fmt::formatter<std::string> {
 public:
-    constexpr auto parse (format_parse_context& ctx) { return ctx.begin(); }
     template <typename Context>
     constexpr auto format (gdml::lang::IdentPath const& path, Context& ctx) const {
-        return format_to(ctx.out(), "{}", path.toString());
+        return fmt::formatter<std::string>::format(fmt::format(
+            "{}", path.toString()
+        ), ctx);
     }
 };
 

@@ -17,6 +17,11 @@
 namespace gdml {
     // this code has not been approved by the Rust foundation
 
+
+    template <class T>
+    using Option = std::optional<T>;
+    constexpr auto None = std::nullopt;
+
     template <class T>
     struct Box final {
     private:
@@ -29,18 +34,33 @@ namespace gdml {
         Box(Args&&... args) : value(std::make_unique<T>(std::forward<Args>(args)...)) {}
 
         Box(Box&& other) : value(std::move(other.value)) {}
-        Box(Box const& other) : value(std::make_unique<T>(*other.value.get())) {}
+        Box(Box const& other)
+            : value(other.value.get() ? 
+                std::make_unique<T>(*other.value.get()) : 
+                nullptr
+            ) {}
 
         Box& operator=(Box const& other) {
-            this->value = std::make_unique<T>(*other.value.get());
+            if (other.value.get()) {
+                this->value = std::make_unique<T>(*other.value.get());
+            }
+            else {
+                this->value = nullptr;
+            }
             return *this;
         }
         bool operator==(Box const& other) const {
             return this->value == other.value;
         }
 
+        Option<T> tryClone() const {
+            if (value.get()) {
+                return *value.get();
+            }
+            return None;
+        }
         T clone() const {
-            return *value.get();
+            return this->tryClone().value_or(T());
         }
         operator T() {
             return this->clone();
@@ -78,10 +98,6 @@ namespace gdml {
     using Owned = std::unique_ptr<T>;
 
     using Path = ghc::filesystem::path;
-
-    template <class T>
-    using Option = std::optional<T>;
-    constexpr auto None = std::nullopt;
 
     template <class T>
     using Vec = std::vector<T>;
