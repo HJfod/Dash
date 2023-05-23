@@ -36,7 +36,6 @@ ExprResult<AliasExpr> AliasExpr::pull(Stream& stream) {
 }
 
 Type AliasExpr::typecheck(UnitParser& state) const {
-    alias->typecheck(state);
     state.verifyCanPush(alias);
     AliasType ty;
     ty.alias = alias->path;

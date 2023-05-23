@@ -54,14 +54,17 @@ Rc<AST> ParsedSrc::getAST() const {
 void ParsedSrc::addExported(UnitParser& parser, Range const& range, Entity const& ent) {
     auto name = ent.getName();
     if (!name) {
-        return parser.error(range, "Can't export anonymous entities");
+        parser.error(range, "Can't export anonymous entities");
+        return;
     }
     auto path = parser.resolve(name.value(), false);
     if (!path) {
-        return parser.error(range, "Can't export an entity in this scope");
+        parser.error(range, "Can't export an entity in this scope");
+        return;
     }
     if (m_exported.contains(path.unwrap())) {
-        return parser.error(range, "\"{}\" has already been exported", path.unwrap());
+        parser.error(range, "\"{}\" has already been exported", path.unwrap());
+        return;
     }
     m_exported.insert({ path.unwrap(), ent });
 }
@@ -82,12 +85,7 @@ Vec<Entity> ParsedSrc::getAllExported() const {
 }
 
 Scope::Scope(Option<IdentPath> const& name, bool function, UnitParser& parser)
-    : m_function(function), m_parser(parser)
-{
-    if (name) {
-        m_name = parser.resolve(name.value(), false).ok();
-    }
-}
+    : m_name(name), m_function(function), m_parser(parser) {}
 
 void Scope::push(Entity const& ent) {
     if (auto name = ent.getName()) {
@@ -151,20 +149,32 @@ bool UnitParser::verifyCanPush(Rc<IdentExpr> name) {
 }
 
 Result<FullIdentPath> UnitParser::resolve(IdentPath const& name, bool existing) {
-    if (name.isSingle() && !existing) {
-        for (auto& scope : ranges::reverse(m_scopes)) {
-            if (scope.m_name) {
-                return Ok(scope.m_name.value().join(name.name));
-            }
+    if (!existing) {
+        // Absolute paths are resolved as is
+        if (name.absolute) {
+            return Ok(FullIdentPath(name));
         }
-        return Ok(FullIdentPath(name));
+        // If the name contains a parent path (e.g. `a::b` in `a::b::c`) then that 
+        // must already exist
+        else if (auto parent = name.getParent()) {
+            GEODE_UNWRAP_INTO(auto target, this->resolve(parent.value(), true));
+            return Ok(target.join(name.name));
+        }
+        // Otherwise just append the name to the end of the current scope
+        else {
+            auto path = FullIdentPath();
+            for (auto& scope : m_scopes) {
+                if (scope.m_name) {
+                    path = path.join(scope.m_name.value());
+                }
+            }
+            path.join(name);
+            return Ok(path);
+        }
+    }
+    else {
     }
     for (auto& scope : ranges::reverse(m_scopes)) {
-        if (scope.m_name) {
-            if (auto resolved = scope.m_name.value().resolve(name, existing)) {
-                return Ok(resolved.value());
-            }
-        }
         for (auto& [path, entity] : scope.m_entities) {
             if (auto resolved = path.resolve(name, existing)) {
                 return Ok(resolved.value());
@@ -250,9 +260,8 @@ Parser* Parser::create(Path const& file) {
     if (!src) {
         ret->log(Message {
             .level = Level::Error,
-            .src = nullptr,
             .info = src.unwrapErr(),
-            .range = Range(nullptr),
+            .range = None,
         });
     }
     return ret;
@@ -266,7 +275,6 @@ void Parser::compile() {
     catch(std::exception const& e) {
         this->log(Message {
             .level = Level::Error,
-            .src = m_root,
             .info = "Internal Compiler Error: " + std::string(e.what()),
             .range = Range(m_root->getLocation(0)),
         });
@@ -317,8 +325,9 @@ void Parser::dispatchLogs() const {
     log::info("Finished with {} errors and {} warnings", errorCount, warnCount);
 }
 
-void Parser::log(Message const& message, size_t level) {
+Message& Parser::log(Message const& message, size_t level) {
     m_messages.push_back({ level, message });
+    return m_messages.back().second;
 }
 
 size_t Parser::pushLogLevel() {

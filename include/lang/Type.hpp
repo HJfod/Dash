@@ -20,11 +20,13 @@ namespace gdml::lang {
         std::string toString() const;
         bool isSingle() const;
         Vec<Ident> getComponents() const;
+        Option<IdentPath> getParent() const;
     };
 
     struct GDML_DLL FullIdentPath {
         Vec<Ident> path;
 
+        FullIdentPath() = default;
         FullIdentPath(Vec<Ident> const& components);
         explicit FullIdentPath(IdentPath const& path);
 
@@ -33,6 +35,7 @@ namespace gdml::lang {
 
         Option<FullIdentPath> resolve(IdentPath const& path, bool existing) const;
         FullIdentPath join(Ident const& component) const;
+        FullIdentPath join(IdentPath const& components) const;
     };
 
     struct GDML_DLL UnkType {};
@@ -116,6 +119,7 @@ namespace gdml::lang {
         Type(Primitive type, std::source_location const loc = std::source_location::current());
 
         Type realize() const;
+        Option<Type> getReturnType() const;
         bool convertible(Type const& other) const;
         Option<Type> getMemberType(std::string const& name) const;
         Set<String> getRequiredMembers() const;

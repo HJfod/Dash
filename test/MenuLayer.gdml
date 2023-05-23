@@ -5,3 +5,17 @@ CCLabelBMFont {
     text: "Omg god";
     pos: winSize / 2;
 }
+
+let c: int;
+fun a() {
+    let c: string;
+    fun b() {
+        let c: bool;
+        c = false;
+        b::c = true;
+        a::b::c = false;
+        a::c = "hi";
+        ::a::c = "yeah";
+        ::c = 5;
+    }
+}

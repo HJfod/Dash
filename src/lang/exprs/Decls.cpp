@@ -171,13 +171,13 @@ ExprResult<FunDeclExpr> FunDeclExpr::pullArrow(Stream& stream) {
     Option<Rc<TypeExpr>> ret;
     if (!Token::draw(Keyword::Get, stream)) {
         if (Token::draw(Keyword::Set, stream)) {
+            GEODE_UNWRAP(Token::pull('(', stream));
             params.push_back(Param {
                 .name = "this",
                 .type = None,
                 .value = None,
                 .range = stream.location(),
             });
-            GEODE_UNWRAP(Token::pull('(', stream));
             GEODE_UNWRAP(FunDeclExpr::pullParams(params, stream, false));
             GEODE_UNWRAP(Token::pull(')', stream));
         }
@@ -407,16 +407,25 @@ ExprResult<MemberDeclExpr> MemberDeclExpr::pull(Stream& stream) {
                 ));
             }
             getter = stream.make<FunDeclExpr>(
-                None, Vec<Param>(),
+                None, Vec<Param> {
+                    Param {
+                        .name = "this",
+                    },
+                },
                 stream.make<NodeExpr>(None, props, Vec<Rc<NodeExpr>>()),
-                stream.make<TypeIdentExpr>(stream.make<IdentExpr>(IdentPath(ident))),
+                type,
                 false
             );
             setter = stream.make<FunDeclExpr>(
-                None, Vec<Param> { Param {
-                    .name = "value",
-                    .type = stream.make<TypeIdentExpr>(stream.make<IdentExpr>(IdentPath(ident)))
-                } },
+                None, Vec<Param> {
+                    Param {
+                        .name = "this",
+                    },
+                    Param {
+                        .name = "value",
+                        .type = type,
+                    },
+                },
                 stream.make<ListExpr>(exprs),
                 None,
                 false
@@ -426,16 +435,25 @@ ExprResult<MemberDeclExpr> MemberDeclExpr::pull(Stream& stream) {
             GEODE_UNWRAP_INTO(auto dep, Token::pull<Ident>(stream));
             dependencies.push_back(dep);
             getter = stream.make<FunDeclExpr>(
-                None, Vec<Param>(),
+                None, Vec<Param> {
+                    Param {
+                        .name = "this",
+                    },
+                },
                 stream.make<MemberExpr>(stream.make<IdentExpr>(IdentPath("this")), dep),
-                stream.make<TypeIdentExpr>(stream.make<IdentExpr>(IdentPath(ident))),
+                type,
                 false
             );
             setter = stream.make<FunDeclExpr>(
-                None, Vec<Param> { Param {
-                    .name = "value",
-                    .type = stream.make<TypeIdentExpr>(stream.make<IdentExpr>(IdentPath(ident)))
-                } },
+                None, Vec<Param> {
+                    Param {
+                        .name = "this",
+                    },
+                    Param {
+                        .name = "value",
+                        .type = type,
+                    },
+                },
                 stream.make<BinOpExpr>(
                     stream.make<MemberExpr>(stream.make<IdentExpr>(IdentPath("this")), dep),
                     stream.make<IdentExpr>(IdentPath("value")),
@@ -464,8 +482,11 @@ Type MemberDeclExpr::typecheck(UnitParser& state) const {
         }
     }
     if (getter) {
-        if (!getter.value()->typecheck(state).convertible(ty)) {
-            state.error(getter.value()->range, "Getter return type does not match member type");
+        auto ret = getter.value()->typecheck(state).getReturnType();
+        if (ret && !ret.value().convertible(ty)) {
+            state.error(getter.value()->range, "Getter return type does not match member type")
+                .note("Member type is {}", ty.toString())
+                .note("Return type is {}", ret.value().toString());
         }
     }
     if (setter) {

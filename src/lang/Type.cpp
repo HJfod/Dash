@@ -28,6 +28,18 @@ Vec<Ident> IdentPath::getComponents() const {
     return ret;
 }
 
+Option<IdentPath> IdentPath::getParent() const {
+    if (this->path.size()) {
+        auto nuevo = IdentPath();
+        nuevo.absolute = this->absolute;
+        nuevo.name = this->path.back();
+        nuevo.path = this->path;
+        nuevo.path.pop_back();
+        return nuevo;
+    }
+    return None;
+}
+
 FullIdentPath::FullIdentPath(Vec<Ident> const& components) : path(components) {}
 
 FullIdentPath::FullIdentPath(IdentPath const& path) : path(path.path) {
@@ -73,6 +85,17 @@ FullIdentPath FullIdentPath::join(Ident const& component) const {
     return comps;
 }
 
+FullIdentPath FullIdentPath::join(IdentPath const& components) const {
+    auto comps = path;
+    if (!components.absolute) {
+        for (auto& comp : components.path) {
+            comps.push_back(comp);
+        }
+        comps.push_back(components.name);
+    }
+    return comps;
+}
+
 Type::Type(Value const& value, Rc<const Expr> decl)
   : kind(value), decl(decl) {}
 
@@ -109,9 +132,6 @@ Type Type::realize() const {
 bool Type::convertible(Type const& other) const {
     auto from = this->realize();
     auto into = other.realize();
-    if (from.kind.index() != into.kind.index()) {
-        return false;
-    }
     // unknown types are always equal to everything else
     if (
         std::holds_alternative<UnkType>(from.kind) ||
@@ -119,8 +139,20 @@ bool Type::convertible(Type const& other) const {
     ) {
         return true;
     }
+    if (from.kind.index() != into.kind.index()) {
+        return false;
+    }
     if (auto str = std::get_if<StructType>(&from.kind)) {
-        return str->members == std::get<StructType>(into.kind).members;
+        // must have all the same members as into, can have extra members tho
+        for (auto& [name, mem] : std::get<StructType>(into.kind).members) {
+            if (
+                !str->members.contains(name) ||
+                !str->members.at(name).type->convertible(mem.type)
+            ) {
+                return false;
+            }
+        }
+        return true;
     }
     if (auto str = std::get_if<NodeType>(&from.kind)) {
         return str->name == std::get<NodeType>(into.kind).name;
@@ -163,6 +195,9 @@ std::string Type::toString() const {
             }
             if (fun.retType) {
                 ret += ") -> " + fun.retType.value()->toString();
+            }
+            else {
+                ret += ") -> auto";
             }
             return ret;
         },
@@ -259,6 +294,20 @@ Option<IdentPath> Type::getName() const {
 
 Rc<const Expr> Type::getDecl() const {
     return this->decl;
+}
+
+Option<Type> Type::getReturnType() const {
+    return std::visit(makeVisitor {
+        [&](FunType const& fun) -> Option<Type> {
+            if (fun.retType) {
+                return fun.retType.value().clone();
+            }
+            return None;
+        },
+        [&](auto const&) -> Option<Type> {
+            return None;
+        },
+    }, kind);
 }
 
 Option<Type> Type::getMemberType(std::string const& name) const {

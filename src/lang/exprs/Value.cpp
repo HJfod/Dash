@@ -52,8 +52,8 @@ ExprResult<IdentExpr> IdentExpr::pull(Stream& stream) {
     if (path.path.empty()) {
         return rb.error("Expected identifier");
     }
-    path.name = path.path.front();
-    path.path.erase(path.path.begin());
+    path.name = path.path.back();
+    path.path.pop_back();
     return rb.commit<IdentExpr>(path);
 }
 

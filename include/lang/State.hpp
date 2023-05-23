@@ -12,6 +12,7 @@ namespace gdml::lang {
     class Parser;
     class Expr;
     class IdentExpr;
+    class Entity;
 
     struct GDML_DLL Var final {
         IdentPath name;
@@ -28,6 +29,7 @@ namespace gdml::lang {
 
     struct GDML_DLL Namespace final {
         IdentPath name;
+        Map<FullIdentPath, Entity> entities;
         Rc<const Expr> decl;
     };
 
@@ -87,11 +89,10 @@ namespace gdml::lang {
     class GDML_DLL Scope final {
     private:
         UnitParser& m_parser;
-        Option<FullIdentPath> m_name;
         Map<FullIdentPath, Entity> m_entities;
         bool m_function;
 
-        Scope(Option<IdentPath> const& name, bool function, UnitParser& parser);
+        Scope(bool function, UnitParser& parser);
 
         friend class UnitParser;
 
@@ -139,43 +140,40 @@ namespace gdml::lang {
             return nullptr;
         }
 
-        void pushScope(Option<IdentPath> const& name, bool function);
+        void pushScope(bool function);
         void popScope(std::source_location const = std::source_location::current());
         bool isRootScope() const;
         Scope& scope(size_t depth = 0);
         Vec<Scope> const& getScopes() const;
 
         template <class... Args>
-        void log(Range const& range, std::string const& fmt, Args&&... args) {
+        Message& log(Range const& range, std::string const& fmt, Args&&... args) {
             auto msg = Message {
                 .level = Level::Info,
-                .src = range.start.src,
                 .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
                 .range = range,
             };
-            this->getShared().log(msg);
+            return this->getShared().log(msg);
         }
 
         template <class... Args>
-        void warn(Range const& range, std::string const& fmt, Args&&... args) {
+        Message& warn(Range const& range, std::string const& fmt, Args&&... args) {
             auto msg = Message {
                 .level = Level::Warning,
-                .src = range.start.src,
                 .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
                 .range = range,
             };
-            this->getShared().log(msg);
+            return this->getShared().log(msg);
         }
 
         template <class... Args>
-        void error(Range const& range, std::string const& fmt, Args&&... args) {
+        Message& error(Range const& range, std::string const& fmt, Args&&... args) {
             auto msg = Message {
                 .level = Level::Error,
-                .src = range.start.src,
                 .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
                 .range = range,
             };
-            this->getShared().log(msg);
+            return this->getShared().log(msg);
         }
     };
 
@@ -203,7 +201,7 @@ namespace gdml::lang {
         void compile();
         void populate(cocos2d::CCNode* node);
 
-        void log(Message const& message, size_t level = 0);
+        Message& log(Message const& message, size_t level = 0);
         size_t pushLogLevel();
         void popLogLevel();
         void popMessages(size_t level);

@@ -42,11 +42,25 @@ namespace gdml::lang {
         Error,
     };
 
+    struct GDML_DLL Note {
+        std::string info;
+        Option<Range> range;
+        std::string toString() const;
+    };
+
     struct GDML_DLL Message {
         Level level;
-        Rc<Src> src;
         std::string info;
-        Range range;
+        Option<Range> range;
+        Vec<Note> notes;
+
+        Message& note(Note const& note);
+        template <class... Args>
+        Message& note(std::string const& fmt, Args&&... args) {
+            return this->note(Note {
+                .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
+            });
+        }
 
         std::string toString() const;
     };
@@ -164,7 +178,6 @@ namespace gdml::lang {
         geode::impl::Failure<size_t> error(std::string const& fmt, Args&&... args) {
             return this->error(Message {
                 .level = Level::Error,
-                .src = m_stream.src(),
                 .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
                 .range = Range(m_stream.src()->getLocation(m_offset), m_stream.location())
             });
@@ -174,7 +187,6 @@ namespace gdml::lang {
         geode::impl::Failure<size_t> errorLastToken(std::string const& fmt, Args&&... args) {
             return this->error(Message {
                 .level = Level::Error,
-                .src = m_stream.src(),
                 .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
                 .range = Range(m_stream.src()->getLocation(m_offset), m_stream.src()->getLocation(m_offset))
             });
@@ -185,7 +197,6 @@ namespace gdml::lang {
             Token::skipToNext(m_stream);
             return this->error(Message {
                 .level = Level::Error,
-                .src = m_stream.src(),
                 .info = fmt::format(fmt::runtime(fmt), std::forward<Args>(args)...),
                 .range = Range(m_stream.location(), m_stream.location())
             });

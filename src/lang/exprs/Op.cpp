@@ -51,10 +51,12 @@ ExprResult<Expr> BinOpExpr::pull(Stream& stream) {
 }
 
 Type BinOpExpr::typecheck(UnitParser& state) const {
-    auto r = rhs->typecheck(state);
     auto l = lhs->typecheck(state);
-    if (r.convertible(l)) {
-        state.error(range, "Mismatching types for binary operation");
+    auto r = rhs->typecheck(state);
+    if (!r.convertible(l)) {
+        state.error(range, "Mismatching types for binary operation")
+            .note("Left side is {}", l.toString())
+            .note("Right side is {}", r.toString());
     }
     return r;
 }

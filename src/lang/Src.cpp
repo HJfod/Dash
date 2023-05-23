@@ -22,6 +22,20 @@ std::string Range::toString() const {
     return fmt::format("{}-{}", start.toString(), end.toString());
 }
 
+std::string Note::toString() const {
+    std::string res = "";
+    res += "Note";
+    if (this->range) {
+        res += " at " + this->range->toString() + " in " + this->range->start.src->getName() + ":\n";
+        res += this->range->start.src->getUnderlined(this->range.value()) + "\n";
+    }
+    else {
+        res += ": ";
+    }
+    res += this->info;
+    return res;
+}
+
 std::string Message::toString() const {
     std::string res = "";
     switch (this->level) {
@@ -30,12 +44,23 @@ std::string Message::toString() const {
         case Level::Warning: res += "Warning"; break;
         default: res += "Unknown"; break;
     }
-    if (this->src) {
-        res += " at " + this->range.toString() + " in " + this->src->getName() + ":\n";
-        res += this->src->getUnderlined(this->range) + "\n";
+    if (this->range) {
+        res += " at " + this->range->toString() + " in " + this->range->start.src->getName() + ":\n";
+        res += this->range->start.src->getUnderlined(this->range.value()) + "\n";
+    }
+    else {
+        res += ": ";
     }
     res += this->info;
+    for (auto& note : this->notes) {
+        res += "\n" + note.toString();
+    }
     return res;
+}
+
+Message& Message::note(Note const& note) {
+    this->notes.push_back(note);
+    return *this;
 }
 
 std::string SrcFile::getName() const {
