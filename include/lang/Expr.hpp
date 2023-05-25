@@ -197,7 +197,7 @@ namespace gdml::lang {
 
         static ExprResult<FunDeclExpr> pull(Stream& stream);
         static ExprResult<FunDeclExpr> pullArrow(Stream& stream);
-        static ParseResult<> pullParams(Vec<Param>& target, Stream& stream, bool requireTypes);
+        static ParseResult<Option<Op>> pullParams(Vec<Param>& target, Stream& stream, bool requireTypes);
         Type typecheck(UnitParser& state) const override;
         std::string debug(size_t indent = 0) const override;
         Option<Entity> typecheckEntity(UnitParser& state) const override;
@@ -319,10 +319,10 @@ namespace gdml::lang {
 
     struct GDML_DLL ImportExpr : public AExpr<ImportExpr> {
         StrLit from;
-        Vec<Rc<IdentExpr>> imports; // empty is *
+        Option<Rc<IdentExpr>> as;
 
-        ImportExpr(StrLit const& from, Vec<Rc<IdentExpr>> const& imports, Range const& range)
-            : AExpr(range), from(from), imports(imports) {}
+        ImportExpr(StrLit const& from, Option<Rc<IdentExpr>> const& as, Range const& range)
+            : AExpr(range), as(as), from(from) {}
 
         static ExprResult<ImportExpr> pull(Stream& stream);
         Type typecheck(UnitParser& state) const override;

@@ -2,16 +2,49 @@
 // On structs, every non-binded member without a default value will be required
 // On decls, only properties explicitly marked required aren't optional
 
-// All .gdml files do `import * from "@hjfod.gdml/Std.gdml";` by default
+// All .gdml files do `import "Std.gdml";` by default
 
 export struct CCPoint {
     x: float;
     y: float;
 }
 
+fun CCPoint::member(this) {}
+
+fun (point: CCPoint) as CCSize {
+    return CCSize {
+        width: point.x,
+        height: point.y
+    };
+}
+
+fun /(point: CCPoint, factor: int)   -> CCPoint => { x: point.x / factor, y: point.y / factor };
+fun /(point: CCPoint, factor: float) -> CCPoint => { x: point.x / factor, y: point.y / factor };
+fun *(point: CCPoint, factor: int)   -> CCPoint => { x: point.x * factor, y: point.y * factor };
+fun *(point: CCPoint, factor: float) -> CCPoint => { x: point.x * factor, y: point.y * factor };
+
 export struct CCSize {
     width: float;
     height: float;
+}
+
+fun as(size: CCSize) -> CCPoint {
+    return CCPoint {
+        x: size.width,
+        y: size.height
+    };
+}
+fun (size: CCSize / factor: int) -> CCSize {
+    return { width: size.width / factor, height: size.height / factor };
+}
+fun (size: CCSize / factor: float) -> CCSize {
+    return { width: size.width / factor, height: size.height / factor };
+}
+fun (size: CCSize * factor: int) -> CCSize {
+    return { width: size.width * factor, height: size.height * factor };
+}
+fun (size: CCSize * factor: float) -> CCSize {
+    return { width: size.width * factor, height: size.height * factor };
 }
 
 export struct CCRect {
@@ -97,35 +130,3 @@ export extern decl CCLabelBMFont extends CCNode {
 //     font: string;
 //     bg: string;
 // }
-
-export fun point: CCPoint as CCSize {
-    return { width: point.x, height: point.y };
-}
-export fun point: CCPoint / factor: int -> CCPoint {
-    return { x: point.x / factor, y: point.y / factor };
-}
-export fun point: CCPoint / factor: float -> CCPoint {
-    return { x: point.x / factor, y: point.y / factor };
-}
-export fun point: CCPoint * factor: int -> CCPoint {
-    return { x: point.x * factor, y: point.y * factor };
-}
-export fun point: CCPoint * factor: float -> CCPoint {
-    return { x: point.x * factor, y: point.y * factor };
-}
-
-export fun size: CCSize as CCPoint {
-    return { x: size.width, y: size.height };
-}
-export fun /(size: CCSize, factor: int) -> CCSize {
-    return { width: size.width / factor, height: size.height / factor };
-}
-export fun size: CCSize / factor: float -> CCSize {
-    return { width: size.width / factor, height: size.height / factor };
-}
-export fun size: CCSize * factor: int -> CCSize {
-    return { width: size.width * factor, height: size.height * factor };
-}
-export fun size: CCSize * factor: float -> CCSize {
-    return { width: size.width * factor, height: size.height * factor };
-}

@@ -84,8 +84,8 @@ Vec<Entity> ParsedSrc::getAllExported() const {
     return types;
 }
 
-Scope::Scope(Option<IdentPath> const& name, bool function, UnitParser& parser)
-    : m_name(name), m_function(function), m_parser(parser) {}
+Scope::Scope(bool function, UnitParser& parser)
+    : m_function(function), m_parser(parser) {}
 
 void Scope::push(Entity const& ent) {
     if (auto name = ent.getName()) {
@@ -100,7 +100,7 @@ Vec<Entity> Scope::getEntities() const {
 }
 
 UnitParser::UnitParser(Parser& parser, Rc<Src> src)
-  : m_parser(parser), m_src(src), m_scopes({ Scope(None, false, *this) })
+  : m_parser(parser), m_src(src), m_scopes({ Scope(false, *this) })
 {
     this->push(Type(Primitive::Void));
     this->push(Type(Primitive::Bool));
@@ -148,6 +148,14 @@ bool UnitParser::verifyCanPush(Rc<IdentExpr> name) {
     return true;
 }
 
+FullIdentPath UnitParser::getCurrentNamespace() const {
+    auto cur = FullIdentPath();
+    for (auto& ns : m_namespace) {
+        cur = cur.enter(ns);
+    }
+    return cur;
+}
+
 Result<FullIdentPath> UnitParser::resolve(IdentPath const& name, bool existing) {
     if (!existing) {
         // Absolute paths are resolved as is
@@ -162,26 +170,18 @@ Result<FullIdentPath> UnitParser::resolve(IdentPath const& name, bool existing) 
         }
         // Otherwise just append the name to the end of the current scope
         else {
-            auto path = FullIdentPath();
-            for (auto& scope : m_scopes) {
-                if (scope.m_name) {
-                    path = path.join(scope.m_name.value());
-                }
-            }
-            path.join(name);
-            return Ok(path);
+            return Ok(getCurrentNamespace().join(name));
         }
     }
     else {
-    }
-    for (auto& scope : ranges::reverse(m_scopes)) {
-        for (auto& [path, entity] : scope.m_entities) {
-            if (auto resolved = path.resolve(name, existing)) {
-                return Ok(resolved.value());
+        auto full = getCurrentNamespace().enterOverlapping(name);
+        for (auto& scope : ranges::reverse(m_scopes)) {
+            if (scope.m_entities.contains(full)) {
+                return Ok(full);
             }
         }
+        return Err("Unknown entity \"{}\"", fmt::join(full.path, "::"));
     }
-    return Err("Unknown namespace \"{}\"", fmt::join(name.path, "::"));
 }
 
 void UnitParser::push(Entity const& entity) {
@@ -215,14 +215,25 @@ Fun* UnitParser::getFun(IdentPath const& name, bool topOnly) {
     return this->template get<Fun>(name, topOnly);
 }
 
-void UnitParser::pushScope(Option<IdentPath> const& name, bool function) {
-    m_scopes.push_back(Scope(name, function, *this));
+void UnitParser::pushNamespace(IdentPath const& ns) {
+    m_namespace.push_back(ns);
+}
+
+void UnitParser::popNamespace(std::source_location const loc) {
+    if (m_namespace.empty()) {
+        throw std::runtime_error(fmt::format("Namespace stack is empty (tried to pop from {})", loc));
+    }
+    m_namespace.pop_back();
+}
+
+void UnitParser::pushScope(bool function) {
+    m_scopes.push_back(Scope(function, *this));
 }
 
 void UnitParser::popScope(std::source_location const loc) {
     m_scopes.pop_back();
     if (m_scopes.empty()) {
-        throw std::runtime_error(fmt::format("Scope stack is empty (tried to pop from {})", loc));
+        throw std::runtime_error(fmt::format("Scope stack is empty (popped from {})", loc));
     }
 }
 

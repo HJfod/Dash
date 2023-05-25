@@ -74,13 +74,18 @@ Option<Entity> VarDeclExpr::typecheckEntity(UnitParser& state) const {
     };
 }
 
-ParseResult<> FunDeclExpr::pullParams(Vec<Param>& target, Stream& stream, bool requireTypes) {
+ParseResult<Option<Op>> FunDeclExpr::pullParams(Vec<Param>& target, Stream& stream, bool requireTypes) {
+    // allow empty parameter list
+    if (Token::peek(')', stream)) {
+        return Ok(None);
+    }
+    Option<Op> op;
     while (true) {
         auto start = stream.location();
         stream.debugTick();
         Param param;
         GEODE_UNWRAP_INTO(param.name, Token::pull<Ident>(stream));
-        if (requireTypes) {
+        if (requireTypes && param.name != "this") {
             GEODE_UNWRAP(Token::pull(':', stream));
             GEODE_UNWRAP_INTO(param.type, TypeExpr::pull(stream));
         }
@@ -92,12 +97,21 @@ ParseResult<> FunDeclExpr::pullParams(Vec<Param>& target, Stream& stream, bool r
         }
         param.range = Range(start, stream.location());
         target.push_back(param);
+        if (auto o = Token::draw<Op>(stream)) {
+            Rollback rb(stream);
+            if (op) {
+                return rb.error("Only one operator may be specified in function args");
+            }
+            op = o;
+            rb.commit();
+            continue;
+        }
         GEODE_UNWRAP_INTO(auto brk, Token::pullSeparator(',', ')', stream));
         if (brk) {
             break;
         }
     }
-    return Ok();
+    return Ok(op);
 }
 
 ExprResult<FunDeclExpr> FunDeclExpr::pull(Stream& stream) {
@@ -107,55 +121,28 @@ ExprResult<FunDeclExpr> FunDeclExpr::pull(Stream& stream) {
     Name name = None;
     Vec<Param> params;
     Option<Rc<TypeExpr>> ret;
-    // special operator syntax `fun <ident>: <type> <op> <ident>: <type>`
-    if (Token::peek<Ident>(stream) && Token::peek(':', stream, 1)) {
-        auto p1start = stream.location();
-        GEODE_UNWRAP_INTO(auto ident1, Token::pull<Ident>(stream));
-        GEODE_UNWRAP(Token::pull(':', stream));
-        GEODE_UNWRAP_INTO(auto type1, TypeExpr::pull(stream));
-        auto p1end = stream.location();
-        params.push_back(Param {
-            .name = ident1,
-            .type = type1,
-            .value = None,
-            .range = Range(p1start, p1end),
-        });
-        if (Token::draw(Keyword::As, stream)) {
-            name = AsName();
-            GEODE_UNWRAP_INTO(ret, TypeExpr::pull(stream));
-        }
-        else {
-            GEODE_UNWRAP_INTO(name, Token::pull<Op>(stream));
-            auto p2start = stream.location();
-            GEODE_UNWRAP_INTO(auto ident2, Token::pull<Ident>(stream));
-            GEODE_UNWRAP(Token::pull(':', stream));
-            GEODE_UNWRAP_INTO(auto type2, TypeExpr::pull(stream));
-            auto p2end = stream.location();
-            params.push_back(Param {
-                .name = ident2,
-                .type = type2,
-                .value = None,
-                .range = Range(p2start, p2end),
-            });
-            if (Token::draw(Op::Arrow, stream)) {
-                GEODE_UNWRAP_INTO(ret, TypeExpr::pull(stream));
-            }
-        }
+    if (auto ident = IdentExpr::pull(stream)) {
+        name = ident.unwrap();
     }
-    else {
-        if (auto ident = IdentExpr::pull(stream)) {
-            name = ident.unwrap();
-        }
-        else if (auto op = Token::pull<Op>(stream)) {
-            name = op.unwrap();
-        }
-        rb.clearMessages();
-        GEODE_UNWRAP(Token::pull('(', stream));
-        GEODE_UNWRAP(FunDeclExpr::pullParams(params, stream, true));
-        GEODE_UNWRAP(Token::pull(')', stream));
-        if (Token::draw(Op::Arrow, stream)) {
-            GEODE_UNWRAP_INTO(ret, TypeExpr::pull(stream));
-        }
+    else if (auto op = Token::pull<Op>(stream)) {
+        name = op.unwrap();
+    }
+    else if (Token::draw(Keyword::As, stream)) {
+        name = AsName();
+    }
+    rb.clearMessages();
+    GEODE_UNWRAP(Token::pull('(', stream));
+    GEODE_UNWRAP_INTO(auto maybeOp, FunDeclExpr::pullParams(params, stream, true));
+    GEODE_UNWRAP(Token::pull(')', stream));
+    if (maybeOp) {
+        name = maybeOp.value();
+    }
+    if (Token::draw(Keyword::As, stream)) {
+        name = AsName();
+        GEODE_UNWRAP_INTO(ret, TypeIdentExpr::pull(stream));
+    }
+    else if (Token::draw(Op::Arrow, stream)) {
+        GEODE_UNWRAP_INTO(ret, TypeExpr::pull(stream));
     }
     Option<Rc<Expr>> body;
     if (Token::draw('{', stream)) {
@@ -216,7 +203,7 @@ Type FunDeclExpr::typecheck(UnitParser& state) const {
         state.verifyCanPush(std::get<Rc<IdentExpr>>(name));
     }
 
-    state.pushScope(fun.name, true);
+    state.pushScope(true);
     for (auto& param : params) {
         Type pty = Primitive::Unk;
         if (param.type) {
@@ -461,7 +448,7 @@ ExprResult<MemberDeclExpr> MemberDeclExpr::pull(Stream& stream) {
                 ),
                 None, false
             );
-        }
+        } 
     }
     if (Token::draw(Op::Eq, stream)) {
         GEODE_UNWRAP_INTO(defaultValue, Expr::pull(stream));

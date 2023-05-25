@@ -15,7 +15,7 @@ CCNode {
             }
             clicked: () => {
                 clicks += 1;
-                root.get("my-label").text = "Clicked {clicks} times";
+                root.getChildByID("my-label").text = "Clicked {clicks} times";
                 onButtonClicked();
             }
         }

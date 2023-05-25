@@ -60,29 +60,17 @@ std::string ExportExpr::debug(size_t indent) const {
 ExprResult<ImportExpr> ImportExpr::pull(Stream& stream) {
     Rollback rb(stream);
     GEODE_UNWRAP(Token::pull(Keyword::Import, stream));
-    Vec<Rc<IdentExpr>> imports;
-    if (!Token::pull('*', stream)) {
-        rb.clearMessages();
-        GEODE_UNWRAP(Token::pull('{', stream));
-        while (true) {
-            stream.debugTick();
-            GEODE_UNWRAP_INTO(auto ident, IdentExpr::pull(stream));
-            imports.push_back(ident);
-            GEODE_UNWRAP_INTO(auto brk, Token::pullSeparator(',', '}', stream));
-            if (brk) {
-                break;
-            }
-        }
-        GEODE_UNWRAP(Token::pull('}', stream));
-    }
-    GEODE_UNWRAP(Token::pull(Keyword::From, stream));
     Rollback litrb(stream);
     GEODE_UNWRAP_INTO(auto lit, Token::pull<Lit>(stream));
     if (!std::holds_alternative<StrLit>(lit)) {
         return litrb.error("Expected string literal");
     }
     litrb.commit();
-    return rb.commit<ImportExpr>(std::get<StrLit>(lit), imports);
+    Option<Rc<IdentExpr>> as;
+    if (Token::draw(Keyword::As, stream)) {
+        GEODE_UNWRAP_INTO(as, IdentExpr::pull(stream));
+    }
+    return rb.commit<ImportExpr>(std::get<StrLit>(lit), as);
 }
 
 Type ImportExpr::typecheck(UnitParser& state) const {
@@ -95,24 +83,27 @@ Type ImportExpr::typecheck(UnitParser& state) const {
     auto parsed = UnitParser::parse(state.getShared(), src.unwrap());
     Vec<Entity> imported;
     // empty = import everything
-    if (imports.empty()) {
-        for (auto& ty : parsed->getAllExported()) {
-            imported.push_back(ty);
-        }
+    for (auto& ty : parsed->getAllExported()) {
+        imported.push_back(ty);
     }
-    else {
-        for (auto& i : imports) {
-            if (auto ty = parsed->getExported(FullIdentPath(i->path))) {
-                imported.push_back(ty.value());
-            }
-            else {
-                state.error(i->range, "Type \"{}\" not found in \"{}\"", i->path, from);
-            }
+    if (as) {
+        if (state.getEntity(as.value()->path, true)) {
+            state.error(range, "Entity \"{}\" already exists in this scope", as.value()->path);
+        }
+        else {
+            state.push(Namespace {
+                .name = as.value()->path,
+                .decl = nullptr,
+            });
         }
     }
     for (auto& ent : imported) {
         // it shouldn't be possible for an anonymous entity to be exported
-        if (state.getEntity(TRY_FUN(ent.getName().value()), true)) {
+        auto name = TRY_FUN(ent.getName().value());
+        if (as) {
+            name = as.value()->path.joinForce(name);
+        }
+        if (state.getEntity(name, true)) {
             state.error(range, "Entity \"{}\" already exists in this scope", ent.getName().value());
         }
         else {
@@ -125,7 +116,7 @@ Type ImportExpr::typecheck(UnitParser& state) const {
 std::string ImportExpr::debug(size_t indent) const {
     return DebugPrint("ImportExpr", indent)
         .member("from", from)
-        .member("imports", imports);
+        .member("as", as);
 }
 
 ExprResult<ListExpr> ListExpr::pull(Stream& stream) {
@@ -203,7 +194,7 @@ ExprResult<BlockExpr> BlockExpr::pull(Stream& stream) {
 
 Type BlockExpr::typecheck(UnitParser& state) const {
     // todo: get label from attribute
-    state.pushScope(None, false);
+    state.pushScope(false);
     auto ret = expr->typecheck(state);
     state.popScope();
     return ret;

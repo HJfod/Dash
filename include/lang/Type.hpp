@@ -14,6 +14,10 @@ namespace gdml::lang {
         bool absolute = false;
 
         IdentPath();
+        IdentPath(
+            Vec<Ident> const& path, bool absolute,
+            std::source_location const loc = std::source_location::current()
+        );
         explicit IdentPath(Ident const& name);
 
         bool operator==(IdentPath const& other) const;
@@ -21,6 +25,9 @@ namespace gdml::lang {
         bool isSingle() const;
         Vec<Ident> getComponents() const;
         Option<IdentPath> getParent() const;
+
+        // Even if the other path is absolute, it is still joined at the end
+        IdentPath joinForce(IdentPath const& other) const;
     };
 
     struct GDML_DLL FullIdentPath {
@@ -33,9 +40,13 @@ namespace gdml::lang {
         bool operator==(FullIdentPath const& other) const;
         std::string toString() const;
 
-        Option<FullIdentPath> resolve(IdentPath const& path, bool existing) const;
         FullIdentPath join(Ident const& component) const;
         FullIdentPath join(IdentPath const& components) const;
+        // If the IdentPath is absolute, the resulting FullIdentPath will be just 
+        // that IdentPath, otherwise it is appended to the end of the current 
+        // FullIdentPath
+        FullIdentPath enter(IdentPath const& components) const;
+        FullIdentPath enterOverlapping(IdentPath const& components) const;
     };
 
     struct GDML_DLL UnkType {};

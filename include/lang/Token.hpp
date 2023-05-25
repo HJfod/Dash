@@ -10,7 +10,7 @@ namespace gdml::lang {
         For, In, While,
         If, Else, Try,
         Function, Return, Break, Continue, From,
-        Struct, Decl, Enum, Extends,
+        Struct, Decl, Enum, Extends, Operator,
         Required, Get, Set, Depends,
         New, Const, Let, Using,
         Export, Import, Extern,

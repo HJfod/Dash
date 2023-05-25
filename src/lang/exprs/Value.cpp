@@ -132,7 +132,7 @@ Type NodeExpr::typecheck(UnitParser& state) const {
                 state.error(range, "Node or struct \"{}\" has no property \"{}\"", ident.value()->path, prop->prop);
                 return Primitive::Unk;
             }
-            if (mem.value().convertible(valty)) {
+            if (!mem.value().convertible(valty)) {
                 state.error(
                     range, "Attempted to assign '{}' to property of type '{}'",
                     valty.toString(), mem.value().toString()

@@ -23,6 +23,7 @@ static std::unordered_map<Keyword, std::string> KEYWORDS {
     { Keyword::Decl,        "decl" },
     { Keyword::Enum,        "enum" },
     { Keyword::Extends,     "extends" },
+    { Keyword::Operator,    "operator" },
     { Keyword::Required,    "required" },
     { Keyword::Get,         "get" },
     { Keyword::Set,         "set" },

@@ -105,8 +105,11 @@ namespace gdml::lang {
     private:
         Parser& m_parser;
         Vec<Scope> m_scopes;
+        Vec<IdentPath> m_namespace;
         Rc<Src> m_src;
         Rc<ParsedSrc> m_parsed;
+
+        FullIdentPath getCurrentNamespace() const;
 
         UnitParser(Parser& parser, Rc<Src> src);
         UnitParser(UnitParser const&) = delete;
@@ -139,6 +142,9 @@ namespace gdml::lang {
             }
             return nullptr;
         }
+
+        void pushNamespace(IdentPath const& ns);
+        void popNamespace(std::source_location const = std::source_location::current());
 
         void pushScope(bool function);
         void popScope(std::source_location const = std::source_location::current());

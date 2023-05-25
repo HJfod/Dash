@@ -6,6 +6,17 @@ using namespace gdml::lang;
 using namespace gdml;
 
 IdentPath::IdentPath() = default;
+IdentPath::IdentPath(
+    Vec<Ident> const& from, bool absolute,
+    std::source_location const loc
+) : path(from), name(from.back()), absolute(absolute) {
+    path.pop_back();
+    if (from.empty()) {
+        throw std::runtime_error(fmt::format(
+            "Attempted to construct an IdentPath without any components (from {})", loc
+        ));
+    }
+}
 IdentPath::IdentPath(Ident const& name) : name(name) {}
 
 bool IdentPath::operator==(IdentPath const& other) const = default;
@@ -40,6 +51,14 @@ Option<IdentPath> IdentPath::getParent() const {
     return None;
 }
 
+IdentPath IdentPath::joinForce(IdentPath const& other) const {
+    auto comps = this->getComponents();
+    for (auto& comp : other.getComponents()) {
+        comps.push_back(comp);
+    }
+    return IdentPath(comps, absolute);
+}
+
 FullIdentPath::FullIdentPath(Vec<Ident> const& components) : path(components) {}
 
 FullIdentPath::FullIdentPath(IdentPath const& path) : path(path.path) {
@@ -50,33 +69,6 @@ bool FullIdentPath::operator==(FullIdentPath const& other) const = default;
 
 std::string FullIdentPath::toString() const {
     return fmt::format("::{}", fmt::join(path, "::"));
-}
-
-Option<FullIdentPath> FullIdentPath::resolve(IdentPath const& path, bool existing) const {
-    if (path.absolute) {
-        if (existing ? FullIdentPath(path) == *this : FullIdentPath(path.path) == *this) {
-            return FullIdentPath(path);
-        }
-        else {
-            return None;
-        }
-    }
-    auto comps = existing ? path.getComponents() : path.path;
-    if (comps.size() > this->path.size()) {
-        return None;
-    }
-    for (size_t i = comps.size(); i > 0; i--) {
-        if (this->path[i - 1] != comps[i - 1]) {
-            return None;
-        }
-    }
-    auto ret = this->path;
-    ret.erase(ret.begin() + (this->path.size() - comps.size()), ret.end());
-    ranges::push(ret, comps);
-    if (!existing) {
-        ret.push_back(path.name);
-    }
-    return ret;
 }
 
 FullIdentPath FullIdentPath::join(Ident const& component) const {
@@ -94,6 +86,49 @@ FullIdentPath FullIdentPath::join(IdentPath const& components) const {
         comps.push_back(components.name);
     }
     return comps;
+}
+
+FullIdentPath FullIdentPath::enter(IdentPath const& components) const {
+    if (!components.absolute) {
+        auto comps = path;
+        for (auto& comp : components.path) {
+            comps.push_back(comp);
+        }
+        comps.push_back(components.name);
+        return comps;
+    }
+    else {
+        return FullIdentPath(components);
+    }
+}
+
+FullIdentPath FullIdentPath::enterOverlapping(IdentPath const& components) const {
+    if (!components.absolute) {
+        auto add = Vec<Ident>();
+        for (auto& comp : components.path) {
+            add.push_back(comp);
+        }
+        add.push_back(components.name);
+        // remove overlap from end of original
+        size_t overlap = 0;
+        for (auto& comp : path) {
+            if (add[overlap] == comp) {
+                overlap += 1;
+            }
+            else {
+                overlap = 0;
+            }
+        }
+        auto comps = path;
+        while (overlap--) comps.pop_back();
+        for (auto& a : add) {
+            comps.push_back(a);
+        }
+        return comps;
+    }
+    else {
+        return FullIdentPath(components);
+    }
 }
 
 Type::Type(Value const& value, Rc<const Expr> decl)
