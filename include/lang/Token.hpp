@@ -9,7 +9,7 @@ namespace gdml::lang {
     enum class Keyword {
         For, In, While,
         If, Else, Try,
-        Function, Return, Break, Continue, From,
+        Function, Return, Break, Continue, From, Scope,
         Struct, Decl, Enum, Extends, Operator,
         Required, Get, Set, Depends,
         New, Const, Let, Using,
@@ -208,6 +208,9 @@ namespace gdml::lang {
     GDML_DLL bool isOpCh(char ch);
     GDML_DLL bool isOp(std::string const& op);
     GDML_DLL bool isUnOp(Op op);
+    GDML_DLL bool isBoolOp(Op op);
+    GDML_DLL bool isOverloadableOp(Op op);
     GDML_DLL size_t opPriority(Op op);
     GDML_DLL OpDir opDir(Op op);
+    GDML_DLL Op seqOpSynthesisSrc(Op op);
 }

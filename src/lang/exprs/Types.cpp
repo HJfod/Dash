@@ -8,6 +8,15 @@ using namespace gdml;
 
 ExprResult<TypeIdentExpr> TypeIdentExpr::pull(Stream& stream) {
     Rollback rb(stream);
+    // `void` is parsed as a void literal
+    if (auto lit = Token::draw<Lit>(stream)) {
+        if (std::holds_alternative<VoidLit>(lit.value())) {
+            return rb.commit<TypeIdentExpr>(stream.make<IdentExpr>(IdentPath("void")));
+        }
+        else {
+            return rb.error("Expected type name, got literal");
+        }
+    }
     GEODE_UNWRAP_INTO(auto value, IdentExpr::pull(stream));
     return rb.commit<TypeIdentExpr>(value);
 }

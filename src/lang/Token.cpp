@@ -19,6 +19,7 @@ static std::unordered_map<Keyword, std::string> KEYWORDS {
     { Keyword::Break,       "break" },
     { Keyword::Continue,    "continue" },
     { Keyword::From,        "from" },
+    { Keyword::Scope,       "scope" },
     { Keyword::Struct,      "struct" },
     { Keyword::Decl,        "decl" },
     { Keyword::Enum,        "enum" },
@@ -126,6 +127,35 @@ bool lang::isOp(std::string const& op) {
         }
     }
     return op.size();
+}
+
+bool lang::isBoolOp(Op op) {
+    return op == Op::And || op == Op::Or || op == Op::Not;
+}
+
+bool lang::isOverloadableOp(Op op) {
+    switch (op) {
+        case Op::Add: case Op::Sub:
+        case Op::Mul: case Op::Div: case Op::Mod:
+        case Op::Eq: // Neq is synthesized from this
+        case Op::Less:
+        case Op::More:
+        case Op::Not:
+            return true;
+        default:
+            return false;
+    }
+}
+
+Op lang::seqOpSynthesisSrc(Op op) {
+    switch (op) {
+        case Op::AddSeq: return Op::Add;
+        case Op::SubSeq: return Op::Sub;
+        case Op::MulSeq: return Op::Mul;
+        case Op::DivSeq: return Op::Div;
+        case Op::ModSeq: return Op::Mod;
+        default: return op;
+    }
 }
 
 bool lang::isUnOp(Op op) {

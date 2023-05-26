@@ -27,6 +27,13 @@ using namespace gdml;
         return Ok(value);                                               \
     }
 
+#define PULL_IF_T_P(expr, cond, cond2)                                  \
+    if (Token::peek<cond>(stream) && Token::peek(cond2, stream, 1)) {   \
+        GEODE_UNWRAP_INTO(auto value, expr::pull(stream));              \
+        rb.commit();                                                    \
+        return Ok(value);                                               \
+    }
+
 Option<Entity> Expr::typecheckEntity(UnitParser& state) const {
     this->typecheck(state);
     return None;
@@ -34,10 +41,15 @@ Option<Entity> Expr::typecheckEntity(UnitParser& state) const {
 
 ExprResult<Expr> Expr::pull(Stream& stream) {
     Rollback rb(stream);
-    Vec<Rc<AttrExpr>> attrs;
+    Map<IdentPath, Rc<AttrExpr>> attrs;
     while (Token::peek('@', stream) && !Token::peek(Op::Not, stream, 1)) {
         GEODE_UNWRAP_INTO(auto attr, AttrExpr::pull(stream));
-        attrs.push_back(attr);
+        if (attrs.contains(attr->attribute->path)) {
+            return rb.error("Attribute \"{}\" already specified", attr->attribute->path);
+        }
+        else {
+            attrs.insert({ attr->attribute->path, attr });
+        }
     }
     GEODE_UNWRAP_INTO(auto binop, BinOpExpr::pull(stream));
     binop->attrs = std::move(attrs);
@@ -81,6 +93,7 @@ ExprResult<Expr> Expr::pullPrimaryNonCall(Stream& stream) {
         TRY_PULL(NodeExpr);
     }
     PULL_IF(BlockExpr, '{');
+    PULL_IF(BlockExpr, Keyword::Scope);
     PULL_IF(AliasExpr, Keyword::Using);
     PULL_IF(ImportExpr, Keyword::Import);
     PULL_IF(ExportExpr, Keyword::Export);

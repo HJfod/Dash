@@ -39,7 +39,10 @@ Option<Type> Entity::getType() const {
         [](Fun const& fun) -> Option<Type> {
             return Type(fun.type, fun.decl);
         },
-        [](Namespace const& ns) -> Option<Type> {
+        [](Namespace const&) -> Option<Type> {
+            return None;
+        },
+        [](ScopeEntity const&) -> Option<Type> {
             return None;
         },
     }, value);
@@ -84,8 +87,9 @@ Vec<Entity> ParsedSrc::getAllExported() const {
     return types;
 }
 
-Scope::Scope(bool function, UnitParser& parser)
-    : m_function(function), m_parser(parser) {}
+Scope::Scope(Option<FullIdentPath> const& name, bool function, UnitParser& parser)
+    : m_name(name), m_function(function), m_parser(parser)
+{}
 
 void Scope::push(Entity const& ent) {
     if (auto name = ent.getName()) {
@@ -99,14 +103,124 @@ Vec<Entity> Scope::getEntities() const {
     return map::values(m_entities);
 }
 
+void UnitParser::pushAsOp(Primitive from, Primitive into) {
+    // msvc straight up hangs if i don't put this in a variable first
+    auto ty = FunType {
+        .name = IdentPath(asFunName(from, into)),
+        .params = {
+            ParamType {
+                .name = "a",
+                .type = from,
+            },
+        },
+        .retType = Type(into),
+        .isExtern = true,
+    };
+    this->push(Fun {
+        .name = IdentPath(asFunName(from, into)),
+        .type = ty,
+        .decl = nullptr,
+    });
+}
+
+void UnitParser::pushUnOp(Op op, Primitive a, Primitive ret) {
+    // msvc straight up hangs if i don't put this in a variable first
+    auto ty = FunType {
+        .name = IdentPath(opFunName(op, a)),
+        .params = {
+            ParamType {
+                .name = "a",
+                .type = a,
+            },
+        },
+        .retType = Type(ret),
+        .isExtern = true,
+    };
+    this->push(Fun {
+        .name = IdentPath(opFunName(op, a)),
+        .type = ty,
+        .decl = nullptr,
+    });
+}
+
+void UnitParser::pushBinOp(Op op, Primitive t) {
+    return this->pushBinOp(op, t, t, t);
+}
+
+void UnitParser::pushBinOp(Op op, Primitive a, Primitive b, Primitive ret) {
+    // msvc straight up hangs if i don't put this in a variable first
+    auto ty = FunType {
+        .name = IdentPath(opFunName(op, a, b)),
+        .params = {
+            ParamType {
+                .name = "a",
+                .type = a,
+            },
+            ParamType {
+                .name = "b",
+                .type = b,
+            },
+        },
+        .retType = Type(ret),
+        .isExtern = true,
+    };
+    this->push(Fun {
+        .name = IdentPath(opFunName(op, a, b)),
+        .type = ty,
+        .decl = nullptr,
+    });
+}
+
 UnitParser::UnitParser(Parser& parser, Rc<Src> src)
-  : m_parser(parser), m_src(src), m_scopes({ Scope(false, *this) })
+  : m_parser(parser), m_src(src), m_scopes({ Scope(None, false, *this) })
 {
     this->push(Type(Primitive::Void));
     this->push(Type(Primitive::Bool));
     this->push(Type(Primitive::Int));
     this->push(Type(Primitive::Float));
     this->push(Type(Primitive::Str));
+
+    using enum gdml::lang::Primitive;
+
+    this->pushBinOp(Op::Add, Int);
+    this->pushBinOp(Op::Sub, Int);
+    this->pushBinOp(Op::Mul, Int);
+    this->pushBinOp(Op::Div, Int);
+    this->pushBinOp(Op::Mod, Int);
+    this->pushBinOp(Op::Eq, Int, Int, Bool);
+    this->pushBinOp(Op::Less, Int, Int, Bool);
+    this->pushBinOp(Op::More, Int, Int, Bool);
+    this->pushUnOp(Op::Not, Int, Bool);
+    this->pushAsOp(Int, Float);
+    this->pushAsOp(Int, Str);
+    this->pushAsOp(Int, Bool);
+
+    this->pushBinOp(Op::Add, Float);
+    this->pushBinOp(Op::Sub, Float);
+    this->pushBinOp(Op::Mul, Float);
+    this->pushBinOp(Op::Div, Float);
+    this->pushBinOp(Op::Mod, Float);
+    this->pushBinOp(Op::Eq, Float, Float, Bool);
+    this->pushBinOp(Op::Less, Float, Float, Bool);
+    this->pushBinOp(Op::More, Float, Float, Bool);
+    this->pushUnOp(Op::Not, Float, Bool);
+    this->pushAsOp(Float, Int);
+    this->pushAsOp(Float, Str);
+    this->pushAsOp(Float, Bool);
+
+    this->pushBinOp(Op::Eq, Bool);
+    this->pushUnOp(Op::Not, Bool, Bool);
+    this->pushAsOp(Bool, Int);
+    this->pushAsOp(Bool, Str);
+
+    this->pushBinOp(Op::Add, Str);
+    this->pushBinOp(Op::Eq, Str);
+
+    // Allow multiplying and dividing floats and ints without casting
+    this->pushBinOp(Op::Mul, Int, Float, Float);
+    this->pushBinOp(Op::Div, Int, Float, Float);
+    this->pushBinOp(Op::Mul, Float, Int, Float);
+    this->pushBinOp(Op::Div, Float, Int, Float);
 }
 
 Rc<ParsedSrc> UnitParser::parse(Parser& shared, Rc<Src> src) {
@@ -135,17 +249,21 @@ Rc<ParsedSrc> UnitParser::getParsedSrc() const {
     return m_parsed;
 }
 
-bool UnitParser::verifyCanPush(Rc<IdentExpr> name) {
-    auto path = this->resolve(name->path, false);
+bool UnitParser::verifyCanPush(Range const& range, IdentPath const& name) {
+    auto path = this->resolve(name, false);
     if (!path) {
-        this->error(name->range, "{}", path.unwrapErr());
+        this->error(range, "{}", path.unwrapErr());
         return false;
     }
     if (m_scopes.back().m_entities.contains(path.unwrap())) {
-        this->error(name->range, "Type or variable \"{}\" already exists in this scope", name->path);
+        this->error(range, "Type or variable \"{}\" already exists in this scope", path.unwrap());
         return false;
     }
     return true;
+}
+
+bool UnitParser::verifyCanPush(Rc<IdentExpr> name) {
+    return this->verifyCanPush(name->range, name->path);
 }
 
 FullIdentPath UnitParser::getCurrentNamespace() const {
@@ -157,48 +275,48 @@ FullIdentPath UnitParser::getCurrentNamespace() const {
 }
 
 Result<FullIdentPath> UnitParser::resolve(IdentPath const& name, bool existing) {
+    auto toFind = name;
     if (!existing) {
-        // Absolute paths are resolved as is
-        if (name.absolute) {
-            return Ok(FullIdentPath(name));
+        if (auto parent = toFind.getParent()) {
+            toFind = parent.value();
         }
-        // If the name contains a parent path (e.g. `a::b` in `a::b::c`) then that 
-        // must already exist
-        else if (auto parent = name.getParent()) {
-            GEODE_UNWRAP_INTO(auto target, this->resolve(parent.value(), true));
-            return Ok(target.join(name.name));
-        }
-        // Otherwise just append the name to the end of the current scope
         else {
-            return Ok(getCurrentNamespace().join(name));
+            return Ok(FullIdentPath(getCurrentNamespace().enter(name)));
         }
     }
-    else {
-        auto full = getCurrentNamespace().enterOverlapping(name);
+    auto testParent = getCurrentNamespace();
+    while (!testParent.path.empty()) {
+        auto full = testParent.enter(toFind);
         for (auto& scope : ranges::reverse(m_scopes)) {
             if (scope.m_entities.contains(full)) {
-                return Ok(full);
+                return Ok(existing ? full : full.join(name.name));
             }
         }
-        return Err("Unknown entity \"{}\"", fmt::join(full.path, "::"));
+        testParent.path.pop_back();
     }
+    return Err("Unknown entity \"{}\"", name.toString());
 }
 
 void UnitParser::push(Entity const& entity) {
     m_scopes.back().push(entity);
 }
 
+Entity* UnitParser::getEntity(FullIdentPath const& name, bool topOnly) {
+    // Prefer topmost scope
+    for (auto& scope : ranges::reverse(m_scopes)) {
+        if (scope.m_entities.contains(name)) {
+            return &scope.m_entities.at(name);
+        }
+        if (topOnly) {
+            break;
+        }
+    }
+    return nullptr;
+}
+
 Entity* UnitParser::getEntity(IdentPath const& name, bool topOnly) {
     if (auto path = this->resolve(name, true)) {
-        // Prefer topmost scope
-        for (auto& scope : ranges::reverse(m_scopes)) {
-            if (scope.m_entities.contains(path.unwrap())) {
-                return &scope.m_entities.at(path.unwrap());
-            }
-            if (topOnly) {
-                break;
-            }
-        }
+        return this->getEntity(path.unwrap());
     }
     return nullptr;
 }
@@ -226,15 +344,38 @@ void UnitParser::popNamespace(std::source_location const loc) {
     m_namespace.pop_back();
 }
 
-void UnitParser::pushScope(bool function) {
-    m_scopes.push_back(Scope(function, *this));
+void UnitParser::pushScope(Option<Rc<IdentExpr>> const& name, bool function) {
+    Option<FullIdentPath> full;
+    if (name) {
+        full = this->resolve(name.value()->path, false).ok();
+    }
+    m_scopes.push_back(Scope(full, function, *this));
 }
 
-void UnitParser::popScope(std::source_location const loc) {
+Option<Type> UnitParser::popScope(std::source_location const loc) {
+    Option<Type> ret;
+    if (m_retInfo) {
+        bool breakHere = false;
+        if (m_retInfo.value().from) {
+            if (auto full = this->resolve(m_retInfo.value().from.value(), true)) {
+                if (full == m_scopes.back().m_name) {
+                    breakHere = true;
+                }
+            }
+        }
+        else if (m_retInfo.value().function && m_scopes.back().m_function) {
+            breakHere = true;
+        }
+        if (breakHere) {
+            ret = m_retInfo.value().returnType;
+            m_retInfo = None;
+        }
+    }
     m_scopes.pop_back();
     if (m_scopes.empty()) {
         throw std::runtime_error(fmt::format("Scope stack is empty (popped from {})", loc));
     }
+    return ret;
 }
 
 bool UnitParser::isRootScope() const {
@@ -255,6 +396,20 @@ Scope& UnitParser::scope(size_t depth) {
 
 Vec<Scope> const& UnitParser::getScopes() const {
     return m_scopes;
+}
+
+void UnitParser::setReturnInfo(Option<IdentPath> const& from, bool function, Type const& retType) {
+    if (!m_retInfo) {
+        m_retInfo = ReturnInfo {
+            .from = from,
+            .function = function,
+            .returnType = retType,
+        };
+    }
+}
+
+bool UnitParser::isReturning() const {
+    return m_retInfo.has_value();
 }
 
 Parser::Parser(Rc<Src> src) : m_root(src) {

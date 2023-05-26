@@ -53,12 +53,101 @@ ExprResult<Expr> BinOpExpr::pull(Stream& stream) {
 Type BinOpExpr::typecheck(UnitParser& state) const {
     auto l = lhs->typecheck(state);
     auto r = rhs->typecheck(state);
-    if (!r.convertible(l)) {
-        state.error(range, "Mismatching types for binary operation")
-            .note("Left side is {}", l.toString())
-            .note("Right side is {}", r.toString());
+    if (isOverloadableOp(op)) {
+        auto fun = state.getFun(IdentPath(opFunName(op, l, r)));
+        if (!fun) {
+            state.error(range, "Undefined types for binary operation `{}`", tokenToString(op))
+                .note("Left side is `{}`", l.toString())
+                .note("Right side is `{}`", r.toString());
+            return Primitive::Unk;
+        }
+        return fun->type.retType.value_or(Type(Primitive::Unk));
     }
-    return r;
+    else {
+        if (op == Op::Seq) {
+            if (!l.convertible(r)) {
+                state.error(range, "Mismatching types for assignment")
+                    .note("Left side is `{}`", l.toString())
+                    .note("Right side is `{}`", r.toString());
+            }
+            return l;
+        }
+
+        if (op == Op::Neq) {
+            auto fun = state.getFun(IdentPath(opFunName(Op::Eq, l, r)));
+            if (!fun) {
+                state.error(range, "Undefined types for binary operation")
+                    .note("Left side is `{}`", l.toString())
+                    .note("Right side is `{}`", r.toString())
+                    .note("Operator `{}` not defined for these types", tokenToString(Op::Eq));
+                return Primitive::Unk;
+            }
+            return fun->type.retType.value_or(Type(Primitive::Unk));
+        }
+
+        if (op == Op::Leq) {
+            auto lfun = state.getFun(IdentPath(opFunName(Op::Less, l, r)));
+            if (!lfun) {
+                state.error(range, "Undefined types for binary operation `{}`", tokenToString(Op::Leq))
+                    .note("Left side is `{}`", l.toString())
+                    .note("Right side is `{}`", r.toString())
+                    .note("Missing definition of `{}`", tokenToString(Op::Less));
+                return Primitive::Unk;
+            }
+            auto efun = state.getFun(IdentPath(opFunName(Op::Eq, l, r)));
+            if (!efun) {
+                state.error(range, "Undefined types for binary operation `{}`", tokenToString(Op::Leq))
+                    .note("Left side is `{}`", l.toString())
+                    .note("Right side is `{}`", r.toString())
+                    .note("Missing definition of `{}`", tokenToString(Op::Eq));
+                return Primitive::Unk;
+            }
+            auto lret = lfun->type.retType.value_or(Type(Primitive::Unk));
+            auto eret = efun->type.retType.value_or(Type(Primitive::Unk));
+            if (!lret->convertible(eret)) {
+                state.error(
+                    range,
+                    "Mismatching equality and less-than operator return types for `{}` and `{}`",
+                    l.toString(), r.toString()
+                )
+                    .note("Less-than operator returns `{}`", lret->toString())
+                    .note("Equality operator returns `{}`", eret->toString());
+            }
+            return lret;
+        }
+
+        if (isBoolOp(op)) {
+            if (!state.getFun(IdentPath(asFunName(l, Primitive::Bool)))) {
+                state.error(range, "Left hand side `{}` is not convertible to bool", l.toString());
+                return Primitive::Unk;
+            }
+            if (!state.getFun(IdentPath(asFunName(r, Primitive::Bool)))) {
+                state.error(range, "Right hand side `{}` is not convertible to bool", r.toString());
+                return Primitive::Unk;
+            }
+            return Primitive::Bool;
+        }
+
+        auto top = seqOpSynthesisSrc(op);
+        if (top != op) {
+            auto fun = state.getFun(IdentPath(opFunName(top, l, r)));
+            if (!fun) {
+                state.error(range, "Undefined types for assignment `{}`", tokenToString(top))
+                    .note("Left side is `{}`", l.toString())
+                    .note("Right side is `{}`", r.toString());
+                return Primitive::Unk;
+            }
+            auto ret = fun->type.retType.value_or(Type(Primitive::Unk));
+            if (!ret->convertible(l)) {
+                state.error(range, "Result of operation not assignable")
+                    .note("Operation results in `{}`", ret->toString())
+                    .note("Attempted to assign to `{}`", l.toString());
+            }
+            return ret;
+        }
+
+        throw std::runtime_error(fmt::format("Undefined binop {}", tokenToString(op)));
+    }
 }
 
 std::string BinOpExpr::debug(size_t indent) const {
@@ -80,6 +169,7 @@ Type MemberExpr::typecheck(UnitParser& state) const {
     auto mem = t.getMemberType(member);
     if (!mem) {
         state.error(range, "Type '{}' has no member or method named \"{}\"", t.toString(), member);
+        return Primitive::Unk;
     }
     return mem.value();
 }

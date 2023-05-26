@@ -33,9 +33,14 @@ namespace gdml::lang {
         Rc<const Expr> decl;
     };
 
+    struct GDML_DLL ScopeEntity final {
+        IdentPath name;
+        Rc<const Expr> decl;
+    };
+
     class Entity final {
     private:
-        std::variant<Var, Fun, Type, Namespace> value;
+        std::variant<Var, Fun, Type, Namespace, ScopeEntity> value;
 
     public:
         using Value = decltype(value);
@@ -90,9 +95,10 @@ namespace gdml::lang {
     private:
         UnitParser& m_parser;
         Map<FullIdentPath, Entity> m_entities;
+        Option<FullIdentPath> m_name;
         bool m_function;
 
-        Scope(bool function, UnitParser& parser);
+        Scope(Option<FullIdentPath> const& name, bool function, UnitParser& parser);
 
         friend class UnitParser;
 
@@ -103,13 +109,24 @@ namespace gdml::lang {
 
     class GDML_DLL UnitParser final {
     private:
+        struct ReturnInfo {
+            Option<IdentPath> from;
+            bool function;
+            Type returnType;
+        };
+
         Parser& m_parser;
         Vec<Scope> m_scopes;
         Vec<IdentPath> m_namespace;
         Rc<Src> m_src;
         Rc<ParsedSrc> m_parsed;
+        Option<ReturnInfo> m_retInfo;
 
         FullIdentPath getCurrentNamespace() const;
+        void pushAsOp(Primitive from, Primitive into);
+        void pushUnOp(Op op, Primitive t, Primitive ret);
+        void pushBinOp(Op op, Primitive t);
+        void pushBinOp(Op op, Primitive a, Primitive b, Primitive ret);
 
         UnitParser(Parser& parser, Rc<Src> src);
         UnitParser(UnitParser const&) = delete;
@@ -127,9 +144,12 @@ namespace gdml::lang {
         Rc<ParsedSrc> getParsedSrc() const;
 
         bool verifyCanPush(Rc<IdentExpr> name);
+        bool verifyCanPush(Range const& range, IdentPath const& name);
         geode::Result<FullIdentPath> resolve(IdentPath const& name, bool existing);
 
         void push(Entity const& entity);
+        // not const because returns mutable pointer
+        Entity* getEntity(FullIdentPath const& name, bool topOnly = false);
         Entity* getEntity(IdentPath const& name, bool topOnly = false);
         Type* getType(IdentPath const& name, bool topOnly = false);
         Var* getVar(IdentPath const& name, bool topOnly = false);
@@ -146,11 +166,14 @@ namespace gdml::lang {
         void pushNamespace(IdentPath const& ns);
         void popNamespace(std::source_location const = std::source_location::current());
 
-        void pushScope(bool function);
-        void popScope(std::source_location const = std::source_location::current());
+        void pushScope(Option<Rc<IdentExpr>> const& name, bool function);
+        Option<Type> popScope(std::source_location const = std::source_location::current());
         bool isRootScope() const;
         Scope& scope(size_t depth = 0);
         Vec<Scope> const& getScopes() const;
+
+        void setReturnInfo(Option<IdentPath> const& from, bool function, Type const& retType);
+        bool isReturning() const;
 
         template <class... Args>
         Message& log(Range const& range, std::string const& fmt, Args&&... args) {

@@ -12,7 +12,7 @@ ExprResult<LitExpr> LitExpr::pull(Stream& stream) {
     return rb.commit<LitExpr>(value);
 }
 
-Type LitExpr::typecheck(UnitParser&) const {
+Type LitExpr::typecheck(UnitParser& state) const {
     return std::visit(makeVisitor {
         [](VoidLit const&) {
             return Primitive::Void;

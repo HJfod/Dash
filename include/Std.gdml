@@ -4,6 +4,10 @@
 
 // All .gdml files do `import "Std.gdml";` by default
 
+// todo: pretypecheck to collect struct and fun names
+
+export extern fun print(msg: string) -> void;
+
 export struct CCPoint {
     x: float;
     y: float;
@@ -11,39 +15,39 @@ export struct CCPoint {
 
 fun CCPoint::member(this) {}
 
-fun (point: CCPoint) as CCSize {
+export struct CCSize {
+    width: float;
+    height: float;
+}
+
+export fun (point: CCPoint) as CCSize {
     return CCSize {
         width: point.x,
         height: point.y
     };
 }
 
-fun /(point: CCPoint, factor: int)   -> CCPoint => { x: point.x / factor, y: point.y / factor };
-fun /(point: CCPoint, factor: float) -> CCPoint => { x: point.x / factor, y: point.y / factor };
-fun *(point: CCPoint, factor: int)   -> CCPoint => { x: point.x * factor, y: point.y * factor };
-fun *(point: CCPoint, factor: float) -> CCPoint => { x: point.x * factor, y: point.y * factor };
-
-export struct CCSize {
-    width: float;
-    height: float;
-}
-
-fun as(size: CCSize) -> CCPoint {
+export fun /(point: CCPoint, factor: int)   -> CCPoint => { x: point.x / factor, y: point.y / factor };
+export fun /(point: CCPoint, factor: float) -> CCPoint => { x: point.x / factor, y: point.y / factor };
+export fun *(point: CCPoint, factor: int)   -> CCPoint => { x: point.x * factor, y: point.y * factor };
+export fun *(point: CCPoint, factor: float) -> CCPoint => { x: point.x * factor, y: point.y * factor };
+ 
+export fun as(size: CCSize) -> CCPoint {
     return CCPoint {
         x: size.width,
         y: size.height
     };
 }
-fun (size: CCSize / factor: int) -> CCSize {
+export fun (size: CCSize / factor: int) -> CCSize {
     return { width: size.width / factor, height: size.height / factor };
 }
-fun (size: CCSize / factor: float) -> CCSize {
+export fun (size: CCSize / factor: float) -> CCSize {
     return { width: size.width / factor, height: size.height / factor };
 }
-fun (size: CCSize * factor: int) -> CCSize {
+export fun (size: CCSize * factor: int) -> CCSize {
     return { width: size.width * factor, height: size.height * factor };
 }
-fun (size: CCSize * factor: float) -> CCSize {
+export fun (size: CCSize * factor: float) -> CCSize {
     return { width: size.width * factor, height: size.height * factor };
 }
 
@@ -62,7 +66,6 @@ export struct CCRect {
             y: this.y;
         }
         set(value) => {
-            @!debug("entities");
             this.x = value.x;
             this.y = value.y;
         }

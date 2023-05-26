@@ -31,7 +31,7 @@ namespace gdml::lang {
     };
 
     struct GDML_DLL Expr : public IExpr {
-        Vec<Rc<AttrExpr>> attrs;
+        Map<IdentPath, Rc<AttrExpr>> attrs;
 
         Expr(Range const& range) : IExpr(range) {}
 
@@ -280,14 +280,16 @@ namespace gdml::lang {
     struct GDML_DLL EnumDeclExpr : public AExpr<EnumDeclExpr> {
         Option<Rc<IdentExpr>> ident;
         Vec<Rc<NodeDeclExpr>> variants;
+        Option<Rc<IdentExpr>> extends;
         bool isExtern;
 
         EnumDeclExpr(
             Option<Rc<IdentExpr>> const& ident,
             Vec<Rc<NodeDeclExpr>> const& variants,
+            Option<Rc<IdentExpr>> const& extends,
             bool isExtern,
             Range const& range
-        ) : AExpr(range), ident(ident), variants(variants), isExtern(isExtern) {}
+        ) : AExpr(range), ident(ident), variants(variants), extends(extends), isExtern(isExtern) {}
 
         static ExprResult<EnumDeclExpr> pull(Stream& stream);
         Type typecheck(UnitParser& state) const override;
@@ -331,9 +333,10 @@ namespace gdml::lang {
 
     struct GDML_DLL BlockExpr : public AExpr<BlockExpr> {
         Rc<Expr> expr;
+        Option<Rc<IdentExpr>> name;
 
-        BlockExpr(Rc<Expr> expr, Range const& range)
-            : AExpr(range), expr(expr) {}
+        BlockExpr(Rc<Expr> expr, Option<Rc<IdentExpr>> const& name, Range const& range)
+            : AExpr(range), expr(expr), name(name) {}
         
         static ExprResult<BlockExpr> pull(Stream& stream);
         Type typecheck(UnitParser& state) const override;

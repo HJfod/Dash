@@ -104,7 +104,7 @@ Type ImportExpr::typecheck(UnitParser& state) const {
             name = as.value()->path.joinForce(name);
         }
         if (state.getEntity(name, true)) {
-            state.error(range, "Entity \"{}\" already exists in this scope", ent.getName().value());
+            state.error(range, "Entity \"{}\" already exists in this scope", name);
         }
         else {
             state.push(ent);
@@ -130,6 +130,7 @@ ExprResult<ListExpr> ListExpr::pull(Stream& stream) {
         stream.debugTick();
         GEODE_UNWRAP_INTO(auto expr, Expr::pull(stream));
         list.push_back(expr);
+        // todo: yield expr if last omitted
         // Allow omitting last semicolon
         if (!Token::pullSemicolons(stream) && !Token::peek('}', stream)) {
             return rb.error("Expected semicolon");
@@ -144,9 +145,11 @@ ExprResult<ListExpr> ListExpr::pull(Stream& stream) {
 
 Type ListExpr::typecheck(UnitParser& state) const {
     for (auto& expr : exprs) {
+        if (state.isReturning()) {
+            state.error(expr->range, "Unreachable code detected");
+        }
         expr->typecheck(state);
     }
-    // todo: return types
     return Type(VoidType(), nullptr);
 }
 
@@ -170,12 +173,13 @@ ExprResult<ReturnExpr> ReturnExpr::pull(Stream& stream) {
 }
 
 Type ReturnExpr::typecheck(UnitParser& state) const {
-    if (expr) {
-        return expr.value()->typecheck(state);
-    }
-    else {
-        return Primitive::Void;
-    }
+    auto ty = expr ? expr.value()->typecheck(state) : Primitive::Void;
+    state.setReturnInfo(
+        (from ? Option(from.value()->path) : None),
+        true,
+        ty
+    );
+    return Primitive::Void;
 }
 
 std::string ReturnExpr::debug(size_t indent) const {
@@ -186,18 +190,27 @@ std::string ReturnExpr::debug(size_t indent) const {
 
 ExprResult<BlockExpr> BlockExpr::pull(Stream& stream) {
     Rollback rb(stream);
+    Option<Rc<IdentExpr>> name;
+    if (Token::draw(Keyword::Scope, stream)) {
+        GEODE_UNWRAP_INTO(name, IdentExpr::pull(stream));
+    }
     GEODE_UNWRAP(Token::pull('{', stream));
     GEODE_UNWRAP_INTO(auto expr, ListExpr::pull(stream));
     GEODE_UNWRAP(Token::pull('}', stream));
-    return rb.commit<BlockExpr>(expr);
+    return rb.commit<BlockExpr>(expr, name);
 }
 
 Type BlockExpr::typecheck(UnitParser& state) const {
-    // todo: get label from attribute
-    state.pushScope(false);
+    if (name) {
+        state.verifyCanPush(name.value());
+        state.push(ScopeEntity {
+            .name = name.value()->path,
+            .decl = shared_from_this(),
+        });
+    }
+    state.pushScope(name, false);
     auto ret = expr->typecheck(state);
-    state.popScope();
-    return ret;
+    return state.popScope().value_or(ret);
 }
 
 std::string BlockExpr::debug(size_t indent) const {

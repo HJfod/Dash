@@ -135,6 +135,9 @@ ExprResult<FunDeclExpr> FunDeclExpr::pull(Stream& stream) {
     GEODE_UNWRAP_INTO(auto maybeOp, FunDeclExpr::pullParams(params, stream, true));
     GEODE_UNWRAP(Token::pull(')', stream));
     if (maybeOp) {
+        if (!std::holds_alternative<std::nullopt_t>(name)) {
+            return rb.error("Function has multiple names");
+        }
         name = maybeOp.value();
     }
     if (Token::draw(Keyword::As, stream)) {
@@ -145,7 +148,10 @@ ExprResult<FunDeclExpr> FunDeclExpr::pull(Stream& stream) {
         GEODE_UNWRAP_INTO(ret, TypeExpr::pull(stream));
     }
     Option<Rc<Expr>> body;
-    if (Token::draw('{', stream)) {
+    if (Token::draw(Op::Farrow, stream)) {
+        GEODE_UNWRAP_INTO(body, Expr::pull(stream));
+    }
+    else if (Token::draw('{', stream)) {
         GEODE_UNWRAP_INTO(body, ListExpr::pull(stream));
         GEODE_UNWRAP(Token::pull('}', stream));
     }
@@ -199,11 +205,11 @@ Type FunDeclExpr::typecheck(UnitParser& state) const {
     FunType fun;
     fun.isExtern = isExtern;
 
+    Option<Rc<IdentExpr>> scopeName;
     if (std::holds_alternative<Rc<IdentExpr>>(name)) {
-        state.verifyCanPush(std::get<Rc<IdentExpr>>(name));
+        scopeName = std::get<Rc<IdentExpr>>(name);
     }
-
-    state.pushScope(true);
+    state.pushScope(scopeName, true);
     for (auto& param : params) {
         Type pty = Primitive::Unk;
         if (param.type) {
@@ -237,6 +243,9 @@ Type FunDeclExpr::typecheck(UnitParser& state) const {
             fun.name = expr->path;
         },
         [&](Op const& op) {
+            if (!isOverloadableOp(op)) {
+                state.error(range, "Operator `{}` is not overloadable", tokenToString(op));
+            }
             if (isUnOp(op)) {
                 if (fun.params.size() == 1) {
                     fun.name = IdentPath(opFunName(
@@ -278,6 +287,10 @@ Type FunDeclExpr::typecheck(UnitParser& state) const {
         [&](std::nullopt_t const&) {},
     }, this->name);
 
+    if (fun.name) {
+        state.verifyCanPush(range, fun.name.value());
+    }
+
     auto ret = Type(fun, shared_from_this());
 
     // allow recursion by pushing fun type before body check
@@ -288,11 +301,20 @@ Type FunDeclExpr::typecheck(UnitParser& state) const {
             state.error(body.value()->range, "Extern functions may not have a body");
         }
         auto ret = body.value()->typecheck(state);
+        if (auto ty = state.popScope()) {
+            ret = ty.value();
+        }
         if (fun.retType && !ret.convertible(fun.retType.value())) {
-            state.error(body.value()->range, "Function body does not match return type");
+            state.error(body.value()->range, "Function body does not match return type")
+                .note(
+                    "Return type is `{}`, body is `{}`",
+                    fun.retType.value()->toString(), ret.toString()
+                );
         }
     }
-    state.popScope();
+    else {
+        state.popScope();
+    }
 
     return ret;
 }
@@ -538,6 +560,15 @@ Type NodeDeclExpr::typecheck(UnitParser& state) const {
             sty.name = ident.value()->path;
         }
         sty.isExtern = isExtern;
+        if (extends) {
+            auto t = state.getType(extends.value()->path);
+            if (!t || !t->template has<StructType>()) {
+                state.error(extends.value()->range, "\"{}\" is not a struct type", extends.value()->path);
+            }
+            else {
+                sty.super = *t;
+            }
+        }
         for (auto& mem : members) {
             auto mty = mem->typecheck(state);
             sty.members[mem->name] = PropType {
@@ -559,6 +590,15 @@ Type NodeDeclExpr::typecheck(UnitParser& state) const {
         }
         NodeType sty;
         sty.name = ident.value()->path;
+        if (extends) {
+            auto t = state.getType(extends.value()->path);
+            if (!t || !t->template has<NodeType>()) {
+                state.error(extends.value()->range, "\"{}\" is not a node type", extends.value()->path);
+            }
+            else {
+                sty.super = *t;
+            }
+        }
         for (auto& mem : members) {
             auto mty = mem->typecheck(state);
             sty.props[mem->name] = PropType {
@@ -592,6 +632,10 @@ ExprResult<EnumDeclExpr> EnumDeclExpr::pull(Stream& stream) {
     GEODE_UNWRAP(Token::pull(Keyword::Enum, stream));
     auto ident = IdentExpr::pull(stream).ok();
     rb.clearMessages();
+    Option<Rc<IdentExpr>> extends;
+    if (Token::draw(Keyword::Extends, stream)) {
+        GEODE_UNWRAP_INTO(extends, IdentExpr::pull(stream));
+    }
     GEODE_UNWRAP(Token::pull('{', stream));
     Vec<Rc<NodeDeclExpr>> variants;
     while (true) {
@@ -604,7 +648,7 @@ ExprResult<EnumDeclExpr> EnumDeclExpr::pull(Stream& stream) {
         }
     }
     GEODE_UNWRAP(Token::pull('}', stream));
-    return rb.commit<EnumDeclExpr>(ident, variants, isExtern);
+    return rb.commit<EnumDeclExpr>(ident, variants, extends, isExtern);
 }
 
 Type EnumDeclExpr::typecheck(UnitParser& state) const {
@@ -614,6 +658,15 @@ Type EnumDeclExpr::typecheck(UnitParser& state) const {
     EnumType ty;
     if (ident) {
         ty.name = ident.value()->path;
+    }
+    if (extends) {
+        auto t = state.getType(extends.value()->path);
+        if (!t || !t->template has<EnumType>()) {
+            state.error(extends.value()->range, "\"{}\" is not an enum type", extends.value()->path);
+        }
+        else {
+            ty.super = *t;
+        }
     }
     ty.isExtern = isExtern;
     for (auto& var : variants) {

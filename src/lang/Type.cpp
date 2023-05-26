@@ -102,35 +102,6 @@ FullIdentPath FullIdentPath::enter(IdentPath const& components) const {
     }
 }
 
-FullIdentPath FullIdentPath::enterOverlapping(IdentPath const& components) const {
-    if (!components.absolute) {
-        auto add = Vec<Ident>();
-        for (auto& comp : components.path) {
-            add.push_back(comp);
-        }
-        add.push_back(components.name);
-        // remove overlap from end of original
-        size_t overlap = 0;
-        for (auto& comp : path) {
-            if (add[overlap] == comp) {
-                overlap += 1;
-            }
-            else {
-                overlap = 0;
-            }
-        }
-        auto comps = path;
-        while (overlap--) comps.pop_back();
-        for (auto& a : add) {
-            comps.push_back(a);
-        }
-        return comps;
-    }
-    else {
-        return FullIdentPath(components);
-    }
-}
-
 Type::Type(Value const& value, Rc<const Expr> decl)
   : kind(value), decl(decl) {}
 
@@ -178,6 +149,7 @@ bool Type::convertible(Type const& other) const {
         return false;
     }
     if (auto str = std::get_if<StructType>(&from.kind)) {
+        // todo: super classes
         // must have all the same members as into, can have extra members tho
         for (auto& [name, mem] : std::get<StructType>(into.kind).members) {
             if (
@@ -351,19 +323,37 @@ Option<Type> Type::getMemberType(std::string const& name) const {
             if (str.members.contains(name)) {
                 return str.members.at(name).type.clone();
             }
+            if (str.super) {
+                return str.super.value()->getMemberType(name);
+            }
             return None;
         },
         [&](NodeType const& node) -> Option<Type> {
             if (node.props.contains(name)) {
                 return node.props.at(name).type.clone();
             }
+            if (node.super) {
+                return node.super.value()->getMemberType(name);
+            }
+            return None;
+        },
+        [&](EnumType const& enm) -> Option<Type> {
+            if (enm.super) {
+                return enm.super.value()->getMemberType(name);
+            }
             return None;
         },
         [&](RefType const& ref) -> Option<Type> {
             return ref.type->getMemberType(name);
         },
-        [&](auto const&) -> Option<Type> {
+        [&](AliasType const& alias) -> Option<Type> {
+            return alias.type->getMemberType(name);
+        },
+        [&](UnkType const&) -> Option<Type> {
             return Primitive::Unk;
+        },
+        [&](auto const&) -> Option<Type> {
+            return None;
         },
     }, kind);
 }

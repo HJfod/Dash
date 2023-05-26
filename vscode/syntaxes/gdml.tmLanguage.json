@@ -87,7 +87,7 @@
 				},
 				{
 					"name": "storage.type.gdml",
-					"match": "\\b(let|const|fun|decl|struct|namespace|enum|extends|using)\\b"
+					"match": "\\b(let|const|fun|decl|struct|namespace|enum|extends|using|scope)\\b"
 				},
 				{
 					"name": "punctuation.gdml",

@@ -46,7 +46,6 @@ namespace gdml::lang {
         // that IdentPath, otherwise it is appended to the end of the current 
         // FullIdentPath
         FullIdentPath enter(IdentPath const& components) const;
-        FullIdentPath enterOverlapping(IdentPath const& components) const;
     };
 
     struct GDML_DLL UnkType {};
@@ -79,17 +78,20 @@ namespace gdml::lang {
     struct GDML_DLL StructType {
         Option<IdentPath> name;
         Map<Ident, PropType> members;
+        Option<Box<Type>> super;
         bool isExtern;
     };
     
     struct GDML_DLL NodeType {
         IdentPath name;
         Map<Ident, PropType> props;
+        Option<Box<Type>> super;
     };
 
     struct GDML_DLL EnumType {
         Option<IdentPath> name;
         Map<Ident, Type> variants;
+        Option<Box<Type>> super;
         bool isExtern;
     };
 
@@ -142,6 +144,19 @@ namespace gdml::lang {
         template <class T>
         bool has() const {
             return std::holds_alternative<T>(this->kind);
+        }
+
+        template <class T>
+        T get(std::source_location const loc = std::source_location::current()) const {
+            try {
+                return std::get<T>(this->kind);
+            }
+            catch(std::exception const& e) {
+                throw std::runtime_error(fmt::format(
+                    "Attempted to get an invalid Type (holding index {}) (from {})",
+                    this->kind.index(), loc
+                ));
+            }
         }
     };
 
