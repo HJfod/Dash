@@ -2,13 +2,13 @@
 define_rules! {
 
     rule Ident -> String {
-        match :join(a:XID_Start b:join(:XID_Continue)*)
+        // match a:XID_Start b:(:XID_Continue)*
     }
 
     rule Expr {
-        match value:enum(If, VarDecl);
+        match value:(If || VarDecl);
 
-        impl typecheck(&self, state: &mut TypeState) -> Ty {
+        impl fn typecheck(&self, state: &mut TypeState) -> Ty {
             match self.value {
                 If(stmt) => stmt.typecheck(),
                 VarDecl(decl) => decl.typecheck(),
@@ -19,7 +19,7 @@ define_rules! {
     rule VarDecl {
         match "let" name:Ident ty:(":" :TypeExpr)? value:("=" :Expr)?;
 
-        impl typecheck(&self, state: &mut TypeState) -> Ty {
+        impl fn typecheck(&self, state: &mut TypeState) -> Ty {
             state.push_entity(Var::new(self.name, match (self.ty, self.value) {
                 (Some(t), Some(v)) => state.expect_ty_eq(t, v),
                 (Some(t), None)    => t,
@@ -35,9 +35,9 @@ define_rules! {
 
     rule If {
         match "if" cond:Expr "{" truthy:Expr "}" falsy:("else" "{" :Expr "}")?;
-        match "if" cond:Expr "{" truthy:Expr "}" falsy:("else" :If)?;
+        match "if" cond:Expr "{" truthy:Expr "}" falsy:("else" :If as Expr)?;
 
-        impl typecheck(&self, state: &mut TypeState) -> Ty {
+        impl fn typecheck(&self, state: &mut TypeState) -> Ty {
             state.expect_ty_eq(self.cond.typecheck(), Ty::Bool);
             state.expect_ty_eq(self.truthy.typecheck(), self.falsy.map(|f| f.typecheck()).unwrap_or(Ty::Any))
         }
@@ -46,7 +46,7 @@ define_rules! {
     rule TypeExpr {}
 
     rule TypeName {
-        match Ident;
+        match ident:Ident;
     }
 
 }
