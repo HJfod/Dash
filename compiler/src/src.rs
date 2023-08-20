@@ -1,7 +1,7 @@
 
-use std::{fmt::Display, path::{PathBuf, Path}, fs, cmp::max};
+use std::{fmt::{Display, Debug}, path::{PathBuf, Path}, fs, cmp::max};
 
-use crate::parser::ExprMeta;
+use crate::{parser::{ExprMeta, Parser, Rule}, rules::ast::Expr};
 
 #[derive(Debug, Clone)]
 pub struct Loc {
@@ -163,13 +163,22 @@ impl Display for Message<'_> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 pub enum Src {
     Builtin,
     File {
         path: PathBuf,
         chars: Vec<char>,
     },
+}
+
+impl Debug for Src {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Builtin => f.write_str("Builtin"),
+            Self::File { path, chars: _ } => f.write_fmt(format_args!("File({path:?})")),
+        }
+    }
 }
 
 static BUILTIN_SRC: Src = Src::Builtin;
@@ -288,6 +297,20 @@ impl Src {
                 i += 1;
             }
             res
+        }
+    }
+
+    pub fn parse<'s>(&'s self) -> Result<Expr<'s>, Message<'s>> {
+        let mut parser = Parser::new(self);
+        let ast = Expr::expect(&mut parser)?;
+        if !parser.is_eof() {
+            Err(parser.error(parser.pos(), format!(
+                "Unexpected character '{}'",
+                parser.peek().unwrap()
+            )))
+        }
+        else {
+            Ok(ast)
         }
     }
 }

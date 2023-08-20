@@ -1,23 +1,49 @@
 
-define_rules! {
+use gdml_macros::define_rules;
 
-    rule Ident -> String {
-        // match a:XID_Start b:(:XID_Continue)*
+define_rules! {
+    use crate::src::Level;
+    
+    rule Ident {
+        value: String;
+        match value:XID_Start & XID_Continue* => {
+            Ok(Self {
+                value,
+                meta: parser.get_meta(start)
+            })
+        };
     }
 
-    rule Expr {
-        match value:(If || VarDecl);
+    enum rule Expr = If | VarDecl | Int;
 
-        impl fn typecheck(&self, state: &mut TypeState) -> Ty {
-            match self.value {
-                If(stmt) => stmt.typecheck(),
-                VarDecl(decl) => decl.typecheck(),
-            }
-        }
+    rule Int {
+        value: i64;
+        match string:'0'..'9'+ => {
+            let meta = parser.get_meta(start);
+            Ok(Self {
+                value: string.parse().map_err(|e| Message::from_meta(
+                    Level::Error, format!("Invalid integer: {e}"), &meta
+                ))?,
+                meta
+            })
+        };
+    }
+
+    rule Float {
+        value: f64;
+        match string:'0'..'9'+ & "." & '0'..'9'+ => {
+            let meta = parser.get_meta(start);
+            Ok(Self {
+                value: string.parse().map_err(|e| Message::from_meta(
+                    Level::Error, format!("Invalid float: {e}"), &meta
+                ))?,
+                meta
+            })
+        };
     }
 
     rule VarDecl {
-        match "let" name:Ident ty:(":" :TypeExpr)? value:("=" :Expr)?;
+        match "let" name:Ident ty:(?":" :TypeExpr) value:(?"=" :Expr);
 
         impl fn typecheck(&self, state: &mut TypeState) -> Ty {
             state.push_entity(Var::new(self.name, match (self.ty, self.value) {
@@ -34,8 +60,8 @@ define_rules! {
     }
 
     rule If {
-        match "if" cond:Expr "{" truthy:Expr "}" falsy:("else" "{" :Expr "}")?;
-        match "if" cond:Expr "{" truthy:Expr "}" falsy:("else" :If as Expr)?;
+        match "if" cond:Expr "{" truthy:Expr "}" falsy:(?"else" "{" :Expr "}");
+        match "if" cond:Expr "{" truthy:Expr "}" falsy:(?"else" :If as Expr);
 
         impl fn typecheck(&self, state: &mut TypeState) -> Ty {
             state.expect_ty_eq(self.cond.typecheck(), Ty::Bool);
@@ -43,7 +69,7 @@ define_rules! {
         }
     }
 
-    rule TypeExpr {}
+    enum rule TypeExpr = TypeName;
 
     rule TypeName {
         match ident:Ident;

@@ -46,7 +46,7 @@ impl<'s> Parser<'s> {
 }
 
 impl<'s> Parser<'s> {
-    fn skip_ws(&mut self) -> usize {
+    pub fn skip_ws(&mut self) -> usize {
         loop {
             let Some(ch) = self.peek() else { break };
             // ignore comments
@@ -78,6 +78,19 @@ impl<'s> Parser<'s> {
         }
     }
 
+    pub fn expect_ch_range(&mut self, ch: std::ops::Range<char>) -> Result<char, Message<'s>> {
+        if self.peek().is_some_and(|c| ch.contains(&c)) {
+            Ok(self.next().unwrap())
+        }
+        else {
+            Err(self.error(self.pos, format!(
+                "Expected '{}'..'{}', got '{}'",
+                ch.start, ch.end,
+                self.peek().map(|c| String::from(c)).unwrap_or("EOF".into())
+            )))
+        }
+    }
+
     fn next_word(&mut self, word: &str) -> Result<String, Message<'s>> {
         const OP_CHARS: &str = "=+-/%&|^*~@!?<>#";
         let start = self.skip_ws();
@@ -87,7 +100,7 @@ impl<'s> Parser<'s> {
         // a word is either XID_Start XID_Continue*, a single punctuation, 
         // a bunch of dots, or a bunch of operator characters
         if UnicodeXID::is_xid_start(ch) {
-            let res = String::from(ch);
+            let mut res = String::from(ch);
             while self.peek().is_some_and(|c| UnicodeXID::is_xid_continue(c)) {
                 res.push(self.next().unwrap());
             }
@@ -99,7 +112,7 @@ impl<'s> Parser<'s> {
         }
         // possibly chained punctuation
         else if ch == '.' || ch == ':' {
-            let res = String::from(ch);
+            let mut res = String::from(ch);
             while self.peek().is_some_and(|c| c == ch) {
                 res.push(self.next().unwrap());
             }
@@ -107,7 +120,7 @@ impl<'s> Parser<'s> {
         }
         // operator
         else if OP_CHARS.contains(ch) {
-            let res = String::from(ch);
+            let mut res = String::from(ch);
             while self.peek().is_some_and(|c| OP_CHARS.contains(c)) {
                 res.push(self.next().unwrap());
             }
@@ -134,6 +147,30 @@ impl<'s> Parser<'s> {
         Rule::expect(self)
     }
 
+    pub fn is_eof(&mut self) -> bool {
+        self.skip_ws();
+        self.pos >= self.src.len()
+    }
+
+    fn last_nws_pos(&self) -> usize {
+        let mut i = 1;
+        loop {
+            let ch = self.src.get(self.pos - i);
+            if ch.is_some_and(|c| c.is_whitespace()) {
+                i += 1;
+                continue;
+            }
+            break self.pos - i;
+        }
+    }
+
+    pub fn get_meta(&self, start: usize) -> ExprMeta<'s> {
+        ExprMeta {
+            src: self.src,
+            range: self.src.range(start, self.last_nws_pos() + 1),
+        }
+    }
+
     pub fn error<M: Into<String>>(&self, start: usize, message: M) -> Message<'s> {
         Message {
             level: Level::Error,
@@ -148,24 +185,33 @@ impl<'s> Parser<'s> {
 pub trait Rule<'s>: Sized {
     fn get(parser: &mut Parser<'s>) -> Result<Self, Message<'s>>;
     fn expect(parser: &mut Parser<'s>) -> Result<Self, Message<'s>> {
-        let start = parser.skip_ws();
+        let start = parser.pos();
         let res = Self::get(parser);
         if res.is_err() {
             parser.goto(start);
         }
         res
     }
+    fn meta(&self) -> &ExprMeta;
 }
 
 #[allow(non_camel_case_types)]
-struct XID_Start<'s> {
+pub struct XID_Start<'s> {
+    pub value: char,
     meta: ExprMeta<'s>,
 }
 
 impl<'s> Rule<'s> for XID_Start<'s> {
     fn get(parser: &mut Parser<'s>) -> Result<Self, Message<'s>> {
+        let start = parser.pos();
         if parser.peek().is_some_and(|c| UnicodeXID::is_xid_start(c)) {
-            Ok(parser.next().unwrap())
+            Ok(XID_Start {
+                value: parser.next().unwrap(),
+                meta: ExprMeta {
+                    src: parser.src,
+                    range: parser.src.range(start, parser.pos())
+                }
+            })
         }
         else {
             Err(parser.error(parser.pos(), format!(
@@ -174,17 +220,29 @@ impl<'s> Rule<'s> for XID_Start<'s> {
             )))
         }
     }
+
+    fn meta(&self) -> &ExprMeta {
+        &self.meta
+    }
 }
 
 #[allow(non_camel_case_types)]
-struct XID_Continue<'s> {
+pub struct XID_Continue<'s> {
+    pub value: char,
     meta: ExprMeta<'s>,
 }
 
 impl<'s> Rule<'s> for XID_Continue<'s> {
     fn get(parser: &mut Parser<'s>) -> Result<Self, Message<'s>> {
+        let start = parser.pos();
         if parser.peek().is_some_and(|c| UnicodeXID::is_xid_continue(c)) {
-            Ok(parser.next().unwrap())
+            Ok(XID_Continue {
+                value: parser.next().unwrap(),
+                meta: ExprMeta {
+                    src: parser.src,
+                    range: parser.src.range(start, parser.pos())
+                }
+            })
         }
         else {
             Err(parser.error(parser.pos(), format!(
@@ -192,5 +250,9 @@ impl<'s> Rule<'s> for XID_Continue<'s> {
                 parser.peek().map(|c| String::from(c)).unwrap_or("EOF".into())
             )))
         }
+    }
+
+    fn meta(&self) -> &ExprMeta {
+        &self.meta
     }
 }
