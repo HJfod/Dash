@@ -85,7 +85,12 @@ impl Clause {
             }
             else {
                 let ident = input.parse::<Ident>()?;
-                Ok(Clause::Rule(ident))
+                if input.parse::<Token![as]>().is_ok() {
+                    Ok(Clause::RuleAs(ident, input.parse()?))
+                }
+                else {
+                    Ok(Clause::Rule(ident))
+                }
             }
         }
         else if ahead.peek(LitStr) {
@@ -98,10 +103,8 @@ impl Clause {
             return Err(ahead.error());
         }
     }
-}
 
-impl Parse for Clause {
-    fn parse(input: ParseStream) -> Result<Self> {
+    fn parse_suffixed(input: ParseStream) -> Result<Self> {
         let first = Self::parse_inner(input)?;
         if input.parse::<Token![*]>().is_ok() {
             Ok(Clause::Repeat(first.into()))
@@ -109,14 +112,20 @@ impl Parse for Clause {
         else if input.parse::<Token![?]>().is_ok() {
             Ok(Clause::Optional(first.into()))
         }
-        else if input.parse::<Token![|]>().is_ok() {
+        else {
+            Ok(first)
+        }
+    }
+}
+
+impl Parse for Clause {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let first = Self::parse_suffixed(input)?;
+        if input.parse::<Token![|]>().is_ok() {
             let mut clauses = vec![];
             clauses.push(first);
             loop {
-                match input.parse()? {
-                    Clause::OneOf(o) => clauses.extend(o),
-                    o => clauses.push(o),
-                }
+                clauses.push(Self::parse_suffixed(input)?);
                 if input.parse::<Token![|]>().is_err() {
                     break;
                 }
@@ -127,10 +136,7 @@ impl Parse for Clause {
             let mut clauses = vec![];
             clauses.push(first);
             loop {
-                match input.parse()? {
-                    Clause::Enum(o) => clauses.extend(o),
-                    o => clauses.push(o),
-                }
+                clauses.push(Self::parse_suffixed(input)?);
                 if input.parse::<Token![||]>().is_err() {
                     break;
                 }
