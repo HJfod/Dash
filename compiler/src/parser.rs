@@ -2,6 +2,10 @@
 use crate::src::{Src, Range, Message, Level};
 use unicode_xid::UnicodeXID;
 
+pub fn is_op_char(ch: char) -> bool {
+    "=+-/%&|^*~@!?<>#".contains(ch)
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct ExprMeta<'s> {
     pub src: &'s Src,
@@ -78,6 +82,18 @@ impl<'s> Parser<'s> {
         }
     }
 
+    pub fn expect_ch_with<F: Fn(char) -> bool>(&mut self, ch: F, name: &str) -> Result<char, Message<'s>> {
+        if self.peek().is_some_and(ch) {
+            Ok(self.next().unwrap())
+        }
+        else {
+            Err(self.error(self.pos, format!(
+                "Expected '{}', got '{}'",
+                name, self.peek().map(|c| String::from(c)).unwrap_or("EOF".into())
+            )))
+        }
+    }
+
     pub fn expect_ch_range(&mut self, ch: std::ops::Range<char>) -> Result<char, Message<'s>> {
         if self.peek().is_some_and(|c| ch.contains(&c)) {
             Ok(self.next().unwrap())
@@ -92,7 +108,6 @@ impl<'s> Parser<'s> {
     }
 
     fn next_word(&mut self, word: &str) -> Result<String, Message<'s>> {
-        const OP_CHARS: &str = "=+-/%&|^*~@!?<>#";
         let start = self.skip_ws();
         let Some(ch) = self.next() else {
             return Err(self.error(start, format!("Expected '{word}', got EOF")));
@@ -119,9 +134,9 @@ impl<'s> Parser<'s> {
             Ok(res)
         }
         // operator
-        else if OP_CHARS.contains(ch) {
+        else if is_op_char(ch) {
             let mut res = String::from(ch);
-            while self.peek().is_some_and(|c| OP_CHARS.contains(c)) {
+            while self.peek().is_some_and(is_op_char) {
                 res.push(self.next().unwrap());
             }
             Ok(res)
@@ -193,66 +208,4 @@ pub trait Rule<'s>: Sized {
         res
     }
     fn meta(&self) -> &ExprMeta;
-}
-
-#[allow(non_camel_case_types)]
-pub struct XID_Start<'s> {
-    pub value: char,
-    meta: ExprMeta<'s>,
-}
-
-impl<'s> Rule<'s> for XID_Start<'s> {
-    fn get(parser: &mut Parser<'s>) -> Result<Self, Message<'s>> {
-        let start = parser.pos();
-        if parser.peek().is_some_and(|c| UnicodeXID::is_xid_start(c)) {
-            Ok(XID_Start {
-                value: parser.next().unwrap(),
-                meta: ExprMeta {
-                    src: parser.src,
-                    range: parser.src.range(start, parser.pos())
-                }
-            })
-        }
-        else {
-            Err(parser.error(parser.pos(), format!(
-                "Expected identifier or keyword, got '{}'",
-                parser.peek().map(|c| String::from(c)).unwrap_or("EOF".into())
-            )))
-        }
-    }
-
-    fn meta(&self) -> &ExprMeta {
-        &self.meta
-    }
-}
-
-#[allow(non_camel_case_types)]
-pub struct XID_Continue<'s> {
-    pub value: char,
-    meta: ExprMeta<'s>,
-}
-
-impl<'s> Rule<'s> for XID_Continue<'s> {
-    fn get(parser: &mut Parser<'s>) -> Result<Self, Message<'s>> {
-        let start = parser.pos();
-        if parser.peek().is_some_and(|c| UnicodeXID::is_xid_continue(c)) {
-            Ok(XID_Continue {
-                value: parser.next().unwrap(),
-                meta: ExprMeta {
-                    src: parser.src,
-                    range: parser.src.range(start, parser.pos())
-                }
-            })
-        }
-        else {
-            Err(parser.error(parser.pos(), format!(
-                "Expected identifier or keyword, got '{}'",
-                parser.peek().map(|c| String::from(c)).unwrap_or("EOF".into())
-            )))
-        }
-    }
-
-    fn meta(&self) -> &ExprMeta {
-        &self.meta
-    }
 }

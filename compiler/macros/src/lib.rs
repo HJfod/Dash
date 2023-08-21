@@ -16,7 +16,7 @@ use syn::{
     Result,
     Token,
     token::Paren,
-    parse::{Parse, ParseStream}, LitStr, LitChar, braced, Error, ItemUse, Field, ExprBlock,
+    parse::{Parse, ParseStream}, LitStr, LitChar, braced, Error, ItemUse, Field, ExprBlock, punctuated::Punctuated,
 };
 
 trait Gen {
@@ -33,6 +33,7 @@ fn parse_list<T: Parse>(input: ParseStream) -> Result<Vec<T>> {
 
 mod kw {
     syn::custom_keyword!(rule);
+    syn::custom_keyword!(expected);
 }
 
 #[derive(Clone, PartialEq)]
@@ -105,6 +106,15 @@ impl MaybeBinded {
 }
 
 #[derive(Clone)]
+enum Char {
+    Single(LitChar),
+    Range(LitChar, LitChar),
+    XidStart,
+    XidContinue,
+    OpChar,
+}
+
+#[derive(Clone)]
 enum Clause {
     // (?a b c) => { ... }
     List(Vec<Clause>, Vec<MaybeBinded>, Option<ExprBlock>),
@@ -115,13 +125,11 @@ enum Clause {
     // "string literal"
     String(LitStr),
     // 'c'
-    Char(LitChar),
-    // 'a'..'b'
-    CharRange(LitChar, LitChar),
+    Char(Char),
     // A
     Rule(Ident),
-    // A as B
-    RuleAs(Ident, Ident),
+    // A as B as C
+    RuleAs(Vec<Ident>),
 }
 
 impl Clause {
@@ -130,11 +138,21 @@ impl Clause {
         let ahead = input.lookahead1();
         if ahead.peek(Ident) {
             let ident = input.parse::<Ident>()?;
-            if input.parse::<Token![as]>().is_ok() {
-                res = Clause::RuleAs(ident, input.parse()?);
+            let mut into = Vec::new();
+            while input.parse::<Token![as]>().is_ok() {
+                into.push(input.parse()?);
+            }
+            if !into.is_empty() {
+                into.insert(0, ident);
+                res = Clause::RuleAs(into);
             }
             else {
-                res = Clause::Rule(ident);
+                res = match ident.to_string().as_str() {
+                    "XID_Start"     => Clause::Char(Char::XidStart),
+                    "XID_Continue"  => Clause::Char(Char::XidContinue),
+                    "OP_CHAR"       => Clause::Char(Char::OpChar),
+                    _ => Clause::Rule(ident),
+                };
             }
         }
         else if ahead.peek(Paren) {
@@ -148,10 +166,10 @@ impl Clause {
         else if ahead.peek(LitChar) {
             let ch = input.parse()?;
             if input.parse::<Token![..]>().is_ok() {
-                res = Clause::CharRange(ch, input.parse()?);
+                res = Clause::Char(Char::Range(ch, input.parse()?));
             }
             else {
-                res = Clause::Char(ch);
+                res = Clause::Char(Char::Single(ch));
             }
         }
         else {
@@ -241,14 +259,14 @@ impl Clause {
             Clause::String(_) => {
                 Ok(ClauseTy::String)
             }
-            Clause::Char(_) | Clause::CharRange(_, _) => {
+            Clause::Char(_) => {
                 Ok(ClauseTy::Char)
             }
             Clause::Rule(rule) => {
                 Ok(ClauseTy::Rule(rule.clone()))
             }
-            Clause::RuleAs(_, rule) => {
-                Ok(ClauseTy::Rule(rule.clone()))
+            Clause::RuleAs(rules) => {
+                Ok(ClauseTy::Rule(rules.last().unwrap().clone()))
             }
         }
     }
@@ -402,7 +420,7 @@ impl Clause {
                     }
                     else {
                         stream.extend(quote! {
-                            res.push_str(#b);
+                            res.push_str(&#b);
                         });
                     }
                 }
@@ -415,43 +433,33 @@ impl Clause {
             }
             Self::Repeat(clause, require_one) => {
                 let body = clause.gen()?;
-                let stream = if *require_one {
+                // concat chars to a string
+                let mut stream = if clause.eval_ty()? == ClauseTy::Char {
                     quote! {
-                        #body;
+                        let mut res = String::new();
                     }
                 }
                 else {
-                    quote! {}
+                    quote! {
+                        let mut res = Vec::new();
+                    }
                 };
-                // concat chars to a string
-                if clause.eval_ty()? == ClauseTy::Char {
-                    Ok(quote! {
-                        {
-                            #stream
-                            let mut res = String::new();
-                            while let Ok(b) = || -> Result<_, Message<'s>> {
-                                Ok(#body)
-                            }() {
-                                res.push(b);
-                            }
-                            res
-                        }
-                    })
+                if *require_one {
+                    stream.extend(quote! {
+                        res.push(#body);
+                    });
                 }
-                else {
-                    Ok(quote! {
-                        {
-                            #stream
-                            let mut res = Vec::new();
-                            while let Ok(b) = || -> Result<_, Message<'s>> {
-                                Ok(#body)
-                            }() {
-                                res.push(b);
-                            }
-                            res
+                Ok(quote! {
+                    {
+                        #stream
+                        while let Ok(b) = || -> Result<_, Message<'s>> {
+                            Ok(#body)
+                        }() {
+                            res.push(b);
                         }
-                    })
-                }
+                        res
+                    }
+                })
             }
             Self::String(lit) => {
                 Ok(quote! {
@@ -459,13 +467,32 @@ impl Clause {
                 })
             }
             Self::Char(ch) => {
-                Ok(quote! {
-                    parser.expect_ch(#ch)?
-                })
-            }
-            Self::CharRange(a, b) => {
-                Ok(quote! {
-                    parser.expect_ch_range(#a..#b)?
+                Ok(match ch {
+                    Char::Single(ch) => {
+                        quote! {
+                            parser.expect_ch(#ch)?
+                        }
+                    }
+                    Char::Range(a, b) => {
+                        quote! {
+                            parser.expect_ch_range(#a..#b)?
+                        }
+                    }
+                    Char::XidStart => {
+                        quote! {
+                            parser.expect_ch_with(UnicodeXID::is_xid_start, "identifier")?
+                        }
+                    }
+                    Char::XidContinue => {
+                        quote! {
+                            parser.expect_ch_with(UnicodeXID::is_xid_continue, "identifier")?
+                        }
+                    }
+                    Char::OpChar => {
+                        quote! {
+                            parser.expect_ch_with(crate::parser::is_op_char, "operator")?
+                        }
+                    }
                 })
             }
             Self::Rule(rule) => {
@@ -473,10 +500,17 @@ impl Clause {
                     parser.expect_rule::<#rule>()?
                 })
             }
-            Self::RuleAs(rule, into) => {
-                Ok(quote! {
-                    #into::from(parser.expect_rule::<#rule>()?)
-                })
+            Self::RuleAs(rules) => {
+                let first = rules.first().unwrap();
+                let mut stream = quote! {
+                    parser.expect_rule::<#first>()?
+                };
+                for rule in rules.iter().skip(1) {
+                    stream = quote! {
+                        #rule::from(#stream)
+                    };
+                }
+                Ok(stream)
             }
         }
     }
@@ -527,9 +561,29 @@ impl Gen for Match {
     }
 }
 
+struct Variant {
+    lookahead: Option<Clause>,
+    name: Ident,
+}
+
+impl Parse for Variant {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let lookahead = if input.parse::<Token![?]>().is_ok() {
+            let v = input.parse()?;
+            input.parse::<Token![->]>()?;
+            Some(v)
+        }
+        else {
+            None
+        };
+        Ok(Self { lookahead, name: input.parse()? })
+    }
+}
+
 struct EnumRule {
     name: Ident,
-    variants: Vec<Ident>,
+    variants: Vec<Variant>,
+    expected: LitStr,
 }
 
 impl Parse for EnumRule {
@@ -542,8 +596,10 @@ impl Parse for EnumRule {
         while input.parse::<Token![|]>().is_ok() {
             variants.push(input.parse()?);
         }
+        input.parse::<kw::expected>()?;
+        let expected = input.parse()?;
         input.parse::<Token![;]>()?;
-        Ok(Self { name, variants })
+        Ok(Self { name, variants, expected })
     }
 }
 
@@ -553,34 +609,48 @@ impl Gen for EnumRule {
         let mut variants = TokenStream2::new();
         let mut impls = TokenStream2::new();
         let mut match_options = quote! {
-            let mut furthest_match: Option<(Loc, Message<'s>)> = None;
         };
         let mut meta_variants = TokenStream2::new();
         for var in &self.variants {
+            let var_name = &var.name;
             variants.extend(quote! {
-                #var(Box<#var<'s>>),
+                #var_name(Box<#var_name<'s>>),
             });
-            match_options.extend(quote! {
-                match parser.expect_rule::<#var>() {
-                    Ok(r) => return Ok(Self::#var(r.into())),
-                    Err(e) => {
-                        if !furthest_match.as_ref().is_some_and(|m| e.range.end <= m.0) {
-                            furthest_match = Some((e.range.end.clone(), e));
+            if let Some(ref la) = var.lookahead {
+                let la = la.gen()?;
+                match_options.extend(quote! {
+                    {
+                        let start = parser.skip_ws();
+                        let cond = || -> Result<(), Message<'s>> {
+                            #la
+                            Ok(())
+                        }().is_ok();
+                        parser.goto(start);
+                        if cond {
+                            return Ok(Self::#var_name(parser.expect_rule::<#var_name>()?.into()));
                         }
-                    },
-                }
-            });
+                    }
+                });
+            }
+            else {
+                match_options.extend(quote! {
+                    if let Ok(r) = parser.expect_rule::<#var_name>() {
+                        return Ok(Self::#var_name(r.into()));
+                    }
+                });
+            }
             impls.extend(quote! {
-                impl<'s> From<#var<'s>> for #name<'s> {
-                    fn from(from: #var<'s>) -> Self {
-                        Self::#var(from.into())
+                impl<'s> From<#var_name<'s>> for #name<'s> {
+                    fn from(from: #var_name<'s>) -> Self {
+                        Self::#var_name(from.into())
                     }
                 }
             });
             meta_variants.extend(quote! {
-                Self::#var(v) => &v.meta,
+                Self::#var_name(v) => &v.meta(),
             });
         }
+        let expected = format!("Expected {}", self.expected.value());
         Ok(quote! {
             #[derive(Debug)]
             pub enum #name<'s> {
@@ -592,7 +662,7 @@ impl Gen for EnumRule {
             impl<'s> Rule<'s> for #name<'s> {
                 fn get(parser: &mut Parser<'s>) -> Result<Self, Message<'s>> {
                     #match_options
-                    Err(furthest_match.unwrap().1)
+                    Err(parser.error(parser.pos(), #expected))
                 }
 
                 fn meta(&self) -> &ExprMeta {
@@ -753,18 +823,101 @@ impl Gen for MatchRule {
     }
 }
 
-enum Rule {
-    MatchRule(MatchRule),
-    EnumRule(EnumRule),
+struct EnumField {
+    name: Ident,
+    string: LitStr,
 }
 
-impl Parse for Rule {
+impl Parse for EnumField {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let name = input.parse()?;
+        input.parse::<Token![->]>()?;
+        let string = input.parse()?;
+        Ok(Self { name, string })
+    }
+}
+
+struct Enum {
+    name: Ident,
+    fields: Vec<EnumField>,
+}
+
+impl Parse for Enum {
+    fn parse(input: ParseStream) -> Result<Self> {
+        input.parse::<Token![enum]>()?;
+        let name = input.parse()?;
+        let contents;
+        braced!(contents in input);
+        let fields = Punctuated::<EnumField, Token![,]>::parse_terminated(&contents)?
+            .into_iter().collect();
+        Ok(Self { name, fields })
+    }
+}
+
+impl Gen for Enum {
+    fn gen(&self) -> Result<TokenStream2> {
+        let name = &self.name;
+        let mut variants = TokenStream2::new();
+        let mut try_from_str = TokenStream2::new();
+        let mut into_str = TokenStream2::new();
+        for field in &self.fields {
+            let name = &field.name;
+            let string = &field.string;
+            variants.extend(quote! {
+                #name,
+            });
+            into_str.extend(quote! {
+                Self::#name => f.write_str(#string),
+            });
+            try_from_str.extend(quote! {
+                #string => Ok(Self::#name),
+            });
+        }
+        Ok(quote! {
+            #[derive(Debug, Clone)]
+            pub enum #name {
+                #variants
+            }
+
+            impl std::fmt::Display for #name {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    match self {
+                        #into_str
+                    }
+                }
+            }
+
+            impl TryFrom<&str> for #name {
+                type Error = ();
+                fn try_from(value: &str) -> Result<Self, Self::Error> {
+                    match value {
+                        #try_from_str
+                        _ => Err(()),
+                    }
+                }
+            }
+        })
+    }
+}
+
+enum Item {
+    MatchRule(MatchRule),
+    EnumRule(EnumRule),
+    Enum(Enum),
+}
+
+impl Parse for Item {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek(kw::rule) {
-            Ok(Rule::MatchRule(input.parse()?))
+            Ok(Item::MatchRule(input.parse()?))
         }
         else if input.peek(Token![enum]) {
-            Ok(Rule::EnumRule(input.parse()?))
+            if input.peek2(kw::rule) {
+                Ok(Item::EnumRule(input.parse()?))
+            }
+            else {
+                Ok(Item::Enum(input.parse()?))
+            }
         }
         else {
             Err(Error::new(Span::call_site(), "expected rule"))
@@ -772,25 +925,26 @@ impl Parse for Rule {
     }
 }
 
-impl Gen for Rule {
+impl Gen for Item {
     fn gen(&self) -> Result<TokenStream2> {
         match self {
-            Rule::MatchRule(r) => r.gen(),
-            Rule::EnumRule(r) => r.gen(),
+            Item::MatchRule(r) => r.gen(),
+            Item::EnumRule(r) => r.gen(),
+            Item::Enum(e) => e.gen(),
         }
     }
 }
 
 struct Rules {
     uses: Vec<ItemUse>,
-    rules: Vec<Rule>,
+    items: Vec<Item>,
 }
 
 impl Parse for Rules {
     fn parse(input: ParseStream) -> Result<Self> {
         Ok(Self {
             uses: parse_list(input)?,
-            rules: parse_list(input)?,
+            items: parse_list(input)?,
         })
     }
 }
@@ -801,13 +955,14 @@ impl Gen for Rules {
         for use_ in &self.uses {
             stream.extend(quote! { #use_ });
         }
-        for rule in &self.rules {
+        for rule in &self.items {
             stream.extend(rule.gen()?);
         }
         Ok(quote! {
             pub mod ast {
+                use unicode_xid::UnicodeXID;
                 use crate::src::{Loc, Message};
-                use crate::parser::{Parser, Rule, ExprMeta, XID_Start, XID_Continue};
+                use crate::parser::{Parser, Rule, ExprMeta};
                 #stream
             }
         })

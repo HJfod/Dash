@@ -3,7 +3,46 @@ use gdml_macros::define_rules;
 
 define_rules! {
     use crate::src::Level;
+
+    enum Op {
+        Add     -> "+",
+        Sub     -> "-",
+        Mul     -> "*",
+        Div     -> "/",
+        Mod     -> "%",
+
+        Seq     -> "=",
+        AddSeq  -> "+=",
+        SubSeq  -> "-=",
+        MulSeq  -> "*=",
+        DivSeq  -> "/=",
+        ModSeq  -> "%=",
+
+        Eq      -> "==",
+        Lss     -> "<",
+        Gtr     -> ">",
+        Leq     -> "<=",
+        Geq     -> ">=",
+
+        And     -> "&&",
+        Or      -> "||",
+
+        Not     -> "!",
+    }
     
+    rule OpExpr {
+        op: Op;
+        match v:OP_CHAR+ => {
+            let meta = parser.get_meta(start);
+            Ok(Self {
+                op: v.as_str().try_into().map_err(|_| Message::from_meta(
+                    Level::Error, format!("Invalid operator '{v}'"), &meta
+                ))?,
+                meta
+            })
+        };
+    }
+
     rule Ident {
         value: String;
         match value:XID_Start & XID_Continue* => {
@@ -14,7 +53,20 @@ define_rules! {
         };
     }
 
-    enum rule Expr = If | VarDecl | Int;
+    rule ExprList {
+        match exprs:(:Expr ";"+)*;
+    }
+
+    enum rule AtomExpr =
+        ?"if"     -> If |
+        ?"let"    -> VarDecl |
+        ?"{"      -> Block |
+        ?OP_CHAR  -> UnOp |
+                     Float |
+        ?'0'..'9' -> Int
+        expected "expression";
+
+    enum rule Expr = BinOp | AtomExpr expected "expression";
 
     rule Int {
         value: i64;
@@ -42,6 +94,18 @@ define_rules! {
         };
     }
 
+    rule UnOp {
+        match op:OpExpr target:Expr;
+    }
+
+    rule BinOp {
+        match lhs:AtomExpr op:OpExpr rhs:AtomExpr;
+    }
+
+    rule Block {
+        match "{" list:ExprList "}";
+    }
+
     rule VarDecl {
         match "let" name:Ident ty:(?":" :TypeExpr) value:(?"=" :Expr);
 
@@ -61,7 +125,7 @@ define_rules! {
 
     rule If {
         match "if" cond:Expr "{" truthy:Expr "}" falsy:(?"else" "{" :Expr "}");
-        match "if" cond:Expr "{" truthy:Expr "}" falsy:(?"else" :If as Expr);
+        match "if" cond:Expr "{" truthy:Expr "}" falsy:(?"else" :If as AtomExpr as Expr);
 
         impl fn typecheck(&self, state: &mut TypeState) -> Ty {
             state.expect_ty_eq(self.cond.typecheck(), Ty::Bool);
@@ -69,7 +133,9 @@ define_rules! {
         }
     }
 
-    enum rule TypeExpr = TypeName;
+    enum rule TypeExpr =
+        TypeName
+        expected "type";
 
     rule TypeName {
         match ident:Ident;

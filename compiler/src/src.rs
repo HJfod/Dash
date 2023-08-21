@@ -1,7 +1,7 @@
 
 use std::{fmt::{Display, Debug}, path::{PathBuf, Path}, fs, cmp::max};
 
-use crate::{parser::{ExprMeta, Parser, Rule}, rules::ast::Expr};
+use crate::{parser::{ExprMeta, Parser, Rule}, rules::ast::ExprList};
 
 #[derive(Debug, Clone)]
 pub struct Loc {
@@ -300,9 +300,9 @@ impl Src {
         }
     }
 
-    pub fn parse<'s>(&'s self) -> Result<Expr<'s>, Message<'s>> {
+    pub fn parse<'s>(&'s self) -> Result<ExprList<'s>, Message<'s>> {
         let mut parser = Parser::new(self);
-        let ast = Expr::expect(&mut parser)?;
+        let ast = ExprList::expect(&mut parser)?;
         if !parser.is_eof() {
             Err(parser.error(parser.pos(), format!(
                 "Unexpected character '{}'",
