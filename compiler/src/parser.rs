@@ -1,4 +1,6 @@
 
+use std::fmt::Debug;
+
 use crate::src::{Src, Range, Message, Level};
 use unicode_xid::UnicodeXID;
 
@@ -6,7 +8,7 @@ pub fn is_op_char(ch: char) -> bool {
     "=+-/%&|^*~@!?<>#".contains(ch)
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub struct ExprMeta<'s> {
     pub src: &'s Src,
     pub range: Range,
@@ -15,6 +17,12 @@ pub struct ExprMeta<'s> {
 impl<'s> ExprMeta<'s> {
     pub fn builtin() -> Self {
         Self { src: Src::builtin(), range: Range::zero() }
+    }
+}
+
+impl Debug for ExprMeta<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("({:?}:{})", self.src, self.range))
     }
 }
 
@@ -107,7 +115,7 @@ impl<'s> Parser<'s> {
         }
     }
 
-    fn next_word(&mut self, word: &str) -> Result<String, Message<'s>> {
+    pub fn next_word(&mut self, word: &str) -> Result<String, Message<'s>> {
         let start = self.skip_ws();
         let Some(ch) = self.next() else {
             return Err(self.error(start, format!("Expected '{word}', got EOF")));

@@ -4,7 +4,7 @@ use gdml_macros::define_rules;
 define_rules! {
     use crate::src::Level;
 
-    enum Op {
+    enum Op as "operator" {
         Add     -> "+",
         Sub     -> "-",
         Mul     -> "*",
@@ -19,6 +19,7 @@ define_rules! {
         ModSeq  -> "%=",
 
         Eq      -> "==",
+        Neq     -> "!=",
         Lss     -> "<",
         Gtr     -> ">",
         Leq     -> "<=",
@@ -30,19 +31,6 @@ define_rules! {
         Not     -> "!",
     }
     
-    rule OpExpr {
-        op: Op;
-        match v:OP_CHAR+ => {
-            let meta = parser.get_meta(start);
-            Ok(Self {
-                op: v.as_str().try_into().map_err(|_| Message::from_meta(
-                    Level::Error, format!("Invalid operator '{v}'"), &meta
-                ))?,
-                meta
-            })
-        };
-    }
-
     rule Ident {
         value: String;
         match value:XID_Start & XID_Continue* => {
@@ -50,7 +38,7 @@ define_rules! {
                 value,
                 meta: parser.get_meta(start)
             })
-        };
+        }
     }
 
     rule ExprList {
@@ -61,6 +49,7 @@ define_rules! {
         ?"if"     -> If |
         ?"let"    -> VarDecl |
         ?"{"      -> Block |
+        ?"("      -> ParenExpr |
         ?OP_CHAR  -> UnOp |
                      Float |
         ?'0'..'9' -> Int
@@ -78,7 +67,7 @@ define_rules! {
                 ))?,
                 meta
             })
-        };
+        }
     }
 
     rule Float {
@@ -91,18 +80,24 @@ define_rules! {
                 ))?,
                 meta
             })
-        };
+        }
+    }
+
+    rule ParenExpr {
+        match "(" expr:Expr ")";
     }
 
     rule UnOp {
-        match op:OpExpr target:Expr;
+        match op:Op.Add | Op.Sub | Op.Not target:AtomExpr as Expr;
     }
 
     rule BinOp {
-        match lhs:Expr op:OP_CHAR+ rhs:Expr where {
-            lhs Op::Mul | Op::Div | Op::Mod rhs;
-            lhs Op::Add | Op::Sub rhs;
-        };
+        match lhs:BinOp[1] as Expr rest:(:Op.* :BinOp[1] as Expr)*;
+        match lhs:BinOp[2] as Expr rest:(:Op.Add | Op.Sub :BinOp[2] as Expr)*;
+        match lhs:BinOp[3] as Expr rest:(:Op.Mul | Op.Div | Op.Mod :BinOp[3] as Expr)*;
+        match lhs:BinOp[4] as Expr rest:(:Op.Eq | Op.Neq :BinOp[4] as Expr)*;
+        match lhs:BinOp[5] as Expr rest:(:Op.Leq | Op.Lss | Op.Gtr | Op.Geq :BinOp[5] as Expr)*;
+        match lhs:AtomExpr as Expr rest:_;
     }
 
     rule Block {
