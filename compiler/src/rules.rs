@@ -99,7 +99,10 @@ define_rules! {
     }
 
     rule BinOp {
-        match lhs:AtomExpr op:OpExpr rhs:AtomExpr;
+        match lhs:Expr op:OP_CHAR+ rhs:Expr where {
+            lhs Op::Mul | Op::Div | Op::Mod rhs;
+            lhs Op::Add | Op::Sub rhs;
+        };
     }
 
     rule Block {
