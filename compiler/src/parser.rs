@@ -118,6 +118,8 @@ impl<'s> Parser<'s> {
     pub fn next_word(&mut self, word: &str) -> Result<String, Message<'s>> {
         let start = self.skip_ws();
         let Some(ch) = self.next() else {
+            let start = self.last_nws_pos() + 1;
+            self.goto(start);
             return Err(self.error(start, format!("Expected '{word}', got EOF")));
         };
         // a word is either XID_Start XID_Continue*, a single punctuation, 
@@ -150,6 +152,7 @@ impl<'s> Parser<'s> {
             Ok(res)
         }
         else {
+            self.goto(start);
             Err(self.error(start, format!("Expected '{word}', got '{}'", ch)))
         }
     }
@@ -170,6 +173,13 @@ impl<'s> Parser<'s> {
         Rule::expect(self)
     }
 
+    pub fn expect_eof(&mut self) -> Result<(), Message<'s>> {
+        match self.is_eof() {
+            true => Ok(()),
+            false => Err(self.error(self.pos(), "Expected EOF"))
+        }
+    }
+
     pub fn is_eof(&mut self) -> bool {
         self.skip_ws();
         self.pos >= self.src.len()
@@ -178,6 +188,9 @@ impl<'s> Parser<'s> {
     fn last_nws_pos(&self) -> usize {
         let mut i = 1;
         loop {
+            if self.pos < i {
+                return 0;
+            }
             let ch = self.src.get(self.pos - i);
             if ch.is_some_and(|c| c.is_whitespace()) {
                 i += 1;

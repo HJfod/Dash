@@ -42,7 +42,7 @@ define_rules! {
     }
 
     rule ExprList {
-        match exprs:(:Expr ";"+)*;
+        match exprs:(:Expr ";"+) until "}" | EOF;
     }
 
     enum rule AtomExpr =
@@ -50,12 +50,17 @@ define_rules! {
         ?"let"    -> VarDecl |
         ?"{"      -> Block |
         ?"("      -> ParenExpr |
-        ?OP_CHAR  -> UnOp |
                      Float |
-        ?'0'..'9' -> Int
+        ?'0'..'9' -> Int |
+                     Entity
         expected "expression";
-
-    enum rule Expr = BinOp | AtomExpr expected "expression";
+    
+    enum rule Expr =
+        BinOp |
+        UnOp |
+        CallExpr |
+        AtomExpr
+        expected "expression";
 
     rule Int {
         value: i64;
@@ -83,21 +88,59 @@ define_rules! {
         }
     }
 
+    rule Entity {
+        match ident:Ident;
+    }
+
     rule ParenExpr {
         match "(" expr:Expr ")";
     }
 
     rule UnOp {
-        match op:Op.Add | Op.Sub | Op.Not target:AtomExpr as Expr;
+        match op:Op.Add | Op.Sub | Op.Not target:CallExpr as Expr | AtomExpr as Expr;
     }
 
     rule BinOp {
-        match lhs:BinOp[1] as Expr rest:(:Op.* :BinOp[1] as Expr)*;
-        match lhs:BinOp[2] as Expr rest:(:Op.Add | Op.Sub :BinOp[2] as Expr)*;
-        match lhs:BinOp[3] as Expr rest:(:Op.Mul | Op.Div | Op.Mod :BinOp[3] as Expr)*;
-        match lhs:BinOp[4] as Expr rest:(:Op.Eq | Op.Neq :BinOp[4] as Expr)*;
-        match lhs:BinOp[5] as Expr rest:(:Op.Leq | Op.Lss | Op.Gtr | Op.Geq :BinOp[5] as Expr)*;
-        match lhs:AtomExpr as Expr rest:_;
+        lhs: Expr<'s>;
+        op: Op;
+        rhs: Expr<'s>;
+
+        match lhs:BinOp[1] as Expr rest:(:Op.* :BinOp[1] as Expr)* => {
+            match Self::reduce(parser, start, lhs, rest)? {
+                Expr::BinOp(op) => Ok(*op),
+                _ => Err(parser.error(start, "Expected binop")),
+            }
+        }
+        match as Expr lhs:BinOp[2] as Expr rest:(:Op.Add | Op.Sub :BinOp[2] as Expr)* => {
+            Self::reduce(parser, start, lhs, rest)
+        }
+        match as Expr lhs:BinOp[3] as Expr rest:(:Op.Mul | Op.Div | Op.Mod :BinOp[3] as Expr)* => {
+            Self::reduce(parser, start, lhs, rest)
+        }
+        match as Expr lhs:BinOp[4] as Expr rest:(:Op.Eq | Op.Neq :BinOp[4] as Expr)* => {
+            Self::reduce(parser, start, lhs, rest)
+        }
+        match as Expr lhs:BinOp[5] as Expr rest:(:Op.Leq | Op.Lss | Op.Gtr | Op.Geq :BinOp[5] as Expr)* => {
+            Self::reduce(parser, start, lhs, rest)
+        }
+        match as Expr lhs:UnOp as Expr | CallExpr as Expr | AtomExpr as Expr => {
+            Ok(lhs)
+        }
+
+        fn reduce(parser: &mut Parser<'s>, start: usize, lhs: Expr<'s>, rest: Vec<(Op, Expr<'s>)>) -> Result<Expr<'s>, Message<'s>> {
+            Ok(rest.into_iter().fold(lhs, |mem, curr| {
+                Expr::from(Self {
+                    lhs: mem,
+                    op: curr.0,
+                    rhs: curr.1,
+                    meta: parser.get_meta(start),
+                })
+            }))
+        }
+    }
+
+    rule CallExpr {
+        match expr:AtomExpr "(" args:(:Expr ~ ("," :Expr)* ","?)? ")";
     }
 
     rule Block {

@@ -1,2 +1,2 @@
-let x = 5 + 2 * 3;
-let y = 12.5;
+
+print("hi \"mom\"!");
