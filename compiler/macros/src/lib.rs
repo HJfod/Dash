@@ -34,6 +34,7 @@ fn parse_list<T: Parse>(input: ParseStream) -> Result<Vec<T>> {
 mod kw {
     syn::custom_keyword!(rule);
     syn::custom_keyword!(until);
+    syn::custom_keyword!(unless);
     syn::custom_keyword!(expected);
 }
 
@@ -158,8 +159,8 @@ enum Clause {
     List(Vec<Clause>, Vec<MaybeBinded>, Option<ExprBlock>),
     // a | b
     OneOf(Vec<Clause>),
-    // a?
-    Option(Box<Clause>),
+    // a? a unless B
+    Option(Box<Clause>, Option<Box<Clause>>),
     // a & b
     Concat(Vec<Clause>),
     // a && b
@@ -255,7 +256,10 @@ impl Clause {
             Ok(Clause::Repeat(res.into(), RepeatMode::Until(Self::parse_one_of(input)?.into())))
         }
         else if input.parse::<Token![?]>().is_ok() {
-            Ok(Clause::Option(res.into()))
+            Ok(Clause::Option(res.into(), None))
+        }
+        else if input.parse::<kw::unless>().is_ok() {
+            Ok(Clause::Option(res.into(), Some(Self::parse_one_of(input)?.into())))
         }
         else {
             Ok(res)
@@ -352,7 +356,7 @@ impl Clause {
                 }
                 Ok(first)
             }
-            Clause::Option(clause) => {
+            Clause::Option(clause, _) => {
                 Ok(ClauseTy::Option(clause.eval_ty()?.into()))
             }
             Clause::Concat(list) => {
@@ -562,11 +566,24 @@ impl Clause {
                     }()?
                 })
             }
-            Self::Option(clause) => {
+            Self::Option(clause, unless) => {
                 let body = clause.gen()?;
-                Ok(quote! {
-                    crate::rule_try!(parser, #body).ok()
-                })
+                if let Some(unless) = unless {
+                    let unless = unless.gen()?;
+                    Ok(quote! {
+                        if !crate::rule_peek!(parser, #unless) {
+                            Some(#body)
+                        }
+                        else {
+                            None
+                        }
+                    })
+                }
+                else {
+                    Ok(quote! {
+                        crate::rule_try!(parser, #body).ok()
+                    })
+                }
             }
             Self::Concat(list) => {
                 let mut stream = quote! {

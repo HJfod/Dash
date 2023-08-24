@@ -56,10 +56,10 @@ define_rules! {
         expected "expression";
     
     enum rule Expr =
-        BinOp |
-        UnOp |
-        CallExpr |
-        AtomExpr
+                           BinOp |
+        ?OP_CHAR        -> UnOp |
+        ?(AtomExpr "(") -> CallExpr |
+                           AtomExpr
         expected "expression";
 
     rule Int {
@@ -140,7 +140,7 @@ define_rules! {
     }
 
     rule CallExpr {
-        match expr:AtomExpr "(" args:(:Expr ~ ("," :Expr)* ","?)? ")";
+        match expr:AtomExpr "(" args:(:Expr ~ ("," :Expr) until ")" ","?) unless ")" ")";
     }
 
     rule Block {

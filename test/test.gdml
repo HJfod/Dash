@@ -1,2 +1,2 @@
 
-print("hi \"mom\"!");
+chained(2)(5);
