@@ -55,12 +55,24 @@ define_rules! {
                      Entity
         expected "expression";
     
-    enum rule Expr =
+    enum rule Expr {
+        variants If, VarDecl, Block, Float, Int, Entity, BinOp, UnOp, CallExpr;
+
+        match :UnOp;
+        match ?="if" :If;
+        match ?="let" :VarDecl;
+        match ?="{" :Block;
+        match ?"(" :Expr ")";
+        match :Float;
+        match ?='0'..'9' :Int;
+        match :Entity;
+        
                            BinOp |
         ?OP_CHAR        -> UnOp |
         ?(AtomExpr "(") -> CallExpr |
                            AtomExpr
         expected "expression";
+    }
 
     rule Int {
         value: i64;
@@ -92,12 +104,8 @@ define_rules! {
         match ident:Ident;
     }
 
-    rule ParenExpr {
-        match "(" expr:Expr ")";
-    }
-
     rule UnOp {
-        match op:Op.Add | Op.Sub | Op.Not target:CallExpr as Expr | AtomExpr as Expr;
+        match op:Op.Add | Op.Sub | Op.Not target:Expr;
     }
 
     rule BinOp {
