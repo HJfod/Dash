@@ -219,14 +219,6 @@ impl<'s> Parser<'s> {
 }
 
 pub trait Rule<'s>: Sized {
-    fn get(parser: &mut Parser<'s>) -> Result<Self, Message<'s>>;
-    fn expect(parser: &mut Parser<'s>) -> Result<Self, Message<'s>> {
-        let start = parser.pos();
-        let res = Self::get(parser);
-        if res.is_err() {
-            parser.goto(start);
-        }
-        res
-    }
-    fn meta(&self) -> &ExprMeta;
+    fn expect(parser: &mut Parser<'s>) -> Result<Self, Message<'s>>;
+    fn meta(&self) -> &ExprMeta<'s>;
 }

@@ -51,13 +51,13 @@ impl<'s, T: Rule<'s>> ConcatInto<T> for T {
 }
 
 impl<A, T: ConcatInto<A>> ConcatInto<A> for Vec<T> {
-    fn concat_into(mut self, target: &mut Vec<A>) {
+    fn concat_into(self, target: &mut Vec<A>) {
         self.into_iter().for_each(|t| t.concat_into(target));
     }
 }
 
 impl<A, T: ConcatInto<A>> ConcatInto<A> for Option<T> {
-    fn concat_into(mut self, target: &mut Vec<A>) {
+    fn concat_into(self, target: &mut Vec<A>) {
         if let Some(v) = self {
             v.concat_into(target);
         }

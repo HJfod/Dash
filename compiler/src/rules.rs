@@ -45,32 +45,19 @@ define_rules! {
         match exprs:(:Expr ";"+) until "}" | EOF;
     }
 
-    enum rule AtomExpr =
-        ?"if"     -> If |
-        ?"let"    -> VarDecl |
-        ?"{"      -> Block |
-        ?"("      -> ParenExpr |
-                     Float |
-        ?'0'..'9' -> Int |
-                     Entity
-        expected "expression";
-    
-    enum rule Expr {
-        variants If, VarDecl, Block, Float, Int, Entity, BinOp, UnOp, CallExpr;
+    rule Expr {
+        enum If, VarDecl, Block, Float, Int, Entity, BinOp, UnOp, CallExpr;
 
-        match :UnOp;
-        match ?="if" :If;
-        match ?="let" :VarDecl;
-        match ?="{" :Block;
+        match :BinOp;
+        match[unop] :UnOp;
+        match[call] :CallExpr;
+        match[nonop] ??"if" :If;
+        match ??"let" :VarDecl;
+        match ??"{" :Block;
         match ?"(" :Expr ")";
         match :Float;
-        match ?='0'..'9' :Int;
+        match ??'0'..'9' :Int;
         match :Entity;
-        
-                           BinOp |
-        ?OP_CHAR        -> UnOp |
-        ?(AtomExpr "(") -> CallExpr |
-                           AtomExpr
         expected "expression";
     }
 
@@ -105,7 +92,7 @@ define_rules! {
     }
 
     rule UnOp {
-        match op:Op.Add | Op.Sub | Op.Not target:Expr;
+        match op:Op.Add | Op.Sub | Op.Not target:Expr[unop];
     }
 
     rule BinOp {
@@ -113,25 +100,25 @@ define_rules! {
         op: Op;
         rhs: Expr<'s>;
 
-        match lhs:BinOp[1] as Expr rest:(:Op.* :BinOp[1] as Expr)* => {
+        match lhs:BinOp[add] as Expr rest:(:Op.* :BinOp[add] as Expr)* => {
             match Self::reduce(parser, start, lhs, rest)? {
                 Expr::BinOp(op) => Ok(*op),
                 _ => Err(parser.error(start, "Expected binop")),
             }
         }
-        match as Expr lhs:BinOp[2] as Expr rest:(:Op.Add | Op.Sub :BinOp[2] as Expr)* => {
+        match[add] as Expr lhs:BinOp[mul] as Expr rest:(:Op.Add | Op.Sub :BinOp[mul] as Expr)* => {
             Self::reduce(parser, start, lhs, rest)
         }
-        match as Expr lhs:BinOp[3] as Expr rest:(:Op.Mul | Op.Div | Op.Mod :BinOp[3] as Expr)* => {
+        match[mul] as Expr lhs:BinOp[eq] as Expr rest:(:Op.Mul | Op.Div | Op.Mod :BinOp[eq] as Expr)* => {
             Self::reduce(parser, start, lhs, rest)
         }
-        match as Expr lhs:BinOp[4] as Expr rest:(:Op.Eq | Op.Neq :BinOp[4] as Expr)* => {
+        match[eq] as Expr lhs:BinOp[comp] as Expr rest:(:Op.Eq | Op.Neq :BinOp[comp] as Expr)* => {
             Self::reduce(parser, start, lhs, rest)
         }
-        match as Expr lhs:BinOp[5] as Expr rest:(:Op.Leq | Op.Lss | Op.Gtr | Op.Geq :BinOp[5] as Expr)* => {
+        match[comp] as Expr lhs:BinOp[root] as Expr rest:(:Op.Leq | Op.Lss | Op.Gtr | Op.Geq :BinOp[root] as Expr)* => {
             Self::reduce(parser, start, lhs, rest)
         }
-        match as Expr lhs:UnOp as Expr | CallExpr as Expr | AtomExpr as Expr => {
+        match[root] as Expr lhs:Expr[unop] => {
             Ok(lhs)
         }
 
@@ -148,7 +135,7 @@ define_rules! {
     }
 
     rule CallExpr {
-        match expr:AtomExpr "(" args:(:Expr ~ ("," :Expr) until ")" ","?) unless ")" ")";
+        match expr:Expr[nonop] "(" args:(:Expr ~ ("," :Expr) until ")" ","?) unless ")" ")";
     }
 
     rule Block {
@@ -173,8 +160,7 @@ define_rules! {
     }
 
     rule If {
-        match "if" cond:Expr "{" truthy:Expr "}" falsy:(?"else" "{" :Expr "}");
-        match "if" cond:Expr "{" truthy:Expr "}" falsy:(?"else" :If as AtomExpr as Expr);
+        match "if" cond:Expr "{" truthy:Expr "}" falsy:(?"else" :("{" :Expr "}") | If as Expr);
 
         impl fn typecheck(&self, state: &mut TypeState) -> Ty {
             state.expect_ty_eq(self.cond.typecheck(), Ty::Bool);
@@ -182,9 +168,11 @@ define_rules! {
         }
     }
 
-    enum rule TypeExpr =
-        TypeName
-        expected "type";
+    rule TypeExpr {
+        enum TypeName;
+
+        match :TypeName;
+    }
 
     rule TypeName {
         match ident:Ident;

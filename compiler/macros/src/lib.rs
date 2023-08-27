@@ -16,7 +16,10 @@ use syn::{
     Result,
     Token,
     token::{Paren, Bracket},
-    parse::{Parse, ParseStream}, LitStr, LitChar, braced, Error, ItemUse, Field, ExprBlock, punctuated::Punctuated, bracketed, LitInt, ItemFn,
+    parse::{Parse, ParseStream}, 
+    LitStr, LitChar,
+    braced, Error, ItemUse, Field, ExprBlock,
+    punctuated::Punctuated, bracketed, ItemFn,
 };
 
 trait Gen {
@@ -36,6 +39,7 @@ mod kw {
     syn::custom_keyword!(until);
     syn::custom_keyword!(unless);
     syn::custom_keyword!(expected);
+    syn::custom_keyword!(nofallthrough);
 }
 
 #[derive(Clone)]
@@ -156,7 +160,11 @@ enum RepeatMode {
 #[derive(Clone)]
 enum Clause {
     // (?a b c) => { ... }
-    List(Vec<Clause>, Vec<MaybeBinded>, Option<ExprBlock>),
+    List {
+        peek_condition: Vec<Clause>,
+        items: Vec<MaybeBinded>,
+        rust: Option<ExprBlock>,
+    },
     // a | b
     OneOf(Vec<Clause>),
     // a? a unless B
@@ -172,7 +180,11 @@ enum Clause {
     // 'c'
     Char(Char),
     // A[_] as B as C
-    Rule(Ident, Option<usize>, Vec<Ident>),
+    Rule {
+        name: Ident,
+        matcher: Option<Ident>,
+        cast_as: Vec<Ident>
+    },
     // E.V
     EnumVariant(Ident, Option<Ident>),
     // _
@@ -199,7 +211,7 @@ impl Clause {
                 let which = if input.peek(Bracket) {
                     let contents;
                     bracketed!(contents in input);
-                    Some(contents.parse::<LitInt>()?.base10_parse::<usize>()?)
+                    Some(contents.parse::<Ident>()?)
                 }
                 else {
                     None
@@ -209,7 +221,11 @@ impl Clause {
                     into.push(input.parse()?);
                 }
                 if !into.is_empty() {
-                    res = Clause::Rule(ident, which, into);
+                    res = Clause::Rule {
+                        name: ident,
+                        matcher: which,
+                        cast_as: into,
+                    };
                 }
                 else {
                     res = match ident.to_string().as_str() {
@@ -217,7 +233,11 @@ impl Clause {
                         "XID_Continue"  => Clause::Char(Char::XidContinue),
                         "OP_CHAR"       => Clause::Char(Char::OpChar),
                         "EOF"           => Clause::Char(Char::EOF),
-                        _ => Clause::Rule(ident, which, vec![]),
+                        _ => Clause::Rule {
+                            name: ident,
+                            matcher: which,
+                            cast_as: vec![],
+                        },
                     };
                 }
             }
@@ -307,14 +327,14 @@ impl Clause {
 
     fn is_functional(&self) -> bool {
         match self {
-            Clause::List(_, _, rust) => rust.is_some(),
+            Clause::List { peek_condition: _, items: _, rust } => rust.is_some(),
             _ => false,
         }
     }
 
     fn eval_ty(&self) -> Result<ClauseTy> {
         match self {
-            Clause::List(opts, list, rust) => {
+            Clause::List { peek_condition, items, rust } => {
                 if rust.is_some() {
                     return Err(Error::new(
                         Span::call_site(),
@@ -322,10 +342,10 @@ impl Clause {
                     ));
                 }
                 let mut res = vec![];
-                for opt in opts {
+                for opt in peek_condition {
                     opt.eval_ty()?;
                 }
-                for item in list {
+                for item in items {
                     let ty = item.clause().eval_ty()?;
                     if item.is_binded() {
                         res.push(ty);
@@ -337,7 +357,7 @@ impl Clause {
                 else {
                     ClauseTy::List(res)
                 };
-                if opts.is_empty() {
+                if peek_condition.is_empty() {
                     Ok(list)
                 }
                 else {
@@ -391,8 +411,8 @@ impl Clause {
                     ClauseTy::Char
                 })
             }
-            Clause::Rule(rule, _, rules) => {
-                Ok(ClauseTy::Rule(rules.last().unwrap_or(rule).clone()))
+            Clause::Rule { name, matcher: _, cast_as } => {
+                Ok(ClauseTy::Rule(cast_as.last().unwrap_or(name).clone()))
             }
             Clause::EnumVariant(e, _) => {
                 Ok(ClauseTy::Enum(e.clone()))
@@ -404,35 +424,45 @@ impl Clause {
 
 impl Parse for Clause {
     fn parse(input: ParseStream) -> Result<Self> {
-        let mut opts = Vec::new();
+        let mut peek_condition = Vec::new();
+        let mut items = Vec::new();
         if input.parse::<Token![?]>().is_ok() {
-            opts.push(Self::parse_one_of(input)?);
+            if input.parse::<Token![?]>().is_ok() {
+                peek_condition.push(Self::parse_one_of(input)?);
+            }
+            else {
+                let c = Self::parse_one_of(input)?;
+                peek_condition.push(c.clone());
+                items.push(MaybeBinded::Drop(c));
+            }
         }
-        let mut list = Vec::new();
         loop {
             let ahead = input.lookahead1();
+            if ahead.peek(kw::nofallthrough) {
+                break;
+            }
             if ahead.peek(Ident) {
                 if input.peek2(Token![:]) {
                     let name = input.parse()?;
                     input.parse::<Token![:]>()?;
-                    list.push(MaybeBinded::Named(name, Self::parse_one_of(input)?));
+                    items.push(MaybeBinded::Named(name, Self::parse_one_of(input)?));
                 }
                 else {
-                    list.push(MaybeBinded::Drop(Self::parse_one_of(input)?));
+                    items.push(MaybeBinded::Drop(Self::parse_one_of(input)?));
                 }
             }
             else if ahead.peek(Token![_]) {
                 input.parse::<Token![_]>()?;
                 input.parse::<Token![:]>()?;
-                list.push(MaybeBinded::Unnamed(Self::parse_one_of(input)?));
+                items.push(MaybeBinded::Unnamed(Self::parse_one_of(input)?));
             }
             else if ahead.peek(Token![:]) {
                 input.parse::<Token![:]>()?;
-                list.push(MaybeBinded::Unnamed(Self::parse_one_of(input)?));
+                items.push(MaybeBinded::Unnamed(Self::parse_one_of(input)?));
             }
             else {
                 if let Ok(p) = Self::parse_one_of(input) {
-                    list.push(MaybeBinded::Drop(p));
+                    items.push(MaybeBinded::Drop(p));
                 }
                 else {
                     break;
@@ -443,24 +473,30 @@ impl Parse for Clause {
         if input.parse::<Token![=>]>().is_ok() {
             rust = Some(input.parse()?);
         }
-        Ok(Clause::List(opts, list, rust))
+        Ok(Clause::List { peek_condition, items, rust })
     }
 }
 
+enum GenCtx {
+    None,
+    TopLevel,
+    TopLevelEnum,
+}
+
 impl Clause {
-    fn gen_with_ctx(&self, top: bool) -> Result<TokenStream2> {
+    fn gen_with_ctx(&self, ctx: GenCtx) -> Result<TokenStream2> {
         match self {
-            Self::List(opts, clauses, rust) => {
+            Self::List { peek_condition, items, rust } => {
                 let mut body = TokenStream2::new();
                 let mut cond = TokenStream2::new();
-                for c in opts {
-                    let b = c.gen_with_ctx(false)?;
+                for c in peek_condition {
+                    let b = c.gen_with_ctx(GenCtx::None)?;
                     cond.extend(quote! {
                         #b;
                     });
                 }
                 let mut binded_vars = vec![];
-                for (i, c) in clauses.iter().enumerate() {
+                for (i, c) in items.iter().enumerate() {
                     match c {
                         MaybeBinded::Named(name, clause) => {
                             let b = clause.gen()?;
@@ -490,25 +526,33 @@ impl Clause {
                     result_stream = quote! { #rust };
                 }
                 else {
-                    if top {
-                        for r in binded_vars {
-                            result_stream.extend(quote! { #r, });
-                        }
-                        result_stream = quote! { Ok(Self {
-                            #result_stream
-                            meta: parser.get_meta(start),
-                        }) };
-                    }
-                    else {
-                        if binded_vars.len() == 1 {
-                            let f = binded_vars.first().unwrap();
-                            result_stream.extend(quote! { #f });
-                        }
-                        else {
+                    match ctx {
+                        GenCtx::TopLevelEnum => {
                             for r in binded_vars {
                                 result_stream.extend(quote! { #r, });
                             }
-                            result_stream = quote! { (#result_stream) };
+                            result_stream = quote! { Ok(Self::from(#result_stream)) };
+                        }
+                        GenCtx::TopLevel => {
+                            for r in binded_vars {
+                                result_stream.extend(quote! { #r, });
+                            }
+                            result_stream = quote! { Ok(Self {
+                                #result_stream
+                                meta: parser.get_meta(start),
+                            }) };
+                        }
+                        GenCtx::None => {
+                            if binded_vars.len() == 1 {
+                                let f = binded_vars.first().unwrap();
+                                result_stream.extend(quote! { #f });
+                            }
+                            else {
+                                for r in binded_vars {
+                                    result_stream.extend(quote! { #r, });
+                                }
+                                result_stream = quote! { (#result_stream) };
+                            }
                         }
                     }
                 }
@@ -518,17 +562,31 @@ impl Clause {
                         ()
                     }
                 };
-                if !opts.is_empty() {
-                    Ok(quote! { {
-                        if crate::rule_peek!(parser, #cond) {
+                if !peek_condition.is_empty() {
+                    if matches!(ctx, GenCtx::None) {
+                        Ok(quote! { {
+                            if crate::rule_peek!(parser, #cond) {
+                                let start = parser.skip_ws();
+                                #body
+                                Some(#result_stream)
+                            }
+                            else {
+                                None
+                            }
+                        } })
+                    }
+                    else {
+                        Ok(quote! { {
                             let start = parser.skip_ws();
-                            #body
-                            Some(#result_stream)
-                        }
-                        else {
-                            None
-                        }
-                    } })
+                            if crate::rule_peek!(parser, #cond) {
+                                #body
+                                #result_stream
+                            }
+                            else {
+                                Err(parser.error(start, format!("Expected {}", Self::expected())))
+                            }
+                        } })
+                    }
                 }
                 else {
                     Ok(quote! { {
@@ -709,8 +767,8 @@ impl Clause {
                     }
                 })
             }
-            Self::Rule(rule, which, into) => {
-                let name = if let Some(which) = which {
+            Self::Rule { name: rule, matcher, cast_as } => {
+                let name = if let Some(which) = matcher {
                     format_ident!("expect_impl_{which}")
                 }
                 else {
@@ -719,7 +777,7 @@ impl Clause {
                 let mut stream = quote! {
                     #rule::#name(parser)?
                 };
-                for rule in into {
+                for rule in cast_as {
                     stream = quote! {
                         #rule::from(#stream)
                     };
@@ -748,10 +806,10 @@ impl Clause {
 
     fn gen_members(&self) -> Result<TokenStream2> {
         match self {
-            Self::List(opts, list, _) => {
+            Self::List { peek_condition, items, rust } => {
                 let mut stream = TokenStream2::new();
-                if opts.is_empty() {
-                    for item in list {
+                if peek_condition.is_empty() && rust.is_none() {
+                    for item in items {
                         if let MaybeBinded::Named(name, clause) = item {
                             let ty = clause.eval_ty()?.gen()?;
                             stream.extend(quote! {
@@ -769,18 +827,33 @@ impl Clause {
 
 impl Gen for Clause {
     fn gen(&self) -> Result<TokenStream2> {
-        self.gen_with_ctx(false)
+        self.gen_with_ctx(GenCtx::None)
     }
 }
 
 struct Match {
     result_type: Option<Ident>,
+    name: Option<Ident>,
     clause: Clause,
+}
+
+impl Match {
+    fn gen_with_ctx(&self, ctx: GenCtx) -> Result<TokenStream2> {
+        self.clause.gen_with_ctx(ctx)
+    }
 }
 
 impl Parse for Match {
     fn parse(input: ParseStream) -> Result<Self> {
         input.parse::<Token![match]>()?;
+        let name = if input.peek(Bracket) {
+            let c;
+            bracketed!(c in input);
+            Some(c.parse::<Ident>()?)
+        }
+        else {
+            None
+        };
         let result_type = if input.parse::<Token![as]>().is_ok() {
             Some(input.parse()?)
         }
@@ -794,134 +867,19 @@ impl Parse for Match {
                 Err(Error::new(Span::call_site(), "as matchers must be functional"))?;
             }
         }
-        Ok(Match { result_type, clause })
+        Ok(Match { result_type, name, clause })
     }
 }
 
-impl Gen for Match {
-    fn gen(&self) -> Result<TokenStream2> {
-        self.clause.gen_with_ctx(true)
-    }
-}
-
-struct Variant {
-    lookahead: Option<Clause>,
-    name: Ident,
-}
-
-impl Parse for Variant {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let lookahead = if input.parse::<Token![?]>().is_ok() {
-            let v = input.parse()?;
-            input.parse::<Token![->]>()?;
-            Some(v)
-        }
-        else {
-            None
-        };
-        Ok(Self { lookahead, name: input.parse()? })
-    }
-}
-
-struct EnumRule {
-    name: Ident,
-    variants: Vec<Variant>,
-    expected: LitStr,
-}
-
-impl Parse for EnumRule {
-    fn parse(input: ParseStream) -> Result<Self> {
-        input.parse::<Token![enum]>()?;
-        input.parse::<kw::rule>()?;
-        let name = input.parse()?;
-        input.parse::<Token![=]>()?;
-        let mut variants = vec![input.parse()?];
-        while input.parse::<Token![|]>().is_ok() {
-            variants.push(input.parse()?);
-        }
-        input.parse::<kw::expected>()?;
-        let expected = input.parse()?;
-        input.parse::<Token![;]>()?;
-        Ok(Self { name, variants, expected })
-    }
-}
-
-impl Gen for EnumRule {
-    fn gen(&self) -> Result<TokenStream2> {
-        let name = &self.name;
-        let mut variants = TokenStream2::new();
-        let mut impls = TokenStream2::new();
-        let mut match_options = TokenStream2::new();
-        let mut meta_variants = TokenStream2::new();
-        for var in &self.variants {
-            let var_name = &var.name;
-            variants.extend(quote! {
-                #var_name(Box<#var_name<'s>>),
-            });
-            if let Some(ref la) = var.lookahead {
-                let la = la.gen()?;
-                match_options.extend(quote! {
-                    {
-                        let start = parser.skip_ws();
-                        let cond = crate::rule_try!(parser, #la).is_ok();
-                        parser.goto(start);
-                        if cond {
-                            return Ok(Self::#var_name(parser.expect_rule::<#var_name>()?.into()));
-                        }
-                    }
-                });
-            }
-            else {
-                match_options.extend(quote! {
-                    if let Ok(r) = parser.expect_rule::<#var_name>() {
-                        return Ok(Self::#var_name(r.into()));
-                    }
-                });
-            }
-            impls.extend(quote! {
-                impl<'s> From<#var_name<'s>> for #name<'s> {
-                    fn from(from: #var_name<'s>) -> Self {
-                        Self::#var_name(from.into())
-                    }
-                }
-            });
-            meta_variants.extend(quote! {
-                Self::#var_name(v) => &v.meta(),
-            });
-        }
-        let expected = format!("Expected {}", self.expected.value());
-        Ok(quote! {
-            #[derive(Debug)]
-            pub enum #name<'s> {
-                #variants
-            }
-
-            #impls
-
-            impl<'s> Rule<'s> for #name<'s> {
-                fn get(parser: &mut Parser<'s>) -> Result<Self, Message<'s>> {
-                    #match_options
-                    Err(parser.error(parser.pos(), #expected))
-                }
-
-                fn meta(&self) -> &ExprMeta {
-                    match self {
-                        #meta_variants
-                    }
-                }
-            }
-        })
-    }
-}
-
-struct ParseRule(Vec<Field>, Vec<Match>, Vec<ItemFn>, Vec<ImplItemFn>);
+struct ParseRule(RuleKind, Option<LitStr>, Vec<Match>, Vec<ItemFn>, Vec<ImplItemFn>);
 
 impl Parse for ParseRule {
     fn parse(input: ParseStream) -> Result<Self> {
-        let mut fields = vec![];
+        let mut kind = RuleKind::Struct { fields: vec![] };
         let mut matches = vec![];
         let mut fns = vec![];
         let mut impls = vec![];
+        let mut expected = None;
         loop {
             if input.peek(Token![match]) {
                 matches.push(input.parse::<Match>()?);
@@ -935,123 +893,247 @@ impl Parse for ParseRule {
                 impls.push(input.parse::<ImplItemFn>()?);
                 continue;
             }
-            if input.peek(Ident) {
-                fields.push(Field::parse_named(input)?);
+            if input.parse::<Token![enum]>().is_ok() {
+                if let RuleKind::Struct { ref fields } = kind {
+                    if !fields.is_empty() {
+                        Err(Error::new(Span::call_site(), "cannot have enums in struct rules"))?;
+                    }
+                }
+                let variants = Punctuated::<Ident, Token![,]>::parse_separated_nonempty(input)?
+                    .into_iter()
+                    .collect();
                 input.parse::<Token![;]>()?;
+                kind = RuleKind::Enum { variants, };
+                continue;
+            }
+            if input.parse::<kw::expected>().is_ok() {
+                if expected.is_some() {
+                    Err(Error::new(Span::call_site(), "cannot have multiple expected names"))?;
+                }
+                expected = Some(input.parse()?);
+                input.parse::<Token![;]>()?;
+                continue;
+            }
+            if input.peek(Ident) {
+                if let RuleKind::Struct { ref mut fields } = kind {
+                    fields.push(Field::parse_named(input)?);
+                    input.parse::<Token![;]>()?;
+                }
+                else {
+                    Err(Error::new(Span::call_site(), "cannot have members in enum rules"))?;
+                }
                 continue;
             }
             break;
         }
-        Ok(Self(fields, matches, fns, impls))
+        Ok(Self(kind, expected, matches, fns, impls))
     }
 }
 
-struct MatchRule {
+enum RuleKind {
+    Struct {
+        fields: Vec<Field>,
+    },
+    Enum {
+        variants: Vec<Ident>,
+    },
+}
+
+struct Rule {
     name: Ident,
-    fields: Vec<Field>,
+    expected: Option<LitStr>,
+    kind: RuleKind,
     matches: Vec<Match>,
     fns: Vec<ItemFn>,
     impls: Vec<ImplItemFn>,
 }
 
-impl Parse for MatchRule {
+impl Parse for Rule {
     fn parse(input: ParseStream) -> Result<Self> {
         input.parse::<kw::rule>()?;
         let name = input.parse()?;
         let contents;
         braced!(contents in input);
-        let ParseRule(fields, matches, fns, impls) = contents.parse()?;
-        Ok(Self { name, fields, matches, fns, impls })
+        let ParseRule(kind, expected, matches, fns, impls) = contents.parse()?;
+        Ok(Self { name, expected, kind, matches, fns, impls })
     }
 }
 
-impl Gen for MatchRule {
+impl Gen for Rule {
     fn gen(&self) -> Result<TokenStream2> {
         if self.matches.is_empty() {
-            return Err(Error::new(Span::call_site(), "rules must have at least one match statement"));
+            return Err(Error::new(self.name.span(), "rules must have at least one match statement"));
         }
         let name = &self.name;
-        let mut members = TokenStream2::new();
         let first = &self.matches.first().unwrap().clause;
-        if first.is_functional() {
-            for mat in self.matches.iter().skip(1) {
-                if !mat.clause.is_functional() {
-                    return Err(Error::new(Span::call_site(), "all matchers must be functional"));
-                }
-            }
-        }
-        else {
-            let first_ty = first.eval_ty()?;
-            for mat in self.matches.iter().skip(1) {
-                if !mat.clause.eval_ty()?.is_convertible(&first_ty) {
-                    return Err(Error::new(Span::call_site(), "all matches must evaluate to the same type"));
-                }
-            }
-            members.extend(first.gen_members()?);
-        }
-        for field in &self.fields {
-            members.extend(quote! {
-                #field,
-            });
-        }
-        members.extend(quote! {
-            meta: ExprMeta<'s>,
-        });
 
         let mut fns = TokenStream2::new();
         let mut trait_impls = TokenStream2::new();
+
+        let (decl, meta, is_enum) = match &self.kind {
+            RuleKind::Struct { fields } => {
+                let mut members = TokenStream2::new();
+                members.extend(first.gen_members()?);
+                for field in fields {
+                    members.extend(quote! {
+                        #field,
+                    });
+                }
+                members.extend(quote! {
+                    meta: ExprMeta<'s>,
+                });
+                (quote! {
+                    struct #name<'s> {
+                        #members
+                    }
+                }, quote! {
+                    &self.meta
+                }, false)
+            }
+            RuleKind::Enum { variants } => {
+                let mut meta_variants = TokenStream2::new();
+                let mut variants_stream = TokenStream2::new();
+                for var in variants {
+                    let var_name = &var;
+                    variants_stream.extend(quote! {
+                        #var_name(Box<#var_name<'s>>),
+                    });
+                    trait_impls.extend(quote! {
+                        impl<'s> From<#var_name<'s>> for #name<'s> {
+                            fn from(from: #var_name<'s>) -> Self {
+                                Self::#var_name(from.into())
+                            }
+                        }
+                    });
+                    meta_variants.extend(quote! {
+                        Self::#var_name(v) => &v.meta(),
+                    });
+                }
+                (quote! {
+                    enum #name<'s> {
+                        #variants_stream
+                    }
+                }, quote! {
+                    match self {
+                        #meta_variants
+                    }
+                }, true)
+            }
+        };
+
+        if first.is_functional() {
+            for mat in self.matches.iter().skip(1) {
+                if !mat.clause.is_functional() {
+                    return Err(Error::new(self.name.span(), "all matchers must be functional"));
+                }
+            }
+        }
+        else if !is_enum {
+            let first_ty = first.eval_ty()?;
+            for mat in self.matches.iter().skip(1) {
+                if !mat.clause.eval_ty()?.is_convertible(&first_ty) {
+                    return Err(Error::new(self.name.span(), "all matches must evaluate to the same type"));
+                }
+            }
+        }
+        
+        let fallthrough_matcher_count = self.matches.iter().filter(|f| f.result_type.is_none()).count();
+        if fallthrough_matcher_count > 1 && self.expected.is_none() {
+            return Err(Error::new(self.name.span(), "an expected clause is required with multiple matchers"));
+        }
 
         for fun in &self.fns {
             fns.extend(quote! { #fun });
         }
 
-        let mut match_options = quote! {
-            let mut furthest_match: Option<(Loc, Message<'s>)> = None;
-        };
+        if let Some(ref expected) = self.expected {
+            fns.extend(quote! {
+                pub fn expected() -> &'static str {
+                    #expected
+                }
+            });
+        }
 
-        for (i, mat) in self.matches.iter().enumerate() {
-            let impl_name = format_ident!("match_impl_{i}");
-            let expect_name = format_ident!("expect_impl_{i}");
-            let body = mat.gen()?;
+        let mut match_options = quote! {
+        };
+        if fallthrough_matcher_count > 1 {
+            match_options.extend(quote! {
+                let start = parser.skip_ws();
+            });
+        }
+        let mut prev_matcher: Option<Ident> = None;
+
+        for (i, mat) in self.matches.iter().rev().enumerate() {
+            let expect_name = format_ident!(
+                "expect_impl_{}",
+                mat.name.as_ref()
+                    .map(|s| s.to_string())
+                    .unwrap_or(i.to_string())
+            );
             let ty = mat.result_type.clone()
                 .map(|e| quote! { #e<'s> })
                 .unwrap_or(quote! { Self });
-            fns.extend(quote! {
-                fn #impl_name(parser: &mut Parser<'s>) -> Result<#ty, Message<'s>> {
-                    #body
+            let body = mat.gen_with_ctx(
+                if is_enum {
+                    GenCtx::TopLevelEnum
                 }
-                fn #expect_name(parser: &mut Parser<'s>) -> Result<#ty, Message<'s>> {
-                    let start = parser.pos();
-                    let res = Self::#impl_name(parser);
-                    if res.is_err() {
-                        parser.goto(start);
-                    }
-                    res
+                else {
+                    GenCtx::TopLevel
                 }
-            });
-            if mat.result_type.is_none() {
-                match_options.extend(quote! {
-                    match Self::#impl_name(parser) {
-                        Ok(r) => return Ok(r),
-                        Err(e) => {
-                            if !furthest_match.as_ref().is_some_and(|m| e.range.end <= m.0) {
-                                furthest_match = Some((e.range.end.clone(), e));
-                            }
-                        },
+            )?;
+            let prev_match_call = if prev_matcher.is_some() && mat.result_type.is_none() {
+                let call = prev_matcher.as_ref().unwrap();
+                quote! {
+                    Err(_) => Self::#call(parser)
+                }
+            }
+            else {
+                quote! {
+                    Err(e) => Err(e)
+                }
+            };
+            if !(mat.result_type.is_none() && fallthrough_matcher_count == 1) {
+                fns.extend(quote! {
+                    fn #expect_name(parser: &mut Parser<'s>) -> Result<#ty, Message<'s>> {
+                        match crate::rule_try!(parser, #body?) {
+                            Ok(r) => Ok(r),
+                            #prev_match_call,
+                        }
                     }
                 });
             }
+            if mat.result_type.is_none() {
+                if fallthrough_matcher_count == 1 {
+                    match_options.extend(quote! {
+                        #body
+                    });
+                }
+                else {
+                    prev_matcher = Some(expect_name.clone());
+                    match_options.extend(quote! {
+                        match Self::#expect_name(parser) {
+                            Ok(r) => return Ok(r),
+                            Err(e) => {},
+                        }
+                    });
+                }
+            }
+        }
+
+        if fallthrough_matcher_count > 1 {
+            match_options.extend(quote! {
+                Err(parser.error(start, format!("Expected {}", Self::expected())))
+            });
         }
 
         trait_impls.extend(quote! {
             impl<'s> Rule<'s> for #name<'s> {
-                fn get(parser: &mut Parser<'s>) -> Result<Self, Message<'s>> {
+                fn expect(parser: &mut Parser<'s>) -> Result<Self, Message<'s>> {
                     #match_options
-                    Err(furthest_match.unwrap().1)
                 }
 
                 fn meta(&self) -> &ExprMeta<'s> {
-                    &self.meta
+                    #meta
                 }
             }
         });
@@ -1066,16 +1148,14 @@ impl Gen for MatchRule {
                     // });
                 }
                 _ => {
-                    return Err(Error::new(Span::call_site(), "unknown impl"));
+                    return Err(Error::new(fun.sig.ident.span(), "unknown impl"));
                 }
             }
         }
 
         Ok(quote! {
             #[derive(Debug)]
-            pub struct #name<'s> {
-                #members
-            }
+            pub #decl
 
             impl<'s> #name<'s> {
                 #fns
@@ -1183,8 +1263,7 @@ impl Gen for Enum {
 }
 
 enum Item {
-    MatchRule(MatchRule),
-    EnumRule(EnumRule),
+    MatchRule(Rule),
     Enum(Enum),
 }
 
@@ -1194,12 +1273,7 @@ impl Parse for Item {
             Ok(Item::MatchRule(input.parse()?))
         }
         else if input.peek(Token![enum]) {
-            if input.peek2(kw::rule) {
-                Ok(Item::EnumRule(input.parse()?))
-            }
-            else {
-                Ok(Item::Enum(input.parse()?))
-            }
+            Ok(Item::Enum(input.parse()?))
         }
         else {
             Err(Error::new(Span::call_site(), "expected rule"))
@@ -1211,7 +1285,6 @@ impl Gen for Item {
     fn gen(&self) -> Result<TokenStream2> {
         match self {
             Item::MatchRule(r) => r.gen(),
-            Item::EnumRule(r) => r.gen(),
             Item::Enum(e) => e.gen(),
         }
     }
