@@ -36,6 +36,8 @@ fn parse_list<T: Parse>(input: ParseStream) -> Result<Vec<T>> {
 
 mod kw {
     syn::custom_keyword!(rule);
+    syn::custom_keyword!(into);
+    syn::custom_keyword!(while_peek);
     syn::custom_keyword!(until);
     syn::custom_keyword!(unless);
     syn::custom_keyword!(expected);
@@ -185,6 +187,12 @@ enum Clause {
         matcher: Option<Ident>,
         cast_as: Vec<Ident>
     },
+    Into {
+        item: Box<Clause>,
+        target: Ident,
+        target_as: Vec<Ident>,
+        while_peek: Box<Clause>,
+    },
     // E.V
     EnumVariant(Ident, Option<Ident>),
     // _
@@ -266,7 +274,22 @@ impl Clause {
         else {
             return Err(ahead.error());
         }
-        if input.parse::<Token![*]>().is_ok() {
+        if input.parse::<kw::into>().is_ok() {
+            let target = input.parse()?;
+            let mut target_as = Vec::new();
+            while input.parse::<Token![as]>().is_ok() {
+                target_as.push(input.parse()?);
+            }
+            input.parse::<kw::while_peek>()?;
+            let while_peek = input.parse()?;
+            Ok(Clause::Into {
+                item: res.into(),
+                target,
+                target_as,
+                while_peek,
+            })
+        }
+        else if input.parse::<Token![*]>().is_ok() {
             Ok(Clause::Repeat(res.into(), RepeatMode::ZeroOrMore))
         }
         else if input.parse::<Token![+]>().is_ok() {
@@ -334,7 +357,7 @@ impl Clause {
 
     fn eval_ty(&self) -> Result<ClauseTy> {
         match self {
-            Clause::List { peek_condition, items, rust } => {
+            Self::List { peek_condition, items, rust } => {
                 if rust.is_some() {
                     return Err(Error::new(
                         Span::call_site(),
@@ -364,7 +387,7 @@ impl Clause {
                     Ok(ClauseTy::Option(list.into()))
                 }
             }
-            Clause::OneOf(list) => {
+            Self::OneOf(list) => {
                 if list.is_empty() {
                     Err(Error::new(Span::call_site(), "internal error: empty one-of"))?;
                 }
@@ -376,10 +399,10 @@ impl Clause {
                 }
                 Ok(first)
             }
-            Clause::Option(clause, _) => {
+            Self::Option(clause, _) => {
                 Ok(ClauseTy::Option(clause.eval_ty()?.into()))
             }
-            Clause::Concat(list) => {
+            Self::Concat(list) => {
                 for a in list {
                     if !matches!(a.eval_ty()?, ClauseTy::String | ClauseTy::Char) {
                         Err(Error::new(Span::call_site(), "you can only concat chars and strings"))?
@@ -387,10 +410,10 @@ impl Clause {
                 }
                 Ok(ClauseTy::String)
             }
-            Clause::ConcatVec(list) => {
+            Self::ConcatVec(list) => {
                 Ok(ClauseTy::Vec(list.first().unwrap().eval_ty()?.inner_ty().clone().into()))
             }
-            Clause::Repeat(r, _) => {
+            Self::Repeat(r, _) => {
                 let ty = r.eval_ty()?;
                 // automatically concat char* to string
                 if matches!(ty, ClauseTy::Char) {
@@ -400,10 +423,10 @@ impl Clause {
                     Ok(ClauseTy::Vec(ty.into()))
                 }
             }
-            Clause::String(_) => {
+            Self::String(_) => {
                 Ok(ClauseTy::String)
             }
-            Clause::Char(c) => {
+            Self::Char(c) => {
                 Ok(if matches!(c, Char::EOF) {
                     ClauseTy::Default
                 }
@@ -411,13 +434,16 @@ impl Clause {
                     ClauseTy::Char
                 })
             }
-            Clause::Rule { name, matcher: _, cast_as } => {
+            Self::Rule { name, matcher: _, cast_as } => {
                 Ok(ClauseTy::Rule(cast_as.last().unwrap_or(name).clone()))
             }
-            Clause::EnumVariant(e, _) => {
+            Self::Into { item: _, target, target_as, while_peek: _ } => {
+                Ok(ClauseTy::Rule(target_as.last().unwrap_or(target).clone()))
+            }
+            Self::EnumVariant(e, _) => {
                 Ok(ClauseTy::Enum(e.clone()))
             }
-            Clause::Default => Ok(ClauseTy::Default)
+            Self::Default => Ok(ClauseTy::Default)
         }
     }
 }
@@ -738,7 +764,7 @@ impl Clause {
                         Ok(quote! {
                             {
                                 #stream
-                                while crate::rule_try!(parser, #until).is_err() {
+                                while !crate::rule_peek!(parser, #until) {
                                     res.push(#body);
                                 }
                                 res
@@ -802,6 +828,9 @@ impl Clause {
                     };
                 }
                 Ok(stream)
+            }
+            Self::Into { item, target, target_as, while_peek } => {
+
             }
             Self::EnumVariant(e, v) => {
                 if let Some(v) = v {
@@ -1073,13 +1102,7 @@ impl Gen for Rule {
             });
         }
 
-        let mut match_options = quote! {
-        };
-        if fallthrough_matcher_count > 1 {
-            match_options.extend(quote! {
-                let start = parser.skip_ws();
-            });
-        }
+        let mut match_options = quote! {};
         let mut prev_matcher: Option<Ident> = None;
 
         for (i, mat) in self.matches.iter().rev().enumerate() {
@@ -1112,27 +1135,9 @@ impl Gen for Rule {
                 });
             }
             if mat.result_type.is_none() {
-                if fallthrough_matcher_count == 1 {
-                    match_options.extend(quote! {
-                        #body
-                    });
-                }
-                else {
-                    prev_matcher = Some(expect_name.clone());
-                    match_options.extend(quote! {
-                        match Self::#expect_name(parser) {
-                            Ok(r) => return Ok(r),
-                            Err(e) => {},
-                        }
-                    });
-                }
+                prev_matcher = Some(expect_name.clone());
+                match_options = body;
             }
-        }
-
-        if fallthrough_matcher_count > 1 {
-            match_options.extend(quote! {
-                Err(parser.error(start, format!("Expected {}", Self::expected())))
-            });
         }
 
         trait_impls.extend(quote! {
@@ -1242,7 +1247,7 @@ impl Gen for Enum {
                     match Self::try_from(word.as_str()) {
                         Ok(s) => Ok(s),
                         Err(e) => {
-                            let msg = parser.error(start, format!("Expected '{}', got '{word}'", #lit_name));
+                            let msg = parser.error(start, format!("Invalid {} '{word}'", #lit_name));
                             parser.goto(start);
                             Err(msg)
                         }
