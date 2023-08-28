@@ -479,8 +479,10 @@ impl Parse for Clause {
 
 enum GenCtx {
     None,
-    TopLevel,
-    TopLevelEnum,
+    TopLevel {
+        is_enum: bool,
+        err_branch: TokenStream2,
+    },
 }
 
 impl Clause {
@@ -527,20 +529,19 @@ impl Clause {
                 }
                 else {
                     match ctx {
-                        GenCtx::TopLevelEnum => {
+                        GenCtx::TopLevel { is_enum, err_branch: _ } => {
                             for r in binded_vars {
                                 result_stream.extend(quote! { #r, });
                             }
-                            result_stream = quote! { Ok(Self::from(#result_stream)) };
-                        }
-                        GenCtx::TopLevel => {
-                            for r in binded_vars {
-                                result_stream.extend(quote! { #r, });
+                            if is_enum {
+                                result_stream = quote! { Ok(Self::from(#result_stream)) };
                             }
-                            result_stream = quote! { Ok(Self {
-                                #result_stream
-                                meta: parser.get_meta(start),
-                            }) };
+                            else {
+                                result_stream = quote! { Ok(Self {
+                                    #result_stream
+                                    meta: parser.get_meta(start),
+                                }) };
+                            }
                         }
                         GenCtx::None => {
                             if binded_vars.len() == 1 {
@@ -563,37 +564,55 @@ impl Clause {
                     }
                 };
                 if !peek_condition.is_empty() {
-                    if matches!(ctx, GenCtx::None) {
-                        Ok(quote! { {
-                            if crate::rule_peek!(parser, #cond) {
+                    match ctx {
+                        GenCtx::None => {
+                            Ok(quote! {
+                                if crate::rule_peek!(parser, #cond) {
+                                    let start = parser.skip_ws();
+                                    #body
+                                    Some(#result_stream)
+                                }
+                                else {
+                                    None
+                                }
+                            })
+                        }
+                        GenCtx::TopLevel { is_enum: _, err_branch } => {
+                            Ok(quote! {
                                 let start = parser.skip_ws();
-                                #body
-                                Some(#result_stream)
-                            }
-                            else {
-                                None
-                            }
-                        } })
-                    }
-                    else {
-                        Ok(quote! { {
-                            let start = parser.skip_ws();
-                            if crate::rule_peek!(parser, #cond) {
-                                #body
-                                #result_stream
-                            }
-                            else {
-                                Err(parser.error(start, format!("Expected {}", Self::expected())))
-                            }
-                        } })
+                                if crate::rule_peek!(parser, #cond) {
+                                    #body
+                                    #result_stream
+                                }
+                                else {
+                                    #err_branch
+                                }
+                            })
+                        }
                     }
                 }
                 else {
-                    Ok(quote! { {
-                        let start = parser.skip_ws();
-                        #body
-                        #result_stream
-                    } })
+                    match ctx {
+                        GenCtx::None => {
+                            Ok(quote! { {
+                                let start = parser.skip_ws();
+                                #body
+                                #result_stream
+                            } })
+                        }
+                        GenCtx::TopLevel { is_enum: _, err_branch } => {
+                            Ok(quote! {
+                                let start = parser.skip_ws();
+                                match crate::rule_try!(parser, {
+                                    #body
+                                    #result_stream
+                                }?) {
+                                    Ok(r) => Ok(r),
+                                    Err(e) => #err_branch,
+                                }
+                            })
+                        }
+                    }
                 }
             }
             Self::OneOf(list) => {
@@ -1073,32 +1092,22 @@ impl Gen for Rule {
             let ty = mat.result_type.clone()
                 .map(|e| quote! { #e<'s> })
                 .unwrap_or(quote! { Self });
-            let body = mat.gen_with_ctx(
-                if is_enum {
-                    GenCtx::TopLevelEnum
-                }
-                else {
-                    GenCtx::TopLevel
-                }
-            )?;
-            let prev_match_call = if prev_matcher.is_some() && mat.result_type.is_none() {
+            let err_branch = if prev_matcher.is_some() && mat.result_type.is_none() {
                 let call = prev_matcher.as_ref().unwrap();
                 quote! {
-                    Err(_) => Self::#call(parser)
+                    Self::#call(parser)
                 }
             }
             else {
                 quote! {
-                    Err(e) => Err(e)
+                    Err(e)
                 }
             };
+            let body = mat.gen_with_ctx(GenCtx::TopLevel { is_enum, err_branch })?;
             if !(mat.result_type.is_none() && fallthrough_matcher_count == 1) {
                 fns.extend(quote! {
                     fn #expect_name(parser: &mut Parser<'s>) -> Result<#ty, Message<'s>> {
-                        match crate::rule_try!(parser, #body?) {
-                            Ok(r) => Ok(r),
-                            #prev_match_call,
-                        }
+                        #body
                     }
                 });
             }
