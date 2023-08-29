@@ -518,9 +518,17 @@ impl Clause {
     fn gen_top_prefun(&self) -> Result<TokenStream2> {
         match self {
             Self::List { peek_condition, items, rust } => {
+                let mut body = TokenStream2::new();
+                let mut binded_vars = vec![];
                 for item in items {
                     if let MaybeBinded::Arg(name, clause) = item {
-                        
+                        if !peek_condition.is_empty() {
+                            return Err(Error::new(Span::call_site(), "cannot have peek conditions with parameter bindings"));
+                        }
+                        let b = clause.gen()?;
+                        body.extend(quote! {
+                            let #name = #b;
+                        });
                     } 
                 }
             }
