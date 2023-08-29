@@ -46,6 +46,7 @@ mod kw {
     syn::custom_keyword!(XID_Start);
     syn::custom_keyword!(XID_Continue);
     syn::custom_keyword!(OP_CHAR);
+    syn::custom_keyword!(ANY_CHAR);
     syn::custom_keyword!(EOF);
 }
 
@@ -152,10 +153,12 @@ impl MaybeBinded {
 #[derive(Clone)]
 enum Char {
     Single(LitChar),
+    Not(LitChar),
     Range(LitChar, LitChar),
     XidStart,
     XidContinue,
     OpChar,
+    Any,
     EOF,
 }
 
@@ -272,6 +275,10 @@ impl Clause {
             input.parse::<kw::OP_CHAR>()?;
             res = Clause::Char(Char::OpChar)
         }
+        else if ahead.peek(kw::ANY_CHAR) {
+            input.parse::<kw::ANY_CHAR>()?;
+            res = Clause::Char(Char::Any)
+        }
         else if ahead.peek(kw::EOF) {
             input.parse::<kw::EOF>()?;
             res = Clause::Char(Char::EOF)
@@ -309,6 +316,10 @@ impl Clause {
             else {
                 res = Clause::Char(Char::Single(ch));
             }
+        }
+        else if ahead.peek(Token![^]) {
+            input.parse::<Token![^]>()?;
+            res = Clause::Char(Char::Not(input.parse()?));
         }
         else if ahead.peek(Token![_]) {
             input.parse::<Token![_]>()?;
@@ -865,6 +876,11 @@ impl Clause {
                             parser.expect_ch(#ch)?
                         }
                     }
+                    Char::Not(ch) => {
+                        quote! {
+                            parser.expect_not_ch(#ch)?
+                        }
+                    }
                     Char::Range(a, b) => {
                         quote! {
                             parser.expect_ch_range(#a..=#b)?
@@ -883,6 +899,11 @@ impl Clause {
                     Char::OpChar => {
                         quote! {
                             parser.expect_ch_with(crate::parser::is_op_char, "operator")?
+                        }
+                    }
+                    Char::Any => {
+                        quote! {
+                            parser.expect_ch_with(|_| true, "any")?
                         }
                     }
                     Char::EOF => {

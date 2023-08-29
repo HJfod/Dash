@@ -46,7 +46,7 @@ define_rules! {
     }
 
     rule Expr {
-        enum If, VarDecl, Block, Float, Int, Entity, BinOp, UnOp, Index, Call;
+        enum If, VarDecl, Block, Float, Int, Str, Entity, BinOp, UnOp, Index, Call;
 
         match :BinOp;
         match[unop] ??OP_CHAR :UnOp;
@@ -57,6 +57,7 @@ define_rules! {
         match ??"let" :VarDecl;
         match ??"{" :Block;
         match ?"(" :Expr ")";
+        match ??'"' :Str;
         match :Float;
         match ??'0'..'9' :Int;
         match :Entity;
@@ -87,6 +88,10 @@ define_rules! {
                 meta
             })
         }
+    }
+
+    rule Str {
+        match '"' value:(:('\\' :ANY_CHAR) | ^'"')* '"';
     }
 
     rule Entity {

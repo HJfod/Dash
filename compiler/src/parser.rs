@@ -90,6 +90,15 @@ impl<'s> Parser<'s> {
         }
     }
 
+    pub fn expect_not_ch(&mut self, ch: char) -> Result<char, Message<'s>> {
+        if self.peek().is_some() && self.peek() != Some(ch) {
+            Ok(self.next().unwrap())
+        }
+        else {
+            Err(self.error(self.pos, format!("Expected any character but '{ch}'")))
+        }
+    }
+
     pub fn expect_ch_with<F: Fn(char) -> bool>(&mut self, ch: F, name: &str) -> Result<char, Message<'s>> {
         if self.peek().is_some_and(ch) {
             Ok(self.next().unwrap())
