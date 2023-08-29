@@ -38,10 +38,15 @@ mod kw {
     syn::custom_keyword!(rule);
     syn::custom_keyword!(into);
     syn::custom_keyword!(while_peek);
+    syn::custom_keyword!(afterwards);
     syn::custom_keyword!(until);
     syn::custom_keyword!(unless);
     syn::custom_keyword!(expected);
     syn::custom_keyword!(nofallthrough);
+    syn::custom_keyword!(XID_Start);
+    syn::custom_keyword!(XID_Continue);
+    syn::custom_keyword!(OP_CHAR);
+    syn::custom_keyword!(EOF);
 }
 
 #[derive(Clone)]
@@ -162,6 +167,66 @@ enum RepeatMode {
 }
 
 #[derive(Clone)]
+struct RuleClause {
+    name: Ident,
+    matcher: Option<Ident>,
+    cast_as: Vec<Ident>,
+}
+
+impl RuleClause {
+    fn gen(&self, fun: &str, specific_fun: &str, args: Option<TokenStream2>) -> Result<TokenStream2> {
+        let name = if let Some(ref which) = self.matcher {
+            format_ident!("{specific_fun}{which}")
+        }
+        else {
+            format_ident!("{fun}")
+        };
+        let cls = &self.name;
+        let mut stream = quote! {
+            #cls::#name(parser, #args)?
+        };
+        for rule in &self.cast_as {
+            stream = quote! {
+                #rule::from(#stream)
+            };
+        }
+        Ok(stream)
+    }
+}
+
+impl Parse for RuleClause {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let ident = input.parse()?;
+        let which = if input.peek(Bracket) {
+            let contents;
+            bracketed!(contents in input);
+            Some(contents.parse::<Ident>()?)
+        }
+        else {
+            None
+        };
+        let mut into = Vec::new();
+        while input.parse::<Token![as]>().is_ok() {
+            into.push(input.parse()?);
+        }
+        if !into.is_empty() {
+            Ok(Self {
+                name: ident,
+                matcher: which,
+                cast_as: into,
+            })
+        }
+        else {
+            Ok(Self {
+                name: ident,
+                matcher: which,
+                cast_as: vec![],
+            })
+        }
+    }
+}
+
+#[derive(Clone)]
 enum Clause {
     // (?a b c) => { ... }
     List {
@@ -184,17 +249,7 @@ enum Clause {
     // 'c'
     Char(Char),
     // A[_] as B as C
-    Rule {
-        name: Ident,
-        matcher: Option<Ident>,
-        cast_as: Vec<Ident>
-    },
-    Into {
-        item: Box<Clause>,
-        target: Ident,
-        target_as: Vec<Ident>,
-        while_peek: Box<Clause>,
-    },
+    Rule(RuleClause),
     // E.V
     EnumVariant(Ident, Option<Ident>),
     // _
@@ -205,10 +260,27 @@ impl Clause {
     fn parse_single(input: ParseStream) -> Result<Self> {
         let res;
         let ahead = input.lookahead1();
-        if ahead.peek(Ident) {
-            let ident = input.parse::<Ident>()?;
+        if ahead.peek(kw::XID_Start) {
+            input.parse::<kw::XID_Start>()?;
+            res = Clause::Char(Char::XidStart)
+        }
+        else if ahead.peek(kw::XID_Continue) {
+            input.parse::<kw::XID_Continue>()?;
+            res = Clause::Char(Char::XidContinue)
+        }
+        else if ahead.peek(kw::OP_CHAR) {
+            input.parse::<kw::OP_CHAR>()?;
+            res = Clause::Char(Char::OpChar)
+        }
+        else if ahead.peek(kw::EOF) {
+            input.parse::<kw::EOF>()?;
+            res = Clause::Char(Char::EOF)
+        }
+        else if ahead.peek(Ident) {
             // enum variants are `Enum.Variant`
-            if input.parse::<Token![.]>().is_ok() {
+            if input.peek2(Token![.]) {
+                let ident = input.parse::<Ident>()?;
+                input.parse::<Token![.]>()?;
                 res = if input.parse::<Token![*]>().is_ok() {
                     Clause::EnumVariant(ident, None)
                 }
@@ -218,38 +290,7 @@ impl Clause {
             }
             // otherwise this is a rule name
             else {
-                let which = if input.peek(Bracket) {
-                    let contents;
-                    bracketed!(contents in input);
-                    Some(contents.parse::<Ident>()?)
-                }
-                else {
-                    None
-                };
-                let mut into = Vec::new();
-                while input.parse::<Token![as]>().is_ok() {
-                    into.push(input.parse()?);
-                }
-                if !into.is_empty() {
-                    res = Clause::Rule {
-                        name: ident,
-                        matcher: which,
-                        cast_as: into,
-                    };
-                }
-                else {
-                    res = match ident.to_string().as_str() {
-                        "XID_Start"     => Clause::Char(Char::XidStart),
-                        "XID_Continue"  => Clause::Char(Char::XidContinue),
-                        "OP_CHAR"       => Clause::Char(Char::OpChar),
-                        "EOF"           => Clause::Char(Char::EOF),
-                        _ => Clause::Rule {
-                            name: ident,
-                            matcher: which,
-                            cast_as: vec![],
-                        },
-                    };
-                }
+                res = Clause::Rule(RuleClause::parse(input)?)
             }
         }
         else if ahead.peek(Paren) {
@@ -276,22 +317,7 @@ impl Clause {
         else {
             return Err(ahead.error());
         }
-        if input.parse::<kw::into>().is_ok() {
-            let target = input.parse()?;
-            let mut target_as = Vec::new();
-            while input.parse::<Token![as]>().is_ok() {
-                target_as.push(input.parse()?);
-            }
-            input.parse::<kw::while_peek>()?;
-            let while_peek = input.parse()?;
-            Ok(Clause::Into {
-                item: res.into(),
-                target,
-                target_as,
-                while_peek,
-            })
-        }
-        else if input.parse::<Token![*]>().is_ok() {
+        if input.parse::<Token![*]>().is_ok() {
             Ok(Clause::Repeat(res.into(), RepeatMode::ZeroOrMore))
         }
         else if input.parse::<Token![+]>().is_ok() {
@@ -354,6 +380,21 @@ impl Clause {
         match self {
             Clause::List { peek_condition: _, items: _, rust } => rust.is_some(),
             _ => false,
+        }
+    }
+
+    fn get_arg_tys(&self) -> Result<Vec<(Ident, ClauseTy)>> {
+        match self {
+            Self::List { peek_condition: _, items, rust: _ } => {
+                let mut res = vec![];
+                for i in items {
+                    if let MaybeBinded::Arg(n, c) = i {
+                        res.push((n.clone(), c.eval_ty()?));
+                    }
+                }
+                Ok(res)
+            }
+            _ => Ok(vec![])
         }
     }
 
@@ -437,11 +478,8 @@ impl Clause {
                     ClauseTy::Char
                 })
             }
-            Self::Rule { name, matcher: _, cast_as } => {
-                Ok(ClauseTy::Rule(cast_as.last().unwrap_or(name).clone()))
-            }
-            Self::Into { item: _, target, target_as, while_peek: _ } => {
-                Ok(ClauseTy::Rule(target_as.last().unwrap_or(target).clone()))
+            Self::Rule(rule) => {
+                Ok(ClauseTy::Rule(rule.cast_as.last().unwrap_or(&rule.name).clone()))
             }
             Self::EnumVariant(e, _) => {
                 Ok(ClauseTy::Enum(e.clone()))
@@ -467,7 +505,7 @@ impl Parse for Clause {
         }
         loop {
             let ahead = input.lookahead1();
-            if ahead.peek(kw::nofallthrough) {
+            if ahead.peek(kw::nofallthrough) || ahead.peek(kw::afterwards) {
                 break;
             }
             if ahead.peek(Ident) {
@@ -479,6 +517,12 @@ impl Parse for Clause {
                 else {
                     items.push(MaybeBinded::Drop(Self::parse_one_of(input)?));
                 }
+            }
+            else if ahead.peek(Token![$]) {
+                input.parse::<Token![$]>()?;
+                let name = input.parse()?;
+                input.parse::<Token![:]>()?;
+                items.push(MaybeBinded::Arg(name, Self::parse_one_of(input)?));
             }
             else if ahead.peek(Token![_]) {
                 input.parse::<Token![_]>()?;
@@ -515,11 +559,11 @@ enum GenCtx {
 }
 
 impl Clause {
-    fn gen_top_prefun(&self) -> Result<TokenStream2> {
+    fn gen_top_prefun(&self, expect_with_name: Ident) -> Result<TokenStream2> {
         match self {
-            Self::List { peek_condition, items, rust } => {
+            Self::List { peek_condition, items, rust: _ } => {
                 let mut body = TokenStream2::new();
-                let mut binded_vars = vec![];
+                let mut binded_vars = TokenStream2::new();
                 for item in items {
                     if let MaybeBinded::Arg(name, clause) = item {
                         if !peek_condition.is_empty() {
@@ -529,11 +573,18 @@ impl Clause {
                         body.extend(quote! {
                             let #name = #b;
                         });
+                        binded_vars.extend(quote! {
+                            #name,
+                        });
                     } 
                 }
+                Ok(quote! {
+                    #body
+                    Self::#expect_with_name(parser, #binded_vars)
+                })
             }
             _ => {
-                Err(Error::new(Span::call_site(), "cant call gen_top_prefun here wtf"))
+                Err(Error::new(Span::call_site(), "internal error: cant call gen_top_prefun here wtf"))
             }
         }
     }
@@ -816,7 +867,7 @@ impl Clause {
                     }
                     Char::Range(a, b) => {
                         quote! {
-                            parser.expect_ch_range(#a..#b)?
+                            parser.expect_ch_range(#a..=#b)?
                         }
                     }
                     Char::XidStart => {
@@ -841,41 +892,8 @@ impl Clause {
                     }
                 })
             }
-            Self::Rule { name: rule, matcher, cast_as } => {
-                let name = if let Some(which) = matcher {
-                    format_ident!("expect_impl_{which}")
-                }
-                else {
-                    format_ident!("expect")
-                };
-                let mut stream = quote! {
-                    #rule::#name(parser)?
-                };
-                for rule in cast_as {
-                    stream = quote! {
-                        #rule::from(#stream)
-                    };
-                }
-                Ok(stream)
-            }
-            Self::Into { item, target, target_as, while_peek } => {
-                let body = item.gen()?;
-                let while_peek = while_peek.gen()?;
-                let mut stream = quote! {
-                    #target::expect_with(parser, res)?
-                };
-                for rule in target_as {
-                    stream = quote! {
-                        #rule::from(#stream)
-                    };
-                }
-                Ok(quote! { {
-                    let mut res = #body;
-                    while crate::rule_peek!(parser, #while_peek) {
-                        res = #stream;
-                    }
-                    res
-                } })
+            Self::Rule(rule) => {
+                Ok(rule.gen("expect", "expect_impl_", None)?)
             }
             Self::EnumVariant(e, v) => {
                 if let Some(v) = v {
@@ -903,7 +921,7 @@ impl Clause {
                 let mut stream = TokenStream2::new();
                 if peek_condition.is_empty() && rust.is_none() {
                     for item in items {
-                        if let MaybeBinded::Named(name, clause) = item {
+                        if let MaybeBinded::Named(name, clause) | MaybeBinded::Arg(name, clause) = item {
                             let ty = clause.eval_ty()?.gen()?;
                             stream.extend(quote! {
                                 #name: #ty,
@@ -928,11 +946,36 @@ struct Match {
     result_type: Option<Ident>,
     name: Option<Ident>,
     clause: Clause,
+    afterwards: Vec<(Box<Clause>, RuleClause)>,
 }
 
 impl Match {
     fn gen_with_ctx(&self, ctx: GenCtx) -> Result<TokenStream2> {
-        self.clause.gen_with_ctx(ctx)
+        let body = self.clause.gen_with_ctx(ctx)?;
+        if !self.afterwards.is_empty() {
+            let mut stream = quote! {};
+            for (peek, rule) in &self.afterwards {
+                let peek = peek.gen()?;
+                let rule = rule.gen("expect_with", "expect_with_", Some(quote! { res }))?;
+                stream.extend(quote! {
+                    if crate::rule_peek!(parser, #peek) {
+                        res = #rule.into();
+                        continue;
+                    }
+                });
+            }
+            Ok(quote! { {
+                let mut res = { #body }?;
+                loop {
+                    #stream
+                    break;
+                }
+                Ok(res)
+            } })
+        }
+        else {
+            Ok(body)
+        }
     }
 }
 
@@ -954,13 +997,22 @@ impl Parse for Match {
             None
         };
         let clause: Clause = input.parse()?;
+        let mut afterwards = Vec::new();
+        if input.parse::<kw::afterwards>().is_ok() {
+            while input.parse::<kw::while_peek>().is_ok() {
+                let clause = Clause::parse_one_of(input)?.into();
+                input.parse::<kw::into>()?;
+                let rule = input.parse()?;
+                afterwards.push((clause, rule));
+            }
+        }
         if !clause.is_functional() {
             input.parse::<Token![;]>()?;
             if result_type.is_some() {
                 Err(Error::new(Span::call_site(), "as matchers must be functional"))?;
             }
         }
-        Ok(Match { result_type, name, clause })
+        Ok(Match { result_type, name, clause, afterwards })
     }
 }
 
@@ -1147,7 +1199,8 @@ impl Gen for Rule {
             });
         }
 
-        let mut match_options = quote! {};
+        let mut matcher_body = quote! {};
+        let mut with_matcher_fn = None;
         let mut prev_matcher: Option<Ident> = None;
 
         for (i, mat) in self.matches.iter().rev().enumerate() {
@@ -1167,11 +1220,53 @@ impl Gen for Rule {
                 }
             }
             else {
-                quote! {
-                    Err(e)
+                if self.expected.is_some() {
+                    quote! {
+                        Err(parser.error(start, format!("Expected {}", Self::expected())))
+                    }
+                }
+                else {
+                    quote! {
+                        Err(e)
+                    }
                 }
             };
-            let body = mat.gen_with_ctx(GenCtx::TopLevel { is_enum, err_branch })?;
+            let body;
+            let args = mat.clause.get_arg_tys()?;
+            if !args.is_empty() {
+                let expect_with_name = format_ident!(
+                    "expect_with_{}",
+                    mat.name.as_ref()
+                        .map(|s| s.to_string())
+                        .unwrap_or(i.to_string())
+                );
+                let mut pass_args_stream = quote! {};
+                let mut args_stream = quote! {};
+                for (name, ty) in args {
+                    let ty = ty.gen()?;
+                    pass_args_stream.extend(quote! {
+                        #name,
+                    });
+                    args_stream.extend(quote! {
+                        #name: #ty,
+                    });
+                }
+                body = mat.clause.gen_top_prefun(expect_with_name.clone())?;
+                let with_body = mat.gen_with_ctx(GenCtx::TopLevel { is_enum, err_branch })?;
+                fns.extend(quote! {
+                    fn #expect_with_name(parser: &mut Parser<'s>, #args_stream) -> Result<#ty, Message<'s>> {
+                        #with_body
+                    }
+                });
+                with_matcher_fn = Some(quote! {
+                    fn expect_with(parser: &mut Parser<'s>, #args_stream) -> Result<#ty, Message<'s>> {
+                        Self::#expect_with_name(parser, #pass_args_stream)
+                    }
+                });
+            }
+            else {
+                body = mat.gen_with_ctx(GenCtx::TopLevel { is_enum, err_branch })?;
+            }
             if !(mat.result_type.is_none() && fallthrough_matcher_count == 1) {
                 fns.extend(quote! {
                     fn #expect_name(parser: &mut Parser<'s>) -> Result<#ty, Message<'s>> {
@@ -1181,14 +1276,18 @@ impl Gen for Rule {
             }
             if mat.result_type.is_none() {
                 prev_matcher = Some(expect_name.clone());
-                match_options = body;
+                matcher_body = body;
             }
+        }
+
+        if let Some(with_matcher_fn) = with_matcher_fn {
+            fns.extend(with_matcher_fn);
         }
 
         trait_impls.extend(quote! {
             impl<'s> Rule<'s> for #name<'s> {
                 fn expect(parser: &mut Parser<'s>) -> Result<Self, Message<'s>> {
-                    #match_options
+                    #matcher_body
                 }
 
                 fn meta(&self) -> &ExprMeta<'s> {

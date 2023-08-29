@@ -46,13 +46,14 @@ define_rules! {
     }
 
     rule Expr {
-        enum If, VarDecl, Block, Float, Int, Entity, BinOp, UnOp, Call;
+        enum If, VarDecl, Block, Float, Int, Entity, BinOp, UnOp, Index, Call;
 
         match :BinOp;
         match[unop] ??OP_CHAR :UnOp;
-        match[call] :Expr[index] into Call as Expr while_peek "(";
-        match[index] :Expr[call] into Index as Expr while_peek "[";
-        match ??"if" :If;
+        match[postfix] :Expr[nonop] afterwards
+            while_peek "(" into Call
+            while_peek "[" into Index;
+        match[nonop] ??"if" :If;
         match ??"let" :VarDecl;
         match ??"{" :Block;
         match ?"(" :Expr ")";

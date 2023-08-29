@@ -1,5 +1,5 @@
 
-use std::fmt::Debug;
+use std::{fmt::Debug, ops::{RangeBounds, Bound}};
 
 use crate::src::{Src, Range, Message, Level};
 use unicode_xid::UnicodeXID;
@@ -102,14 +102,23 @@ impl<'s> Parser<'s> {
         }
     }
 
-    pub fn expect_ch_range(&mut self, ch: std::ops::Range<char>) -> Result<char, Message<'s>> {
+    pub fn expect_ch_range<R: RangeBounds<char>>(&mut self, ch: R) -> Result<char, Message<'s>> {
         if self.peek().is_some_and(|c| ch.contains(&c)) {
             Ok(self.next().unwrap())
         }
         else {
             Err(self.error(self.pos, format!(
                 "Expected '{}'..'{}', got '{}'",
-                ch.start, ch.end,
+                match ch.start_bound() {
+                    Bound::Excluded(c) => c,
+                    Bound::Included(c) => c,
+                    Bound::Unbounded => &'_',
+                },
+                match ch.end_bound() {
+                    Bound::Excluded(c) => c,
+                    Bound::Included(c) => c,
+                    Bound::Unbounded => &'_',
+                },
                 self.peek().map(|c| String::from(c)).unwrap_or("EOF".into())
             )))
         }
