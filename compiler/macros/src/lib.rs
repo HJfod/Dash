@@ -126,6 +126,7 @@ enum MaybeBinded {
     Drop(Clause),
     Unnamed(Clause),
     Named(Ident, Clause),
+    Arg(Ident, Clause),
 }
 
 impl MaybeBinded {
@@ -134,6 +135,7 @@ impl MaybeBinded {
             Self::Drop(c) => c,
             Self::Unnamed(c) => c,
             Self::Named(_, c) => c,
+            Self::Arg(_, c) => c,
         }
     }
 
@@ -370,6 +372,7 @@ impl Clause {
                 }
                 for item in items {
                     let ty = item.clause().eval_ty()?;
+                    // todo: error if bind is an arg and not top level 
                     if item.is_binded() {
                         res.push(ty);
                     }
@@ -512,6 +515,21 @@ enum GenCtx {
 }
 
 impl Clause {
+    fn gen_top_prefun(&self) -> Result<TokenStream2> {
+        match self {
+            Self::List { peek_condition, items, rust } => {
+                for item in items {
+                    if let MaybeBinded::Arg(name, clause) = item {
+                        
+                    } 
+                }
+            }
+            _ => {
+                Err(Error::new(Span::call_site(), "cant call gen_top_prefun here wtf"))
+            }
+        }
+    }
+
     fn gen_with_ctx(&self, ctx: GenCtx) -> Result<TokenStream2> {
         match self {
             Self::List { peek_condition, items, rust } => {
@@ -531,6 +549,9 @@ impl Clause {
                             body.extend(quote! {
                                 let #name = #b;
                             });
+                            binded_vars.push(name.clone());
+                        }
+                        MaybeBinded::Arg(name, _) => {
                             binded_vars.push(name.clone());
                         }
                         MaybeBinded::Unnamed(clause) => {
@@ -830,7 +851,23 @@ impl Clause {
                 Ok(stream)
             }
             Self::Into { item, target, target_as, while_peek } => {
-
+                let body = item.gen()?;
+                let while_peek = while_peek.gen()?;
+                let mut stream = quote! {
+                    #target::expect_with(parser, res)?
+                };
+                for rule in target_as {
+                    stream = quote! {
+                        #rule::from(#stream)
+                    };
+                }
+                Ok(quote! { {
+                    let mut res = #body;
+                    while crate::rule_peek!(parser, #while_peek) {
+                        res = #stream;
+                    }
+                    res
+                } })
             }
             Self::EnumVariant(e, v) => {
                 if let Some(v) = v {
