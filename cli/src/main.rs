@@ -1,7 +1,6 @@
-
-use std::path::PathBuf;
 use clap::Parser;
 use gdml_compiler::src::Src;
+use std::path::PathBuf;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -18,16 +17,14 @@ fn main() {
     }
     for file in args.files {
         match Src::from_file(&file) {
-            Ok(src) => {
-                match src.parse() {
-                    Ok(ast) => {
-                        println!("ast: {ast:#?}");
-                    }
-                    Err(e) => {
-                        println!("Unable to parse src {}: {e}", src.name());
-                    }
+            Ok(src) => match src.parse() {
+                Ok(ast) => {
+                    println!("ast: {ast:#?}");
                 }
-            }
+                Err(e) => {
+                    println!("Unable to parse src {}: {e}", src.name());
+                }
+            },
             Err(e) => {
                 println!("Unable to parse src {}: {e}", file.display());
             }

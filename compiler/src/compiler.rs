@@ -1,7 +1,9 @@
-
 use std::{collections::HashMap, fmt::Display};
 
-use crate::{src::{Logger, Message, Level}, parser::Rule};
+use crate::{
+    parser::Rule,
+    src::{Level, Logger, Message},
+};
 
 #[derive(Hash, PartialEq, Eq)]
 pub struct FullIdent {
@@ -23,6 +25,20 @@ impl Ty {
     pub fn convertible_to(&self, other: &Ty) -> bool {
         *self == *other
     }
+
+    pub fn full_name(&self) -> FullIdent {
+
+    }
+
+    /// Returns `other` if this type is `never` or `unknown`
+    pub fn or(self, other: Ty) -> Ty {
+        if self == Ty::Never || self == Ty::Unknown {
+            other
+        }
+        else {
+            self
+        }
+    }
 }
 
 impl Display for Ty {
@@ -39,13 +55,20 @@ impl Display for Ty {
 }
 
 pub enum EntityKind {
-    Variable,
-    Function,
+    Variable {},
+    Function {},
 }
 
 pub struct Entity {
     name: FullIdent,
+    kind: EntityKind,
     ty: Ty,
+}
+
+impl Entity {
+    pub fn new_var(name: FullIdent, ty: Ty) -> Entity {
+        Entity { name, kind: EntityKind::Variable {}, ty }
+    }
 }
 
 pub struct TypeChecker<'s, 'l> {
@@ -55,6 +78,14 @@ pub struct TypeChecker<'s, 'l> {
 }
 
 impl<'s, 'l> TypeChecker<'s, 'l> {
+    pub fn push_entity(&mut self, entity: Entity) {
+        self.entities.insert(entity.name, entity);
+    }
+
+    pub fn push_type(&mut self, ty: Ty) {
+        self.types.insert(ty.full_name(), ty);
+    }
+
     pub fn emit_msg(&self, msg: &Message<'s>) {
         self.logger.log_msg(msg);
     }
@@ -73,20 +104,24 @@ pub trait TypeCheck<'s, 'l>: Rule<'s> {
             checker.emit_msg(&Message::from_meta(
                 Level::Error,
                 format!("Expected type '{ty}', got '{self_ty}'"),
-                self.meta()
+                self.meta(),
             ));
         }
         ty
     }
 
-    fn expect_ty_convertible_to<O: TypeCheck<'s, 'l>>(&self, checker: &mut TypeChecker<'s, 'l>, into: &O) -> Ty {
+    fn expect_ty_convertible_to<O: TypeCheck<'s, 'l>>(
+        &self,
+        checker: &mut TypeChecker<'s, 'l>,
+        into: &O,
+    ) -> Ty {
         let self_ty = self.typecheck(checker);
         let into_ty = into.typecheck(checker);
         if !self_ty.convertible_to(&into_ty) {
             checker.emit_msg(&Message::from_meta(
                 Level::Error,
                 format!("Type '{self_ty}' is not convertible to '{into_ty}'"),
-                self.meta()
+                self.meta(),
             ));
         }
         into_ty

@@ -1,30 +1,21 @@
-
 extern crate proc_macro;
 extern crate proc_macro2;
 extern crate quote;
 extern crate syn;
 extern crate unicode_xid;
-use std::{collections::HashSet, hash::Hash};
+use std::collections::HashSet;
 use unicode_xid::UnicodeXID;
 
-use proc_macro::TokenStream;
-use proc_macro2::{TokenStream as TokenStream2, Span};
-use quote::{quote, format_ident};
+use proc_macro2::{Span, TokenStream as TokenStream2};
+use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input,
-    parenthesized,
-    ImplItemFn,
-    Ident,
-    Result,
-    Token,
-    token::{Paren, Bracket},
-    parse::{Parse, ParseStream}, 
-    LitStr, LitChar,
-    braced, Error, ItemUse, Field, ExprBlock,
-    punctuated::Punctuated, bracketed, ItemFn,
+    bracketed, parenthesized,
+    parse::{Parse, ParseStream},
+    token::{Bracket, Paren},
+    Error, ExprBlock, Ident, LitChar, LitStr, Result, Token,
 };
 
-use crate::{ty::ClauseTy, defs::kw, items::Keyword};
+use crate::{defs::kw, items::Keyword, ty::ClauseTy};
 
 #[derive(Clone)]
 pub enum MaybeBinded {
@@ -43,7 +34,7 @@ impl MaybeBinded {
             Self::Arg(_, c) => c,
         }
     }
-    
+
     fn is_binded(&self) -> bool {
         !matches!(self, Self::Drop(_))
     }
@@ -76,11 +67,15 @@ pub struct RuleClause {
 }
 
 impl RuleClause {
-    pub fn gen(&self, fun: &str, specific_fun: &str, args: Option<TokenStream2>) -> Result<TokenStream2> {
+    pub fn gen(
+        &self,
+        fun: &str,
+        specific_fun: &str,
+        args: Option<TokenStream2>,
+    ) -> Result<TokenStream2> {
         let name = if let Some(ref which) = self.matcher {
             format_ident!("{specific_fun}{which}")
-        }
-        else {
+        } else {
             format_ident!("{fun}")
         };
         let cls = &self.name;
@@ -103,8 +98,7 @@ impl Parse for RuleClause {
             let contents;
             bracketed!(contents in input);
             Some(contents.parse::<Ident>()?)
-        }
-        else {
+        } else {
             None
         };
         let mut into = Vec::new();
@@ -117,8 +111,7 @@ impl Parse for RuleClause {
                 matcher: which,
                 cast_as: into,
             })
-        }
-        else {
+        } else {
             Ok(Self {
                 name: ident,
                 matcher: which,
@@ -170,32 +163,26 @@ impl Clause {
         if ahead.peek(kw::XID_Start) {
             input.parse::<kw::XID_Start>()?;
             res = Clause::Char(Char::XidStart)
-        }
-        else if ahead.peek(kw::XID_Continue) {
+        } else if ahead.peek(kw::XID_Continue) {
             input.parse::<kw::XID_Continue>()?;
             res = Clause::Char(Char::XidContinue)
-        }
-        else if ahead.peek(kw::OP_CHAR) {
+        } else if ahead.peek(kw::OP_CHAR) {
             input.parse::<kw::OP_CHAR>()?;
             res = Clause::Char(Char::OpChar)
-        }
-        else if ahead.peek(kw::ANY_CHAR) {
+        } else if ahead.peek(kw::ANY_CHAR) {
             input.parse::<kw::ANY_CHAR>()?;
             res = Clause::Char(Char::Any)
-        }
-        else if ahead.peek(kw::EOF) {
+        } else if ahead.peek(kw::EOF) {
             input.parse::<kw::EOF>()?;
             res = Clause::Char(Char::EOF)
-        }
-        else if ahead.peek(Ident) {
+        } else if ahead.peek(Ident) {
             // enum variants are `Enum.Variant`
             if input.peek2(Token![.]) {
                 let ident = input.parse::<Ident>()?;
                 input.parse::<Token![.]>()?;
                 res = if input.parse::<Token![*]>().is_ok() {
                     Clause::EnumVariant(ident, None)
-                }
-                else {
+                } else {
                     Clause::EnumVariant(ident, Some(input.parse()?))
                 };
             }
@@ -203,58 +190,51 @@ impl Clause {
             else {
                 res = Clause::Rule(RuleClause::parse(input)?)
             }
-        }
-        else if ahead.peek(Paren) {
+        } else if ahead.peek(Paren) {
             let contents;
             parenthesized!(contents in input);
             res = contents.parse()?;
-        }
-        else if ahead.peek(LitStr) {
+        } else if ahead.peek(LitStr) {
             res = Clause::String(input.parse()?);
-        }
-        else if ahead.peek(LitChar) {
+        } else if ahead.peek(LitChar) {
             let ch = input.parse()?;
             if input.parse::<Token![..]>().is_ok() {
                 res = Clause::Char(Char::Range(ch, input.parse()?));
-            }
-            else {
+            } else {
                 res = Clause::Char(Char::Single(ch));
             }
-        }
-        else if ahead.peek(Token![^]) {
+        } else if ahead.peek(Token![^]) {
             input.parse::<Token![^]>()?;
             res = Clause::Char(Char::Not(input.parse()?));
-        }
-        else if ahead.peek(Token![_]) {
+        } else if ahead.peek(Token![_]) {
             input.parse::<Token![_]>()?;
             res = Clause::Default;
-        }
-        else if ahead.peek(Token![fn]) {
+        } else if ahead.peek(Token![fn]) {
             input.parse::<Token![fn]>()?;
             input.parse::<Token![->]>()?;
             let ret_ty = input.parse()?;
             let body = input.parse()?;
             res = Clause::FnMatcher { ret_ty, body };
-        }
-        else {
+        } else {
             return Err(ahead.error());
         }
         if input.parse::<Token![*]>().is_ok() {
             Ok(Clause::Repeat(res.into(), RepeatMode::ZeroOrMore))
-        }
-        else if input.parse::<Token![+]>().is_ok() {
+        } else if input.parse::<Token![+]>().is_ok() {
             Ok(Clause::Repeat(res.into(), RepeatMode::OneOrMore))
-        }
-        else if input.parse::<kw::until>().is_ok() {
-            Ok(Clause::Repeat(res.into(), RepeatMode::Until(Self::parse_one_of(input)?.into())))
-        }
-        else if input.parse::<Token![?]>().is_ok() {
+        } else if input.parse::<kw::until>().is_ok() {
+            Ok(Clause::Repeat(
+                res.into(),
+                RepeatMode::Until(Self::parse_one_of(input)?.into()),
+            ))
+        } else if input.parse::<Token![?]>().is_ok() {
             Ok(Clause::Option(res.into(), None))
-        }
-        else if input.parse::<kw::unless>().is_ok() {
-            Ok(Clause::Option(res.into(), Some(Self::parse_one_of(input)?.into())))
-        }
-        else {
+        } else if input.parse::<kw::unless>().is_ok() {
+            Ok(Clause::Option(
+                res.into(),
+                Some(Self::parse_one_of(input)?.into()),
+            ))
+        } else {
             Ok(res)
         }
     }
@@ -266,8 +246,7 @@ impl Clause {
         }
         if res.len() == 1 {
             Ok(res.remove(0))
-        }
-        else {
+        } else {
             Ok(Clause::Concat(res))
         }
     }
@@ -279,8 +258,7 @@ impl Clause {
         }
         if res.len() == 1 {
             Ok(res.remove(0))
-        }
-        else {
+        } else {
             Ok(Clause::ConcatVec(res))
         }
     }
@@ -292,8 +270,7 @@ impl Clause {
         }
         if res.len() == 1 {
             Ok(res.remove(0))
-        }
-        else {
+        } else {
             Ok(Clause::OneOf(res))
         }
     }
@@ -304,14 +281,22 @@ impl Clause {
 
     pub fn is_functional(&self) -> bool {
         match self {
-            Clause::List { peek_condition: _, items: _, rust } => rust.is_some(),
+            Clause::List {
+                peek_condition: _,
+                items: _,
+                rust,
+            } => rust.is_some(),
             _ => false,
         }
     }
 
     pub fn get_arg_tys(&self) -> Result<Vec<(Ident, ClauseTy)>> {
         match self {
-            Self::List { peek_condition: _, items, rust: _ } => {
+            Self::List {
+                peek_condition: _,
+                items,
+                rust: _,
+            } => {
                 let mut res = vec![];
                 for i in items {
                     if let MaybeBinded::Arg(n, c) = i {
@@ -320,17 +305,21 @@ impl Clause {
                 }
                 Ok(res)
             }
-            _ => Ok(vec![])
+            _ => Ok(vec![]),
         }
     }
 
     pub fn eval_ty(&self) -> Result<ClauseTy> {
         match self {
-            Self::List { peek_condition, items, rust } => {
+            Self::List {
+                peek_condition,
+                items,
+                rust,
+            } => {
                 if rust.is_some() {
                     return Err(Error::new(
                         Span::call_site(),
-                        "code blocks cannot be used for non-functional matchers"
+                        "code blocks cannot be used for non-functional matchers",
                     ));
                 }
                 let mut res = vec![];
@@ -339,118 +328,130 @@ impl Clause {
                 }
                 for item in items {
                     let ty = item.clause().eval_ty()?;
-                    // todo: error if bind is an arg and not top level 
+                    // todo: error if bind is an arg and not top level
                     if item.is_binded() {
                         res.push(ty);
                     }
                 }
                 let list = if res.len() == 1 {
                     res.remove(0)
-                }
-                else {
+                } else {
                     ClauseTy::List(res)
                 };
                 if peek_condition.is_empty() {
                     Ok(list)
-                }
-                else {
+                } else {
                     Ok(ClauseTy::Option(list.into()))
                 }
             }
             Self::OneOf(list) => {
                 if list.is_empty() {
-                    Err(Error::new(Span::call_site(), "internal error: empty one-of"))?;
+                    Err(Error::new(
+                        Span::call_site(),
+                        "internal error: empty one-of",
+                    ))?;
                 }
                 let first = list.first().unwrap().eval_ty()?;
                 for a in list.iter().skip(1) {
                     if !a.eval_ty()?.is_convertible(&first) {
-                        Err(Error::new(Span::call_site(), "all one-of options must result in the same type"))?
+                        Err(Error::new(
+                            Span::call_site(),
+                            "all one-of options must result in the same type",
+                        ))?
                     }
                 }
                 Ok(first)
             }
-            Self::Option(clause, _) => {
-                Ok(ClauseTy::Option(clause.eval_ty()?.into()))
-            }
+            Self::Option(clause, _) => Ok(ClauseTy::Option(clause.eval_ty()?.into())),
             Self::Concat(list) => {
                 for a in list {
                     if !matches!(a.eval_ty()?, ClauseTy::String | ClauseTy::Char) {
-                        Err(Error::new(Span::call_site(), "you can only concat chars and strings"))?
+                        Err(Error::new(
+                            Span::call_site(),
+                            "you can only concat chars and strings",
+                        ))?
                     }
                 }
                 Ok(ClauseTy::String)
             }
-            Self::ConcatVec(list) => {
-                Ok(ClauseTy::Vec(list.first().unwrap().eval_ty()?.inner_ty().clone().into()))
-            }
+            Self::ConcatVec(list) => Ok(ClauseTy::Vec(
+                list.first().unwrap().eval_ty()?.inner_ty().clone().into(),
+            )),
             Self::Repeat(r, _) => {
                 let ty = r.eval_ty()?;
                 // automatically concat char* to string
                 if matches!(ty, ClauseTy::Char) {
                     Ok(ClauseTy::String)
-                }
-                else {
+                } else {
                     Ok(ClauseTy::Vec(ty.into()))
                 }
             }
-            Self::String(_) => {
-                Ok(ClauseTy::String)
-            }
-            Self::Char(c) => {
-                Ok(if matches!(c, Char::EOF) {
-                    ClauseTy::Default
-                }
-                else {
-                    ClauseTy::Char
-                })
-            }
-            Self::Rule(rule) => {
-                Ok(ClauseTy::Rule(rule.cast_as.last().unwrap_or(&rule.name).clone()))
-            }
-            Self::EnumVariant(e, _) => {
-                Ok(ClauseTy::Enum(e.clone()))
-            }
-            Self::FnMatcher { ret_ty, body: _ } => {
-                Ok(ret_ty.clone())
-            }
-            Self::Default => Ok(ClauseTy::Default)
+            Self::String(_) => Ok(ClauseTy::String),
+            Self::Char(c) => Ok(if matches!(c, Char::EOF) {
+                ClauseTy::Default
+            } else {
+                ClauseTy::Char
+            }),
+            Self::Rule(rule) => Ok(ClauseTy::Rule(
+                rule.cast_as.last().unwrap_or(&rule.name).clone(),
+            )),
+            Self::EnumVariant(e, _) => Ok(ClauseTy::Enum(e.clone())),
+            Self::FnMatcher { ret_ty, body: _ } => Ok(ret_ty.clone()),
+            Self::Default => Ok(ClauseTy::Default),
         }
     }
 
     pub fn verify_keywords(&self, kws: &HashSet<Keyword>) -> Result<()> {
         match self {
-            Self::List { peek_condition, items, rust: _ } => {
-                peek_condition.iter().map(|i| i.verify_keywords(kws)).collect::<Result<_>>()?;
-                items.iter().map(|i| i.clause().verify_keywords(kws)).collect::<Result<_>>()?;
+            Self::List {
+                peek_condition,
+                items,
+                rust: _,
+            } => {
+                peek_condition
+                    .iter()
+                    .map(|i| i.verify_keywords(kws))
+                    .collect::<Result<_>>()?;
+                items
+                    .iter()
+                    .map(|i| i.clause().verify_keywords(kws))
+                    .collect::<Result<_>>()?;
             }
             Self::OneOf(items) | Self::Concat(items) | Self::ConcatVec(items) => {
-                items.iter().map(|i| i.verify_keywords(kws)).collect::<Result<_>>()?;
+                items
+                    .iter()
+                    .map(|i| i.verify_keywords(kws))
+                    .collect::<Result<_>>()?;
             }
             Self::Option(clause, unless) => {
                 clause.verify_keywords(kws)?;
-                unless.iter().map(|i| i.verify_keywords(kws)).collect::<Result<_>>()?;
+                unless
+                    .iter()
+                    .map(|i| i.verify_keywords(kws))
+                    .collect::<Result<_>>()?;
             }
             Self::Repeat(clause, _) => {
                 clause.verify_keywords(kws)?;
             }
             Self::String(lit) => {
                 let value = lit.value();
-                if value.chars().take(1).all(|c| c.is_xid_start()) &&
-                    value.chars().skip(1).all(|c| c.is_xid_continue())
+                if value.chars().take(1).all(|c| c.is_xid_start())
+                    && value.chars().skip(1).all(|c| c.is_xid_continue())
                 {
                     if let Some(kw) = kws.iter().find(|kw| kw.to_string() == lit.value()) {
                         if let Keyword::Reserved(_) = kw {
                             Err(Error::new(lit.span(), "keyword is only reserved"))?;
                         }
-                    }
-                    else {
+                    } else {
                         Err(Error::new(lit.span(), "unknown keyword"))?;
                     }
                 }
             }
-            Self::Char(_) | Self::Rule(_) |
-            Self::EnumVariant(_, _) | Self::Default |
-            Self::FnMatcher { ret_ty: _, body: _ } => {}
+            Self::Char(_)
+            | Self::Rule(_)
+            | Self::EnumVariant(_, _)
+            | Self::Default
+            | Self::FnMatcher { ret_ty: _, body: _ } => {}
         }
         Ok(())
     }
@@ -463,8 +464,7 @@ impl Parse for Clause {
         if input.parse::<Token![?]>().is_ok() {
             if input.parse::<Token![?]>().is_ok() {
                 peek_condition.push(Self::parse_one_of(input)?);
-            }
-            else {
+            } else {
                 let c = Self::parse_one_of(input)?;
                 peek_condition.push(c.clone());
                 items.push(MaybeBinded::Drop(c));
@@ -480,31 +480,25 @@ impl Parse for Clause {
                     let name = input.parse()?;
                     input.parse::<Token![:]>()?;
                     items.push(MaybeBinded::Named(name, Self::parse_one_of(input)?));
-                }
-                else {
+                } else {
                     items.push(MaybeBinded::Drop(Self::parse_one_of(input)?));
                 }
-            }
-            else if ahead.peek(Token![$]) {
+            } else if ahead.peek(Token![$]) {
                 input.parse::<Token![$]>()?;
                 let name = input.parse()?;
                 input.parse::<Token![:]>()?;
                 items.push(MaybeBinded::Arg(name, Self::parse_one_of(input)?));
-            }
-            else if ahead.peek(Token![_]) {
+            } else if ahead.peek(Token![_]) {
                 input.parse::<Token![_]>()?;
                 input.parse::<Token![:]>()?;
                 items.push(MaybeBinded::Unnamed(Self::parse_one_of(input)?));
-            }
-            else if ahead.peek(Token![:]) {
+            } else if ahead.peek(Token![:]) {
                 input.parse::<Token![:]>()?;
                 items.push(MaybeBinded::Unnamed(Self::parse_one_of(input)?));
-            }
-            else {
+            } else {
                 if let Ok(p) = Self::parse_one_of(input) {
                     items.push(MaybeBinded::Drop(p));
-                }
-                else {
+                } else {
                     break;
                 }
             }
@@ -513,6 +507,10 @@ impl Parse for Clause {
         if input.parse::<Token![=>]>().is_ok() {
             rust = Some(input.parse()?);
         }
-        Ok(Clause::List { peek_condition, items, rust })
+        Ok(Clause::List {
+            peek_condition,
+            items,
+            rust,
+        })
     }
 }

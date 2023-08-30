@@ -1,30 +1,25 @@
-
 extern crate proc_macro;
 extern crate proc_macro2;
 extern crate quote;
 extern crate syn;
 extern crate unicode_xid;
 use std::{collections::HashSet, hash::Hash};
-use unicode_xid::UnicodeXID;
 
-use proc_macro::TokenStream;
-use proc_macro2::{TokenStream as TokenStream2, Span};
-use quote::{quote, format_ident};
+use proc_macro2::{Span, TokenStream as TokenStream2};
+use quote::{format_ident, quote};
 use syn::{
-    parse_macro_input,
-    parenthesized,
-    ImplItemFn,
-    Ident,
-    Result,
-    Token,
-    token::{Paren, Bracket},
-    parse::{Parse, ParseStream}, 
-    LitStr, LitChar,
-    braced, Error, ItemUse, Field, ExprBlock,
-    punctuated::Punctuated, bracketed, ItemFn,
+    braced, bracketed,
+    parse::{Parse, ParseStream},
+    punctuated::Punctuated,
+    token::Bracket,
+    Error, Field, Ident, ImplItemFn, ItemFn, ItemUse, LitStr, Result, Token,
 };
 
-use crate::{clause::{Clause, RuleClause}, gen::GenCtx, defs::{kw, Gen, parse_list}};
+use crate::{
+    clause::{Clause, RuleClause},
+    defs::{kw, parse_list, Gen},
+    gen::GenCtx, typecheck::TypeCheck,
+};
 
 pub struct Match {
     result_type: Option<Ident>,
@@ -56,8 +51,7 @@ impl Match {
                 }
                 Ok(res)
             } })
-        }
-        else {
+        } else {
             Ok(body)
         }
     }
@@ -70,14 +64,12 @@ impl Parse for Match {
             let c;
             bracketed!(c in input);
             Some(c.parse::<Ident>()?)
-        }
-        else {
+        } else {
             None
         };
         let result_type = if input.parse::<Token![as]>().is_ok() {
             Some(input.parse()?)
-        }
-        else {
+        } else {
             None
         };
         let clause: Clause = input.parse()?;
@@ -93,82 +85,25 @@ impl Parse for Match {
         if !clause.is_functional() {
             input.parse::<Token![;]>()?;
             if result_type.is_some() {
-                Err(Error::new(Span::call_site(), "as matchers must be functional"))?;
+                Err(Error::new(
+                    Span::call_site(),
+                    "as matchers must be functional",
+                ))?;
             }
         }
-        Ok(Match { result_type, name, clause, afterwards })
+        Ok(Match {
+            result_type,
+            name,
+            clause,
+            afterwards,
+        })
     }
 }
 
-struct ParseRule(RuleKind, Option<LitStr>, Vec<Match>, Vec<ItemFn>, Vec<ImplItemFn>);
-
-impl Parse for ParseRule {
-    fn parse(input: ParseStream) -> Result<Self> {
-        let mut kind = RuleKind::Struct { fields: vec![] };
-        let mut matches = vec![];
-        let mut fns = vec![];
-        let mut impls = vec![];
-        let mut expected = None;
-        loop {
-            if input.peek(Token![match]) {
-                matches.push(input.parse::<Match>()?);
-                continue;
-            }
-            if input.peek(Token![fn]) {
-                fns.push(input.parse::<ItemFn>()?);
-                continue;
-            }
-            if input.parse::<Token![impl]>().is_ok() {
-                impls.push(input.parse::<ImplItemFn>()?);
-                continue;
-            }
-            if input.parse::<Token![enum]>().is_ok() {
-                if let RuleKind::Struct { ref fields } = kind {
-                    if !fields.is_empty() {
-                        Err(Error::new(Span::call_site(), "cannot have enums in struct rules"))?;
-                    }
-                }
-                let variants = Punctuated::<Ident, Token![,]>::parse_separated_nonempty(input)?
-                    .into_iter()
-                    .collect();
-                input.parse::<Token![;]>()?;
-                kind = RuleKind::Enum { variants, };
-                continue;
-            }
-            if input.parse::<kw::expected>().is_ok() {
-                if expected.is_some() {
-                    Err(Error::new(Span::call_site(), "cannot have multiple expected names"))?;
-                }
-                expected = Some(input.parse()?);
-                input.parse::<Token![;]>()?;
-                continue;
-            }
-            if input.peek(Ident) {
-                if let RuleKind::Struct { ref mut fields } = kind {
-                    fields.push(Field::parse_named(input)?);
-                    input.parse::<Token![;]>()?;
-                }
-                else {
-                    Err(Error::new(Span::call_site(), "cannot have members in enum rules"))?;
-                }
-                continue;
-            }
-            break;
-        }
-        Ok(Self(kind, expected, matches, fns, impls))
-    }
+pub enum RuleKind {
+    Struct { fields: Vec<Field> },
+    Enum { variants: Vec<Ident> },
 }
-
-enum RuleKind {
-    Struct {
-        fields: Vec<Field>,
-    },
-    Enum {
-        variants: Vec<Ident>,
-    },
-}
-
-pub struct TypeCheck {}
 
 pub struct Rule {
     name: Ident,
@@ -177,6 +112,7 @@ pub struct Rule {
     matches: Vec<Match>,
     fns: Vec<ItemFn>,
     impls: Vec<ImplItemFn>,
+    typecheck: Option<TypeCheck>,
 }
 
 impl Parse for Rule {
@@ -185,15 +121,95 @@ impl Parse for Rule {
         let name = input.parse()?;
         let contents;
         braced!(contents in input);
-        let ParseRule(kind, expected, matches, fns, impls) = contents.parse()?;
-        Ok(Self { name, expected, kind, matches, fns, impls })
+        let mut kind = RuleKind::Struct { fields: vec![] };
+        let mut matches = vec![];
+        let mut fns = vec![];
+        let mut impls = vec![];
+        let mut expected = None;
+        let mut typecheck = None;
+        loop {
+            if contents.peek(Token![match]) {
+                matches.push(contents.parse::<Match>()?);
+                continue;
+            }
+            if contents.peek(Token![fn]) {
+                fns.push(contents.parse::<ItemFn>()?);
+                continue;
+            }
+            if contents.parse::<Token![impl]>().is_ok() {
+                impls.push(contents.parse::<ImplItemFn>()?);
+                continue;
+            }
+            if contents.peek(kw::typecheck) {
+                if typecheck.is_some() {
+                    Err(Error::new(
+                        Span::call_site(),
+                        "cannot have multiple typecheckers",
+                    ))?;
+                }
+                typecheck = Some(contents.parse()?);
+                continue;
+            }
+            if contents.parse::<Token![enum]>().is_ok() {
+                if let RuleKind::Struct { ref fields } = kind {
+                    if !fields.is_empty() {
+                        Err(Error::new(
+                            Span::call_site(),
+                            "cannot have enums in struct rules",
+                        ))?;
+                    }
+                }
+                let variants = Punctuated::<Ident, Token![,]>::parse_separated_nonempty(&contents)?
+                    .into_iter()
+                    .collect();
+                contents.parse::<Token![;]>()?;
+                kind = RuleKind::Enum { variants };
+                continue;
+            }
+            if contents.parse::<kw::expected>().is_ok() {
+                if expected.is_some() {
+                    Err(Error::new(
+                        Span::call_site(),
+                        "cannot have multiple expected names",
+                    ))?;
+                }
+                expected = Some(contents.parse()?);
+                contents.parse::<Token![;]>()?;
+                continue;
+            }
+            if contents.peek(Ident) {
+                if let RuleKind::Struct { ref mut fields } = kind {
+                    fields.push(Field::parse_named(&contents)?);
+                    contents.parse::<Token![;]>()?;
+                } else {
+                    Err(Error::new(
+                        Span::call_site(),
+                        "cannot have members in enum rules",
+                    ))?;
+                }
+                continue;
+            }
+            break;
+        }
+        Ok(Self {
+            name,
+            expected,
+            kind,
+            matches,
+            fns,
+            impls,
+            typecheck,
+        })
     }
 }
 
 impl Gen for Rule {
     fn gen(&self) -> Result<TokenStream2> {
         if self.matches.is_empty() {
-            return Err(Error::new(self.name.span(), "rules must have at least one match statement"));
+            return Err(Error::new(
+                self.name.span(),
+                "rules must have at least one match statement",
+            ));
         }
         let name = &self.name;
         let first = &self.matches.first().unwrap().clause;
@@ -213,13 +229,17 @@ impl Gen for Rule {
                 members.extend(quote! {
                     meta: ExprMeta<'s>,
                 });
-                (quote! {
-                    struct #name<'s> {
-                        #members
-                    }
-                }, quote! {
-                    &self.meta
-                }, false)
+                (
+                    quote! {
+                        struct #name<'s> {
+                            #members
+                        }
+                    },
+                    quote! {
+                        &self.meta
+                    },
+                    false,
+                )
             }
             RuleKind::Enum { variants } => {
                 let mut meta_variants = TokenStream2::new();
@@ -240,37 +260,53 @@ impl Gen for Rule {
                         Self::#var_name(v) => &v.meta(),
                     });
                 }
-                (quote! {
-                    enum #name<'s> {
-                        #variants_stream
-                    }
-                }, quote! {
-                    match self {
-                        #meta_variants
-                    }
-                }, true)
+                (
+                    quote! {
+                        enum #name<'s> {
+                            #variants_stream
+                        }
+                    },
+                    quote! {
+                        match self {
+                            #meta_variants
+                        }
+                    },
+                    true,
+                )
             }
         };
 
         if first.is_functional() {
             for mat in self.matches.iter().skip(1) {
                 if !mat.clause.is_functional() {
-                    return Err(Error::new(self.name.span(), "all matchers must be functional"));
+                    return Err(Error::new(
+                        self.name.span(),
+                        "all matchers must be functional",
+                    ));
                 }
             }
-        }
-        else if !is_enum {
+        } else if !is_enum {
             let first_ty = first.eval_ty()?;
             for mat in self.matches.iter().skip(1) {
                 if !mat.clause.eval_ty()?.is_convertible(&first_ty) {
-                    return Err(Error::new(self.name.span(), "all matches must evaluate to the same type"));
+                    return Err(Error::new(
+                        self.name.span(),
+                        "all matches must evaluate to the same type",
+                    ));
                 }
             }
         }
-        
-        let fallthrough_matcher_count = self.matches.iter().filter(|f| f.result_type.is_none()).count();
+
+        let fallthrough_matcher_count = self
+            .matches
+            .iter()
+            .filter(|f| f.result_type.is_none())
+            .count();
         if fallthrough_matcher_count > 1 && self.expected.is_none() {
-            return Err(Error::new(self.name.span(), "an expected clause is required with multiple matchers"));
+            return Err(Error::new(
+                self.name.span(),
+                "an expected clause is required with multiple matchers",
+            ));
         }
 
         for fun in &self.fns {
@@ -292,11 +328,14 @@ impl Gen for Rule {
         for (i, mat) in self.matches.iter().rev().enumerate() {
             let expect_name = format_ident!(
                 "expect_impl_{}",
-                mat.name.as_ref()
+                mat.name
+                    .as_ref()
                     .map(|s| s.to_string())
                     .unwrap_or(i.to_string())
             );
-            let ty = mat.result_type.clone()
+            let ty = mat
+                .result_type
+                .clone()
                 .map(|e| quote! { #e<'s> })
                 .unwrap_or(quote! { Self });
             let err_branch = if prev_matcher.is_some() && mat.result_type.is_none() {
@@ -304,14 +343,12 @@ impl Gen for Rule {
                 quote! {
                     Self::#call(parser)
                 }
-            }
-            else {
+            } else {
                 if self.expected.is_some() {
                     quote! {
                         Err(parser.error(start, format!("Expected {}", Self::expected())))
                     }
-                }
-                else {
+                } else {
                     quote! {
                         Err(e)
                     }
@@ -322,7 +359,8 @@ impl Gen for Rule {
             if !args.is_empty() {
                 let expect_with_name = format_ident!(
                     "expect_with_{}",
-                    mat.name.as_ref()
+                    mat.name
+                        .as_ref()
                         .map(|s| s.to_string())
                         .unwrap_or(i.to_string())
                 );
@@ -338,7 +376,10 @@ impl Gen for Rule {
                     });
                 }
                 body = mat.clause.gen_top_prefun(expect_with_name.clone())?;
-                let with_body = mat.gen_with_ctx(GenCtx::TopLevel { is_enum, err_branch })?;
+                let with_body = mat.gen_with_ctx(GenCtx::TopLevel {
+                    is_enum,
+                    err_branch,
+                })?;
                 fns.extend(quote! {
                     fn #expect_with_name(parser: &mut Parser<'s>, #args_stream) -> Result<#ty, Message<'s>> {
                         #with_body
@@ -349,9 +390,11 @@ impl Gen for Rule {
                         Self::#expect_with_name(parser, #pass_args_stream)
                     }
                 });
-            }
-            else {
-                body = mat.gen_with_ctx(GenCtx::TopLevel { is_enum, err_branch })?;
+            } else {
+                body = mat.gen_with_ctx(GenCtx::TopLevel {
+                    is_enum,
+                    err_branch,
+                })?;
             }
             if !(mat.result_type.is_none() && fallthrough_matcher_count == 1) {
                 fns.extend(quote! {
@@ -439,8 +482,13 @@ impl Parse for Enum {
         let contents;
         braced!(contents in input);
         let fields = Punctuated::<EnumField, Token![,]>::parse_terminated(&contents)?
-            .into_iter().collect();
-        Ok(Self { name, lit_name, fields })
+            .into_iter()
+            .collect();
+        Ok(Self {
+            name,
+            lit_name,
+            fields,
+        })
     }
 }
 
@@ -543,11 +591,9 @@ impl Parse for Keyword {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.parse::<kw::reserve>().is_ok() {
             Ok(Keyword::Reserved(input.parse()?))
-        }
-        else if input.parse::<kw::contextual>().is_ok() {
+        } else if input.parse::<kw::contextual>().is_ok() {
             Ok(Keyword::Contextual(input.parse()?))
-        }
-        else {
+        } else {
             Ok(Keyword::Strict(input.parse()?))
         }
     }
@@ -563,19 +609,17 @@ impl Parse for Item {
     fn parse(input: ParseStream) -> Result<Self> {
         if input.peek(kw::rule) {
             Ok(Item::MatchRule(input.parse()?))
-        }
-        else if input.peek(Token![enum]) {
+        } else if input.peek(Token![enum]) {
             Ok(Item::Enum(input.parse()?))
-        }
-        else if input.parse::<kw::keywords>().is_ok() {
+        } else if input.parse::<kw::keywords>().is_ok() {
             let kws;
             braced!(kws in input);
             Ok(Item::Keywords(
                 Punctuated::<Keyword, Token![,]>::parse_terminated(&kws)?
-                    .into_iter().collect()
+                    .into_iter()
+                    .collect(),
             ))
-        }
-        else {
+        } else {
             Err(Error::new(Span::call_site(), "expected rule"))
         }
     }
@@ -626,12 +670,13 @@ impl Gen for Rules {
                 _ => {}
             }
         }
-        
+
         for rule in &self.items {
             stream.extend(rule.gen()?);
             match rule {
                 Item::MatchRule(rule) => {
-                    rule.matches.iter()
+                    rule.matches
+                        .iter()
                         .map(|m| m.clause.verify_keywords(&all_kws))
                         .collect::<Result<_>>()?;
                 }

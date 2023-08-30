@@ -1,30 +1,18 @@
-
 extern crate proc_macro;
 extern crate proc_macro2;
 extern crate quote;
 extern crate syn;
 extern crate unicode_xid;
-use std::{collections::HashSet, hash::Hash};
-use unicode_xid::UnicodeXID;
 
-use proc_macro::TokenStream;
-use proc_macro2::{TokenStream as TokenStream2, Span};
-use quote::{quote, format_ident};
-use syn::{
-    parse_macro_input,
-    parenthesized,
-    ImplItemFn,
-    Ident,
-    Result,
-    Token,
-    token::{Paren, Bracket},
-    parse::{Parse, ParseStream}, 
-    LitStr, LitChar,
-    braced, Error, ItemUse, Field, ExprBlock,
-    punctuated::Punctuated, bracketed, ItemFn,
+use proc_macro2::{Span, TokenStream as TokenStream2};
+use quote::{format_ident, quote};
+use syn::{Error, Ident, Result};
+
+use crate::{
+    clause::{Char, Clause, MaybeBinded, RepeatMode},
+    defs::Gen,
+    ty::ClauseTy,
 };
-
-use crate::{clause::{Clause, MaybeBinded, RepeatMode, Char}, defs::Gen, ty::ClauseTy};
 
 pub enum GenCtx {
     None,
@@ -37,13 +25,20 @@ pub enum GenCtx {
 impl Clause {
     pub fn gen_top_prefun(&self, expect_with_name: Ident) -> Result<TokenStream2> {
         match self {
-            Self::List { peek_condition, items, rust: _ } => {
+            Self::List {
+                peek_condition,
+                items,
+                rust: _,
+            } => {
                 let mut body = TokenStream2::new();
                 let mut binded_vars = TokenStream2::new();
                 for item in items {
                     if let MaybeBinded::Arg(name, clause) = item {
                         if !peek_condition.is_empty() {
-                            return Err(Error::new(Span::call_site(), "cannot have peek conditions with parameter bindings"));
+                            return Err(Error::new(
+                                Span::call_site(),
+                                "cannot have peek conditions with parameter bindings",
+                            ));
                         }
                         let b = clause.gen()?;
                         body.extend(quote! {
@@ -52,22 +47,27 @@ impl Clause {
                         binded_vars.extend(quote! {
                             #name,
                         });
-                    } 
+                    }
                 }
                 Ok(quote! {
                     #body
                     Self::#expect_with_name(parser, #binded_vars)
                 })
             }
-            _ => {
-                Err(Error::new(Span::call_site(), "internal error: cant call gen_top_prefun here wtf"))
-            }
+            _ => Err(Error::new(
+                Span::call_site(),
+                "internal error: cant call gen_top_prefun here wtf",
+            )),
         }
     }
 
     pub fn gen_with_ctx(&self, ctx: GenCtx) -> Result<TokenStream2> {
         match self {
-            Self::List { peek_condition, items, rust } => {
+            Self::List {
+                peek_condition,
+                items,
+                rust,
+            } => {
                 let mut body = TokenStream2::new();
                 let mut cond = TokenStream2::new();
                 for c in peek_condition {
@@ -108,17 +108,18 @@ impl Clause {
                 let mut result_stream = TokenStream2::new();
                 if let Some(rust) = rust {
                     result_stream = quote! { #rust };
-                }
-                else {
+                } else {
                     match ctx {
-                        GenCtx::TopLevel { is_enum, err_branch: _ } => {
+                        GenCtx::TopLevel {
+                            is_enum,
+                            err_branch: _,
+                        } => {
                             for r in binded_vars {
                                 result_stream.extend(quote! { #r, });
                             }
                             if is_enum {
                                 result_stream = quote! { Ok(Self::from(#result_stream)) };
-                            }
-                            else {
+                            } else {
                                 result_stream = quote! { Ok(Self {
                                     #result_stream
                                     meta: parser.get_meta(start),
@@ -129,8 +130,7 @@ impl Clause {
                             if binded_vars.len() == 1 {
                                 let f = binded_vars.first().unwrap();
                                 result_stream.extend(quote! { #f });
-                            }
-                            else {
+                            } else {
                                 for r in binded_vars {
                                     result_stream.extend(quote! { #r, });
                                 }
@@ -147,53 +147,50 @@ impl Clause {
                 };
                 if !peek_condition.is_empty() {
                     match ctx {
-                        GenCtx::None => {
-                            Ok(quote! {
-                                if crate::rule_peek!(parser, #cond) {
-                                    let start = parser.skip_ws();
-                                    #body
-                                    Some(#result_stream)
-                                }
-                                else {
-                                    None
-                                }
-                            })
-                        }
-                        GenCtx::TopLevel { is_enum: _, err_branch } => {
-                            Ok(quote! {
-                                let start = parser.skip_ws();
-                                if crate::rule_peek!(parser, #cond) {
-                                    #body
-                                    #result_stream
-                                }
-                                else {
-                                    #err_branch
-                                }
-                            })
-                        }
-                    }
-                }
-                else {
-                    match ctx {
-                        GenCtx::None => {
-                            Ok(quote! { {
+                        GenCtx::None => Ok(quote! {
+                            if crate::rule_peek!(parser, #cond) {
                                 let start = parser.skip_ws();
                                 #body
+                                Some(#result_stream)
+                            }
+                            else {
+                                None
+                            }
+                        }),
+                        GenCtx::TopLevel {
+                            is_enum: _,
+                            err_branch,
+                        } => Ok(quote! {
+                            let start = parser.skip_ws();
+                            if crate::rule_peek!(parser, #cond) {
+                                #body
                                 #result_stream
-                            } })
-                        }
-                        GenCtx::TopLevel { is_enum: _, err_branch } => {
-                            Ok(quote! {
-                                let start = parser.skip_ws();
-                                match crate::rule_try!(parser, {
-                                    #body
-                                    #result_stream
-                                }?) {
-                                    Ok(r) => Ok(r),
-                                    Err(e) => #err_branch,
-                                }
-                            })
-                        }
+                            }
+                            else {
+                                #err_branch
+                            }
+                        }),
+                    }
+                } else {
+                    match ctx {
+                        GenCtx::None => Ok(quote! { {
+                            let start = parser.skip_ws();
+                            #body
+                            #result_stream
+                        } }),
+                        GenCtx::TopLevel {
+                            is_enum: _,
+                            err_branch,
+                        } => Ok(quote! {
+                            let start = parser.skip_ws();
+                            match crate::rule_try!(parser, {
+                                #body
+                                #result_stream
+                            }?) {
+                                Ok(r) => Ok(r),
+                                Err(e) => #err_branch,
+                            }
+                        }),
                     }
                 }
             }
@@ -217,7 +214,7 @@ impl Clause {
                         }
                     });
                 }
-                
+
                 Ok(quote! {
                     || -> Result<#ty, Message<'s>> {
                         #match_options
@@ -237,8 +234,7 @@ impl Clause {
                             None
                         }
                     })
-                }
-                else {
+                } else {
                     Ok(quote! {
                         crate::rule_try!(parser, #body).ok()
                     })
@@ -254,8 +250,7 @@ impl Clause {
                         stream.extend(quote! {
                             res.push(#b);
                         });
-                    }
-                    else {
+                    } else {
                         stream.extend(quote! {
                             res.push_str(&#b);
                         });
@@ -292,8 +287,7 @@ impl Clause {
                     quote! {
                         let mut res = String::new();
                     }
-                }
-                else {
+                } else {
                     quote! {
                         let mut res = Vec::new();
                     }
@@ -329,90 +323,85 @@ impl Clause {
                     }
                 }
             }
-            Self::String(lit) => {
-                Ok(quote! {
-                    parser.expect_word(#lit)?
-                })
-            }
-            Self::Char(ch) => {
-                Ok(match ch {
-                    Char::Single(ch) => {
-                        quote! {
-                            parser.expect_ch(#ch)?
-                        }
+            Self::String(lit) => Ok(quote! {
+                parser.expect_word(#lit)?
+            }),
+            Self::Char(ch) => Ok(match ch {
+                Char::Single(ch) => {
+                    quote! {
+                        parser.expect_ch(#ch)?
                     }
-                    Char::Not(ch) => {
-                        quote! {
-                            parser.expect_not_ch(#ch)?
-                        }
+                }
+                Char::Not(ch) => {
+                    quote! {
+                        parser.expect_not_ch(#ch)?
                     }
-                    Char::Range(a, b) => {
-                        quote! {
-                            parser.expect_ch_range(#a..=#b)?
-                        }
+                }
+                Char::Range(a, b) => {
+                    quote! {
+                        parser.expect_ch_range(#a..=#b)?
                     }
-                    Char::XidStart => {
-                        quote! {
-                            parser.expect_ch_with(UnicodeXID::is_xid_start, "identifier")?
-                        }
+                }
+                Char::XidStart => {
+                    quote! {
+                        parser.expect_ch_with(UnicodeXID::is_xid_start, "identifier")?
                     }
-                    Char::XidContinue => {
-                        quote! {
-                            parser.expect_ch_with(UnicodeXID::is_xid_continue, "identifier")?
-                        }
+                }
+                Char::XidContinue => {
+                    quote! {
+                        parser.expect_ch_with(UnicodeXID::is_xid_continue, "identifier")?
                     }
-                    Char::OpChar => {
-                        quote! {
-                            parser.expect_ch_with(crate::parser::is_op_char, "operator")?
-                        }
+                }
+                Char::OpChar => {
+                    quote! {
+                        parser.expect_ch_with(crate::parser::is_op_char, "operator")?
                     }
-                    Char::Any => {
-                        quote! {
-                            parser.expect_ch_with(|_| true, "any")?
-                        }
+                }
+                Char::Any => {
+                    quote! {
+                        parser.expect_ch_with(|_| true, "any")?
                     }
-                    Char::EOF => {
-                        quote! {
-                            { parser.expect_eof()?; Default::default() }
-                        }
+                }
+                Char::EOF => {
+                    quote! {
+                        { parser.expect_eof()?; Default::default() }
                     }
-                })
-            }
-            Self::Rule(rule) => {
-                Ok(rule.gen("expect", "expect_impl_", None)?)
-            }
+                }
+            }),
+            Self::Rule(rule) => Ok(rule.gen("expect", "expect_impl_", None)?),
             Self::EnumVariant(e, v) => {
                 if let Some(v) = v {
                     Ok(quote! {
                         #e::try_from(parser.expect_word(&#e::#v.to_string())?.as_str()).unwrap()
                     })
-                }
-                else {
+                } else {
                     Ok(quote! {
                         #e::expect_any(parser)?
                     })
                 }
             }
-            Self::Default => {
-                Ok(quote! {
-                    Default::default()
-                })
-            }
-            Self::FnMatcher { ret_ty: _, body } => {
-                Ok(quote! {
-                    #body
-                })
-            }
+            Self::Default => Ok(quote! {
+                Default::default()
+            }),
+            Self::FnMatcher { ret_ty: _, body } => Ok(quote! {
+                #body
+            }),
         }
     }
 
     pub fn gen_members(&self) -> Result<TokenStream2> {
         match self {
-            Self::List { peek_condition, items, rust } => {
+            Self::List {
+                peek_condition,
+                items,
+                rust,
+            } => {
                 let mut stream = TokenStream2::new();
                 if peek_condition.is_empty() && rust.is_none() {
                     for item in items {
-                        if let MaybeBinded::Named(name, clause) | MaybeBinded::Arg(name, clause) = item {
+                        if let MaybeBinded::Named(name, clause) | MaybeBinded::Arg(name, clause) =
+                            item
+                        {
                             let ty = clause.eval_ty()?.gen()?;
                             stream.extend(quote! {
                                 #name: #ty,
@@ -422,7 +411,7 @@ impl Clause {
                 }
                 Ok(stream)
             }
-            _ => Ok(TokenStream2::new())
+            _ => Ok(TokenStream2::new()),
         }
     }
 }

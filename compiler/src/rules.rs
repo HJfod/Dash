@@ -1,4 +1,3 @@
-
 use gdml_macros::define_rules;
 
 define_rules! {
@@ -39,7 +38,7 @@ define_rules! {
 
         Not     -> "!",
     }
-    
+
     rule Ident {
         value: String;
         match value:XID_Start & XID_Continue* => {
@@ -58,7 +57,7 @@ define_rules! {
         }
 
         typecheck {
-            Ty::Never
+            yield Ty::Never;
         }
     }
 
@@ -66,7 +65,7 @@ define_rules! {
         match absolute:"::"? items:Ident ~ ("::" :Ident)*;
 
         typecheck {
-            Ty::Never
+            yield Ty::Never;
         }
     }
 
@@ -74,7 +73,7 @@ define_rules! {
         match exprs:(:Expr ";"+) until "}" | EOF;
 
         typecheck {
-            Ty::Void
+            yield Ty::Void;
         }
     }
 
@@ -109,7 +108,7 @@ define_rules! {
             })
         }
         typecheck {
-            Ty::Int
+            yield Ty::Int;
         }
     }
 
@@ -125,7 +124,7 @@ define_rules! {
             })
         }
         typecheck {
-            Ty::Float
+            yield Ty::Float;
         }
     }
 
@@ -151,7 +150,7 @@ define_rules! {
             res
         } '"';
         typecheck {
-            Ty::String
+            yield Ty::String;
         }
     }
 
@@ -159,7 +158,7 @@ define_rules! {
         match ident:Ident;
 
         typecheck {
-            exists ident;
+            yield find ident as entity;
         }
     }
 
@@ -211,21 +210,23 @@ define_rules! {
 
         typecheck {
             index -> i32;
+            yield Ty::Never;
         }
     }
 
     rule Call {
         match $expr:Expr "(" args:(:Expr ~ ("," :Expr) until (")") | ("," ")") ","?) unless ")" ")";
 
-        typecheck {}
+        typecheck {
+            yield Ty::Never;
+        }
     }
 
     rule Block {
         match "{" list:ExprList "}";
 
-        typecheck {
-            list...;
-            return Ty::Never;
+        typecheck (new scope) {
+            yield Ty::Never;
         }
     }
 
@@ -234,8 +235,8 @@ define_rules! {
 
         typecheck {
             value -> ty;
-            push Var(self.name.full_ident(), ty.or(value).unwrap_or(Ty::Unknown));
-            Ty::Never
+            push Var(self.name.full_ident(), ty.or(value));
+            yield Ty::Void;
         }
     }
 
@@ -245,7 +246,7 @@ define_rules! {
         typecheck {
             cond -> Ty::Bool;
             falsy -> truthy;
-            truthy
+            yield truthy;
         }
     }
 
@@ -260,7 +261,7 @@ define_rules! {
         match ident:Ident;
 
         typecheck {
-            exists ident as type;
+            yield find ident as type;
         }
     }
 

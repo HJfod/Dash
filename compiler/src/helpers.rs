@@ -1,43 +1,34 @@
-
 use crate::parser::Rule;
 
 #[macro_export]
 macro_rules! rule_peek {
-    ($parser: ident, $expr: expr) => {
-        {
-            let start = $parser.pos();
-            match || -> Result<_, Message<'s>> {
-                Ok($expr)
-            }() {
-                Ok(_) => {
-                    $parser.goto(start);
-                    true
-                }
-                Err(_) => {
-                    $parser.goto(start);
-                    false
-                }
+    ($parser: ident, $expr: expr) => {{
+        let start = $parser.pos();
+        match || -> Result<_, Message<'s>> { Ok($expr) }() {
+            Ok(_) => {
+                $parser.goto(start);
+                true
+            }
+            Err(_) => {
+                $parser.goto(start);
+                false
             }
         }
-    };
+    }};
 }
 
 #[macro_export]
 macro_rules! rule_try {
-    ($parser: ident, $expr: expr) => {
-        {
-            let start = $parser.pos();
-            match || -> Result<_, Message<'s>> {
-                Ok($expr)
-            }() {
-                Ok(r) => Ok(r),
-                Err(e) => {
-                    $parser.goto(start);
-                    Err(e)
-                }
+    ($parser: ident, $expr: expr) => {{
+        let start = $parser.pos();
+        match || -> Result<_, Message<'s>> { Ok($expr) }() {
+            Ok(r) => Ok(r),
+            Err(e) => {
+                $parser.goto(start);
+                Err(e)
             }
         }
-    };
+    }};
 }
 
 pub trait ConcatInto<T> {

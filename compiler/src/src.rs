@@ -1,7 +1,14 @@
+use std::{
+    cmp::max,
+    fmt::{Debug, Display},
+    fs,
+    path::{Path, PathBuf},
+};
 
-use std::{fmt::{Display, Debug}, path::{PathBuf, Path}, fs, cmp::max};
-
-use crate::{parser::{ExprMeta, Parser, Rule}, rules::ast::ExprList};
+use crate::{
+    parser::{ExprMeta, Parser, Rule},
+    rules::ast::ExprList,
+};
 
 #[derive(Debug, Clone)]
 pub struct Loc {
@@ -12,7 +19,11 @@ pub struct Loc {
 
 impl Loc {
     pub fn zero() -> Self {
-        Self { line: 0, column: 0, offset: 0 }
+        Self {
+            line: 0,
+            column: 0,
+            offset: 0,
+        }
     }
 }
 
@@ -42,7 +53,10 @@ pub struct Range {
 
 impl Range {
     pub fn zero() -> Self {
-        Self { start: Loc::zero(), end: Loc::zero() }
+        Self {
+            start: Loc::zero(),
+            end: Loc::zero(),
+        }
     }
 }
 
@@ -66,8 +80,7 @@ impl Display for Range {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.start == self.end {
             f.write_fmt(format_args!("{}", self.start))
-        }
-        else {
+        } else {
             f.write_fmt(format_args!("{}-{}", self.start, self.end))
         }
     }
@@ -84,9 +97,9 @@ pub enum Level {
 impl Display for Level {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(match self {
-            Level::Info    => "Info",
+            Level::Info => "Info",
             Level::Warning => "Warning",
-            Level::Error   => "Error",
+            Level::Error => "Error",
         })
     }
 }
@@ -98,11 +111,17 @@ pub struct Note<'s> {
 
 impl<'s> Note<'s> {
     pub fn new(info: &str) -> Self {
-        Self { info: info.into(), at: None }
+        Self {
+            info: info.into(),
+            at: None,
+        }
     }
 
     pub fn new_at<S: Into<String>>(info: S, src: &'s Src, range: Range) -> Self {
-        Self { info: info.into(), at: Some((src, range)) }
+        Self {
+            info: info.into(),
+            at: Some((src, range)),
+        }
     }
 }
 
@@ -113,10 +132,10 @@ impl Display for Note<'_> {
                 "Note: {}\n{}\n(In {} at {})",
                 self.info,
                 src.underlined(&range),
-                src.name(), range
+                src.name(),
+                range
             ))
-        }
-        else {
+        } else {
             f.write_fmt(format_args!("Note: {}", self.info))
         }
     }
@@ -133,10 +152,11 @@ pub struct Message<'s> {
 impl<'s> Message<'s> {
     pub fn from_meta(level: Level, info: String, meta: &ExprMeta<'s>) -> Self {
         Self {
-            level, info,
+            level,
+            info,
             notes: vec![],
             src: meta.src,
-            range: meta.range.clone()
+            range: meta.range.clone(),
         }
     }
 
@@ -155,10 +175,15 @@ impl Display for Message<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "{} in {} at {}:\n{}{}{}",
-            self.level, self.src.name(), self.range,
+            self.level,
+            self.src.name(),
+            self.range,
             self.src.underlined(&self.range),
             self.info,
-            self.notes.iter().map(|note| format!("\n * {}", note)).collect::<String>()
+            self.notes
+                .iter()
+                .map(|note| format!("\n * {}", note))
+                .collect::<String>()
         ))
     }
 }
@@ -166,10 +191,7 @@ impl Display for Message<'_> {
 #[derive(PartialEq)]
 pub enum Src {
     Builtin,
-    File {
-        path: PathBuf,
-        chars: Vec<char>,
-    },
+    File { path: PathBuf, chars: Vec<char> },
 }
 
 impl Debug for Src {
@@ -201,7 +223,8 @@ impl Src {
     pub fn name(&self) -> String {
         match self {
             Src::Builtin => String::from("<compiler built-in>"),
-            Src::File { path, chars: _ } => path.file_name()
+            Src::File { path, chars: _ } => path
+                .file_name()
                 .map(|s| s.to_string_lossy().to_string())
                 .unwrap_or("<anonymous file>".to_string()),
         }
@@ -231,8 +254,7 @@ impl Src {
             if c == '\n' {
                 line += 1;
                 column = 0;
-            }
-            else {
+            } else {
                 column += 1;
             }
             o += 1;
@@ -240,7 +262,11 @@ impl Src {
                 break;
             }
         }
-        Loc { line, column, offset, }
+        Loc {
+            line,
+            column,
+            offset,
+        }
     }
 
     pub fn range(&self, mut start: usize, mut end: usize) -> Range {
@@ -256,7 +282,8 @@ impl Src {
     fn lines(&self) -> Vec<String> {
         match self {
             Src::Builtin => Vec::new(),
-            Src::File { path: _, chars } => chars.iter()
+            Src::File { path: _, chars } => chars
+                .iter()
                 .collect::<String>()
                 .split('\n')
                 .map(|s| s.into())
@@ -265,7 +292,8 @@ impl Src {
     }
 
     pub fn underlined(&self, range: &Range) -> String {
-        let lines = self.lines()
+        let lines = self
+            .lines()
             .get(range.start.line..=range.end.line)
             .and_then(|p| (!p.is_empty()).then_some(Vec::from(p)))
             .unwrap_or(vec![String::from("/* Invalid source code range */")]);
@@ -276,22 +304,21 @@ impl Src {
                 " ".repeat(range.start.column),
                 "~".repeat(max(1, range.end.column - range.start.column))
             )
-        }
-        else {
+        } else {
             let mut res = String::new();
             let mut i = 1;
             let len = lines.len();
             for line in lines {
                 res += &if i == len {
                     format!("{}\n{}\n", line, "~".repeat(max(1, range.end.column)))
-                }
-                else if i == 1 {
-                    format!("{}\n{}{}\n", line, 
+                } else if i == 1 {
+                    format!(
+                        "{}\n{}{}\n",
+                        line,
                         " ".repeat(range.start.column),
                         "~".repeat(max(1, line.len() - range.start.column))
                     )
-                }
-                else {
+                } else {
                     format!("{}\n{}\n", line, "~".repeat(max(1, line.len())))
                 };
                 i += 1;
@@ -304,12 +331,11 @@ impl Src {
         let mut parser = Parser::new(self);
         let ast = ExprList::expect(&mut parser)?;
         if !parser.is_eof() {
-            Err(parser.error(parser.pos(), format!(
-                "Unexpected character '{}'",
-                parser.peek().unwrap()
-            )))
-        }
-        else {
+            Err(parser.error(
+                parser.pos(),
+                format!("Unexpected character '{}'", parser.peek().unwrap()),
+            ))
+        } else {
             Ok(ast)
         }
     }

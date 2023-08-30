@@ -1,30 +1,20 @@
-
 extern crate proc_macro;
 extern crate proc_macro2;
 extern crate quote;
 extern crate syn;
 extern crate unicode_xid;
-use std::{collections::HashSet, hash::Hash};
-use unicode_xid::UnicodeXID;
 
-use proc_macro::TokenStream;
-use proc_macro2::{TokenStream as TokenStream2, Span};
-use quote::{quote, format_ident};
+use proc_macro2::TokenStream as TokenStream2;
+use quote::quote;
 use syn::{
-    parse_macro_input,
-    parenthesized,
-    ImplItemFn,
-    Ident,
-    Result,
-    Token,
-    token::{Paren, Bracket},
-    parse::{Parse, ParseStream}, 
-    LitStr, LitChar,
-    braced, Error, ItemUse, Field, ExprBlock,
-    punctuated::Punctuated, bracketed, ItemFn,
+    bracketed, parenthesized,
+    parse::{Parse, ParseStream},
+    punctuated::Punctuated,
+    token::{Bracket, Paren},
+    Error, Ident, Result, Token,
 };
 
-use crate::defs::{Gen, kw};
+use crate::defs::{kw, Gen};
 
 #[derive(Clone)]
 pub enum ClauseTy {
@@ -74,38 +64,35 @@ impl Parse for ClauseTy {
             res = match ident.to_string().as_str() {
                 "String" => ClauseTy::String,
                 "char" => ClauseTy::Char,
-                _ => Err(Error::new(ident.span(), "unknown type (rules and enums must be qualified with keywords)"))?
+                _ => Err(Error::new(
+                    ident.span(),
+                    "unknown type (rules and enums must be qualified with keywords)",
+                ))?,
             }
-        }
-        else if ahead.peek(kw::rule) {
+        } else if ahead.peek(kw::rule) {
             input.parse::<kw::rule>()?;
             res = ClauseTy::Rule(input.parse()?);
-        }
-        else if ahead.peek(Token![enum]) {
+        } else if ahead.peek(Token![enum]) {
             input.parse::<Token![enum]>()?;
             res = ClauseTy::Enum(input.parse()?);
-        }
-        else if ahead.peek(Bracket) {
+        } else if ahead.peek(Bracket) {
             let c;
             bracketed!(c in input);
             res = ClauseTy::Vec(c.parse()?);
-        }
-        else if ahead.peek(Paren) {
+        } else if ahead.peek(Paren) {
             let c;
             parenthesized!(c in input);
             res = ClauseTy::List(
                 Punctuated::<ClauseTy, Token![,]>::parse_terminated(&c)?
                     .into_iter()
-                    .collect()
+                    .collect(),
             );
-        }
-        else {
+        } else {
             return Err(ahead.error())?;
         }
         if input.parse::<Token![?]>().is_ok() {
             Ok(ClauseTy::Option(res.into()))
-        }
-        else {
+        } else {
             Ok(res)
         }
     }
@@ -130,21 +117,11 @@ impl Gen for ClauseTy {
                 let ty = ty.gen()?;
                 Ok(quote! { Option<#ty> })
             }
-            Self::Rule(rule) => {
-                Ok(quote! { #rule<'s> })
-            }
-            Self::Enum(e) => {
-                Ok(quote! { #e })
-            }
-            Self::Char => {
-                Ok(quote! { char })
-            }
-            Self::String => {
-                Ok(quote! { String })
-            }
-            Self::Default => {
-                Ok(quote! { _ })
-            }
+            Self::Rule(rule) => Ok(quote! { #rule<'s> }),
+            Self::Enum(e) => Ok(quote! { #e }),
+            Self::Char => Ok(quote! { char }),
+            Self::String => Ok(quote! { String }),
+            Self::Default => Ok(quote! { _ }),
         }
     }
 }
