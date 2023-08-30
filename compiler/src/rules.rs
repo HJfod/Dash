@@ -91,7 +91,26 @@ define_rules! {
     }
 
     rule Str {
-        match '"' value:(:('\\' :ANY_CHAR) | ^'"')* '"';
+        match '"' value:fn -> String {
+            let mut res = String::new();
+            while let Ok(c) = parser.expect_not_ch('"') {
+                res.push(match c {
+                    '\\' => match parser.next().ok_or(parser.error(parser.pos(), "Expected character, found EOF"))? {
+                        '\\' => '\\',
+                        'n'  => '\n',
+                        't'  => '\t',
+                        'r'  => '\r',
+                        '{'  => '{',
+                        '\"' => '\"',
+                        '\'' => '\'',
+                        '\0' => '\0',
+                        c    => Err(parser.error(parser.pos() - 1, format!("Unrecognized escape sequence '\\{c}'")))?,
+                    }
+                    c => c,
+                });
+            }
+            res
+        } '"';
     }
 
     rule Entity {

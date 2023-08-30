@@ -89,6 +89,52 @@ impl ClauseTy {
     }
 }
 
+impl Parse for ClauseTy {
+    fn parse(input: ParseStream) -> Result<Self> {
+        let ahead = input.lookahead1();
+        let res;
+        if ahead.peek(Ident) {
+            let ident = input.parse::<Ident>()?;
+            res = match ident.to_string().as_str() {
+                "String" => ClauseTy::String,
+                "char" => ClauseTy::Char,
+                _ => Err(Error::new(ident.span(), "unknown type (rules and enums must be qualified with keywords)"))?
+            }
+        }
+        else if ahead.peek(kw::rule) {
+            input.parse::<kw::rule>()?;
+            res = ClauseTy::Rule(input.parse()?);
+        }
+        else if ahead.peek(Token![enum]) {
+            input.parse::<Token![enum]>()?;
+            res = ClauseTy::Enum(input.parse()?);
+        }
+        else if ahead.peek(Bracket) {
+            let c;
+            bracketed!(c in input);
+            res = ClauseTy::Vec(c.parse()?);
+        }
+        else if ahead.peek(Paren) {
+            let c;
+            parenthesized!(c in input);
+            res = ClauseTy::List(
+                Punctuated::<ClauseTy, Token![,]>::parse_terminated(&c)?
+                    .into_iter()
+                    .collect()
+            );
+        }
+        else {
+            return Err(ahead.error())?;
+        }
+        if input.parse::<Token![?]>().is_ok() {
+            Ok(ClauseTy::Option(res.into()))
+        }
+        else {
+            Ok(res)
+        }
+    }
+}
+
 impl Gen for ClauseTy {
     fn gen(&self) -> Result<TokenStream2> {
         match self {
@@ -144,7 +190,7 @@ impl MaybeBinded {
             Self::Arg(_, c) => c,
         }
     }
-
+    
     fn is_binded(&self) -> bool {
         !matches!(self, Self::Drop(_))
     }
@@ -253,6 +299,11 @@ enum Clause {
     Char(Char),
     // A[_] as B as C
     Rule(RuleClause),
+    // fn -> A { ... }
+    FnMatcher {
+        ret_ty: ClauseTy,
+        body: ExprBlock,
+    },
     // E.V
     EnumVariant(Ident, Option<Ident>),
     // _
@@ -324,6 +375,13 @@ impl Clause {
         else if ahead.peek(Token![_]) {
             input.parse::<Token![_]>()?;
             res = Clause::Default;
+        }
+        else if ahead.peek(Token![fn]) {
+            input.parse::<Token![fn]>()?;
+            input.parse::<Token![->]>()?;
+            let ret_ty = input.parse()?;
+            let body = input.parse()?;
+            res = Clause::FnMatcher { ret_ty, body };
         }
         else {
             return Err(ahead.error());
@@ -494,6 +552,9 @@ impl Clause {
             }
             Self::EnumVariant(e, _) => {
                 Ok(ClauseTy::Enum(e.clone()))
+            }
+            Self::FnMatcher { ret_ty, body: _ } => {
+                Ok(ret_ty.clone())
             }
             Self::Default => Ok(ClauseTy::Default)
         }
@@ -931,6 +992,11 @@ impl Clause {
             Self::Default => {
                 Ok(quote! {
                     Default::default()
+                })
+            }
+            Self::FnMatcher { ret_ty: _, body } => {
+                Ok(quote! {
+                    #body
                 })
             }
         }
