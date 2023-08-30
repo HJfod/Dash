@@ -37,6 +37,8 @@ pub mod kw {
     syn::custom_keyword!(nofallthrough);
     syn::custom_keyword!(typecheck);
     syn::custom_keyword!(find);
+    syn::custom_keyword!(new);
+    syn::custom_keyword!(scope);
     syn::custom_keyword!(XID_Start);
     syn::custom_keyword!(XID_Continue);
     syn::custom_keyword!(OP_CHAR);

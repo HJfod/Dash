@@ -1,7 +1,8 @@
 
 use proc_macro2::Ident;
 use syn::parse::{Parse, ParseStream};
-use syn::{Token, Error};
+use syn::token::Paren;
+use syn::{Token, Error, parenthesized};
 use syn::{Result, Path, braced};
 
 use crate::defs::kw;
@@ -45,6 +46,7 @@ impl Parse for TypeClause {
 }
 
 pub struct TypeCheck {
+    new_scope: bool,
     clauses: Vec<TypeClause>,
     return_clause: TypeClause,
 }
@@ -52,6 +54,16 @@ pub struct TypeCheck {
 impl Parse for TypeCheck {
     fn parse(input: ParseStream) -> Result<Self> {
         input.parse::<kw::typecheck>()?;
+        let new_scope = if input.peek(Paren) {
+            let content;
+            parenthesized!(content in input);
+            content.parse::<kw::new>()?;
+            content.parse::<kw::scope>()?;
+            true
+        }
+        else {
+            false
+        };
         let content;
         braced!(content in input);
         let mut clauses = vec![];
@@ -62,6 +74,6 @@ impl Parse for TypeCheck {
         content.parse::<Token![yield]>()?;
         let return_clause = content.parse()?;
         content.parse::<Token![;]>()?;
-        Ok(Self { clauses, return_clause })
+        Ok(Self { clauses, return_clause, new_scope })
     }
 }
