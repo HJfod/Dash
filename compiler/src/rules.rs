@@ -56,14 +56,26 @@ define_rules! {
                 })
             }
         }
+
+        typecheck {
+            Ty::Never
+        }
     }
 
     rule Path {
         match absolute:"::"? items:Ident ~ ("::" :Ident)*;
+
+        typecheck {
+            Ty::Never
+        }
     }
 
     rule ExprList {
         match exprs:(:Expr ";"+) until "}" | EOF;
+
+        typecheck {
+            Ty::Void
+        }
     }
 
     rule Expr {
@@ -96,6 +108,9 @@ define_rules! {
                 meta
             })
         }
+        typecheck {
+            Ty::Int
+        }
     }
 
     rule Float {
@@ -108,6 +123,9 @@ define_rules! {
                 ))?,
                 meta
             })
+        }
+        typecheck {
+            Ty::Float
         }
     }
 
@@ -132,10 +150,17 @@ define_rules! {
             }
             res
         } '"';
+        typecheck {
+            Ty::String
+        }
     }
 
     rule Entity {
         match ident:Ident;
+
+        typecheck {
+            exists ident;
+        }
     }
 
     rule UnOp {
@@ -183,10 +208,16 @@ define_rules! {
 
     rule Index {
         match $expr:Expr "[" index:Expr "]";
+
+        typecheck {
+            index -> i32;
+        }
     }
 
     rule Call {
         match $expr:Expr "(" args:(:Expr ~ ("," :Expr) until (")") | ("," ")") ","?) unless ")" ")";
+
+        typecheck {}
     }
 
     rule Block {
@@ -204,7 +235,7 @@ define_rules! {
         typecheck {
             value -> ty;
             push Var(self.name.full_ident(), ty.or(value).unwrap_or(Ty::Unknown));
-            return Ty::Never;
+            Ty::Never
         }
     }
 
@@ -214,7 +245,7 @@ define_rules! {
         typecheck {
             cond -> Ty::Bool;
             falsy -> truthy;
-            return truthy;
+            truthy
         }
     }
 
