@@ -314,3 +314,15 @@ impl Src {
         }
     }
 }
+
+pub trait Logger<'s> {
+    fn log_msg(&self, msg: &Message<'s>);
+}
+
+pub struct ConsoleLogger;
+
+impl<'s> Logger<'s> for ConsoleLogger {
+    fn log_msg(&self, msg: &Message<'s>) {
+        println!("{msg}");
+    }
+}

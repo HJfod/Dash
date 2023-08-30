@@ -5,6 +5,10 @@ extern crate proc_macro;
 extern crate proc_macro2;
 extern crate quote;
 extern crate syn;
+extern crate unicode_xid;
+use std::{collections::HashSet, hash::Hash};
+use unicode_xid::UnicodeXID;
+
 use proc_macro::TokenStream;
 use proc_macro2::{TokenStream as TokenStream2, Span};
 use quote::{quote, format_ident};
@@ -35,6 +39,9 @@ fn parse_list<T: Parse>(input: ParseStream) -> Result<Vec<T>> {
 }
 
 mod kw {
+    syn::custom_keyword!(keywords);
+    syn::custom_keyword!(contextual);
+    syn::custom_keyword!(reserve);
     syn::custom_keyword!(rule);
     syn::custom_keyword!(into);
     syn::custom_keyword!(while_peek);
@@ -558,6 +565,44 @@ impl Clause {
             }
             Self::Default => Ok(ClauseTy::Default)
         }
+    }
+
+    fn verify_keywords(&self, kws: &HashSet<Keyword>) -> Result<()> {
+        match self {
+            Self::List { peek_condition, items, rust: _ } => {
+                peek_condition.iter().map(|i| i.verify_keywords(kws)).collect::<Result<_>>()?;
+                items.iter().map(|i| i.clause().verify_keywords(kws)).collect::<Result<_>>()?;
+            }
+            Self::OneOf(items) | Self::Concat(items) | Self::ConcatVec(items) => {
+                items.iter().map(|i| i.verify_keywords(kws)).collect::<Result<_>>()?;
+            }
+            Self::Option(clause, unless) => {
+                clause.verify_keywords(kws)?;
+                unless.iter().map(|i| i.verify_keywords(kws)).collect::<Result<_>>()?;
+            }
+            Self::Repeat(clause, _) => {
+                clause.verify_keywords(kws)?;
+            }
+            Self::String(lit) => {
+                let value = lit.value();
+                if value.chars().take(1).all(|c| c.is_xid_start()) &&
+                    value.chars().skip(1).all(|c| c.is_xid_continue())
+                {
+                    if let Some(kw) = kws.iter().find(|kw| kw.to_string() == lit.value()) {
+                        if let Keyword::Reserved(_) = kw {
+                            Err(Error::new(lit.span(), "keyword is only reserved"))?;
+                        }
+                    }
+                    else {
+                        Err(Error::new(lit.span(), "unknown keyword"))?;
+                    }
+                }
+            }
+            Self::Char(_) | Self::Rule(_) |
+            Self::EnumVariant(_, _) | Self::Default |
+            Self::FnMatcher { ret_ty: _, body: _ } => {}
+        }
+        Ok(())
     }
 }
 
@@ -1507,9 +1552,57 @@ impl Gen for Enum {
     }
 }
 
+#[derive(Clone)]
+enum Keyword {
+    Strict(LitStr),
+    Contextual(LitStr),
+    Reserved(LitStr),
+}
+
+impl Keyword {
+    fn lit(&self) -> &LitStr {
+        match self {
+            Self::Strict(lit) | Self::Contextual(lit) | Self::Reserved(lit) => &lit,
+        }
+    }
+
+    fn to_string(&self) -> String {
+        self.lit().value()
+    }
+}
+
+impl PartialEq for Keyword {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
+impl Eq for Keyword {}
+
+impl Hash for Keyword {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.to_string().hash(state)
+    }
+}
+
+impl Parse for Keyword {
+    fn parse(input: ParseStream) -> Result<Self> {
+        if input.parse::<kw::reserve>().is_ok() {
+            Ok(Keyword::Reserved(input.parse()?))
+        }
+        else if input.parse::<kw::contextual>().is_ok() {
+            Ok(Keyword::Contextual(input.parse()?))
+        }
+        else {
+            Ok(Keyword::Strict(input.parse()?))
+        }
+    }
+}
+
 enum Item {
     MatchRule(Rule),
     Enum(Enum),
+    Keywords(Vec<Keyword>),
 }
 
 impl Parse for Item {
@@ -1519,6 +1612,14 @@ impl Parse for Item {
         }
         else if input.peek(Token![enum]) {
             Ok(Item::Enum(input.parse()?))
+        }
+        else if input.parse::<kw::keywords>().is_ok() {
+            let kws;
+            braced!(kws in input);
+            Ok(Item::Keywords(
+                Punctuated::<Keyword, Token![,]>::parse_terminated(&kws)?
+                    .into_iter().collect()
+            ))
         }
         else {
             Err(Error::new(Span::call_site(), "expected rule"))
@@ -1531,6 +1632,7 @@ impl Gen for Item {
         match self {
             Item::MatchRule(r) => r.gen(),
             Item::Enum(e) => e.gen(),
+            Item::Keywords(_) => Ok(quote! {}),
         }
     }
 }
@@ -1555,14 +1657,72 @@ impl Gen for Rules {
         for use_ in &self.uses {
             stream.extend(quote! { #use_ });
         }
+
+        let mut all_kws = HashSet::new();
+        for rule in &self.items {
+            match rule {
+                Item::Keywords(kws) => {
+                    for kw in kws {
+                        if all_kws.contains(kw) {
+                            Err(Error::new(kw.lit().span(), "keyword is already defined"))?;
+                        }
+                        all_kws.insert(kw.clone());
+                    }
+                }
+                _ => {}
+            }
+        }
+        
         for rule in &self.items {
             stream.extend(rule.gen()?);
+            match rule {
+                Item::MatchRule(rule) => {
+                    rule.matches.iter()
+                        .map(|m| m.clause.verify_keywords(&all_kws))
+                        .collect::<Result<_>>()?;
+                }
+                _ => {}
+            }
         }
+
+        let mut kw_stream = quote! {};
+        let mut contextual_kw_stream = quote! {};
+        let mut reserved_kw_stream = quote! {};
+        for kw in all_kws {
+            match kw {
+                Keyword::Strict(kw) => kw_stream.extend(quote! { #kw => true, }),
+                Keyword::Contextual(kw) => contextual_kw_stream.extend(quote! { #kw => true, }),
+                Keyword::Reserved(kw) => reserved_kw_stream.extend(quote! { #kw => true, }),
+            }
+        }
+
         Ok(quote! {
             pub mod ast {
                 use unicode_xid::UnicodeXID;
                 use crate::src::{Loc, Message};
                 use crate::parser::{Parser, Rule, ExprMeta};
+
+                fn is_keyword(value: &str) -> bool {
+                    match value {
+                        #kw_stream
+                        _ => false
+                    }
+                }
+
+                fn is_contextual_keyword(value: &str) -> bool {
+                    match value {
+                        #contextual_kw_stream
+                        _ => false
+                    }
+                }
+
+                fn is_reserved_keyword(value: &str) -> bool {
+                    match value {
+                        #reserved_kw_stream
+                        _ => false
+                    }
+                }
+
                 #stream
             }
         })

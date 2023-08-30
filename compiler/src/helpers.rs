@@ -5,7 +5,7 @@ use crate::parser::Rule;
 macro_rules! rule_peek {
     ($parser: ident, $expr: expr) => {
         {
-            let start = $parser.skip_ws();
+            let start = $parser.pos();
             match || -> Result<_, Message<'s>> {
                 Ok($expr)
             }() {
@@ -26,7 +26,7 @@ macro_rules! rule_peek {
 macro_rules! rule_try {
     ($parser: ident, $expr: expr) => {
         {
-            let start = $parser.skip_ws();
+            let start = $parser.pos();
             match || -> Result<_, Message<'s>> {
                 Ok($expr)
             }() {

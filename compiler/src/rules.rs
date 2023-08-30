@@ -4,6 +4,15 @@ use gdml_macros::define_rules;
 define_rules! {
     use crate::src::Level;
 
+    keywords {
+        "let", "fun", "decl", "struct",
+        "is", "as",
+        "if", "else", "for", "while",
+        "extern", "export", "import",
+        reserve "match",
+        reserve "switch",
+    }
+
     enum Op as "operator" {
         Add     -> "+",
         Sub     -> "-",
@@ -34,11 +43,23 @@ define_rules! {
     rule Ident {
         value: String;
         match value:XID_Start & XID_Continue* => {
-            Ok(Self {
-                value,
-                meta: parser.get_meta(start)
-            })
+            if is_keyword(&value) {
+                Err(parser.error(start, format!("Expected identifier, got keyword '{value}'")))
+            }
+            else if is_reserved_keyword(&value) {
+                Err(parser.error(start, format!("Expected identifier, got reserved keyword '{value}'")))
+            }
+            else {
+                Ok(Self {
+                    value,
+                    meta: parser.get_meta(start)
+                })
+            }
         }
+    }
+
+    rule Path {
+        match absolute:"::"? items:Ident ~ ("::" :Ident)*;
     }
 
     rule ExprList {
@@ -170,31 +191,30 @@ define_rules! {
 
     rule Block {
         match "{" list:ExprList "}";
+
+        typecheck {
+            list...;
+            return Ty::Never;
+        }
     }
 
     rule VarDecl {
         match "let" name:Ident ty:(?":" :TypeExpr) value:(?"=" :Expr);
 
-        impl fn typecheck(&self, state: &mut TypeState) -> Ty {
-            state.push_entity(Var::new(self.name, match (self.ty, self.value) {
-                (Some(t), Some(v)) => state.expect_ty_eq(t, v),
-                (Some(t), None)    => t,
-                (None,    Some(v)) => v,
-                (None,    None)    => {
-                    state.error("Variables need an explicit type or value to infer it from");
-                    Ty::Invalid
-                },
-            }));
-            Ty::Void
+        typecheck {
+            value -> ty;
+            push Var(self.name.full_ident(), ty.or(value).unwrap_or(Ty::Unknown));
+            return Ty::Never;
         }
     }
 
     rule If {
         match "if" cond:Expr "{" truthy:Expr "}" falsy:(?"else" :("{" :Expr "}") | If as Expr);
 
-        impl fn typecheck(&self, state: &mut TypeState) -> Ty {
-            state.expect_ty_eq(self.cond.typecheck(), Ty::Bool);
-            state.expect_ty_eq(self.truthy.typecheck(), self.falsy.map(|f| f.typecheck()).unwrap_or(Ty::Any))
+        typecheck {
+            cond -> Ty::Bool;
+            falsy -> truthy;
+            return truthy;
         }
     }
 
@@ -202,10 +222,15 @@ define_rules! {
         enum TypeName;
 
         match :TypeName;
+        expected "type";
     }
 
     rule TypeName {
         match ident:Ident;
+
+        typecheck {
+            exists ident as type;
+        }
     }
 
 }
