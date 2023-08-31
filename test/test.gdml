@@ -1,2 +1,4 @@
 
-let x;
+let x: int = "hi";
+x + 5.2;
+y;

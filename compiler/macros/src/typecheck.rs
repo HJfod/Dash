@@ -117,10 +117,10 @@ impl TypeClause {
                 let a = a.gen_with_ctx(ctx)?;
                 let b = b.gen_with_ctx(ctx)?;
                 Ok(quote! { {
-                    let a = #a;
-                    let b = #b;
+                    let a = &#a;
+                    let b = &#b;
                     if !a.convertible_to(b) {
-                        _gdml_type_checker.emit_msg(&Message::from_meta(
+                        checker.emit_msg(&Message::from_meta(
                             Level::Error,
                             format!("Type '{a}' is not convertible to '{b}'"),
                             self.meta(),
@@ -136,13 +136,13 @@ impl TypeClause {
                 }
                 Ok(match kind {
                     EntityKind::Fun => quote! {
-                        _gdml_type_checker.push_entity(Entity::new_fun(#args_stream)).ty()
+                        checker.push(compiler::Entity::new_fun(#args_stream)).ty()
                     },
                     EntityKind::Var => quote! {
-                        _gdml_type_checker.push_entity(Entity::new_var(#args_stream)).ty()
+                        checker.push(compiler::Entity::new_var(#args_stream)).ty()
                     },
                     EntityKind::Type => quote! {
-                        _gdml_type_checker.push_type(Ty::new(#args_stream)).clone()
+                        checker.push(compiler::Ty::new(#args_stream)).clone()
                     },
                 })
             }
@@ -150,28 +150,30 @@ impl TypeClause {
                 match kind {
                     FindKind::Entity => {
                         Ok(quote! {
-                            match _gdml_type_checker.find_entity(self.#name.path()) {
+                            match checker.find::<compiler::Entity>(self.#name.path()) {
                                 Some(e) => e.ty(),
                                 None => {
-                                    _gdml_type_checker.emit_msg(&Message::from_meta(
+                                    checker.emit_msg(&Message::from_meta(
                                         Level::Error,
                                         format!("Unknown entity '{}'", self.#name.path()),
                                         self.#name.meta(),
                                     ));
+                                    Ty::Invalid
                                 }
                             }
                         })
                     }
                     FindKind::Type => {
                         Ok(quote! {
-                            match _gdml_type_checker.find_type(self.#name.path()) {
-                                Some(e) => e,
+                            match checker.find::<Ty>(self.#name.path()) {
+                                Some(e) => e.clone(),
                                 None => {
-                                    _gdml_type_checker.emit_msg(&Message::from_meta(
+                                    checker.emit_msg(&Message::from_meta(
                                         Level::Error,
                                         format!("Unknown type '{}'", self.#name.path()),
                                         self.#name.meta(),
                                     ));
+                                    Ty::Invalid
                                 }
                             }
                         })
@@ -225,11 +227,12 @@ impl TypeCheck {
         let mut stream = quote! {};
         for mem in &ctx.members {
             stream.extend(quote! {
-                let #mem = self.#mem.typecheck(_gdml_type_checker);
+                let #mem = self.#mem.typecheck(checker);
             });
         }
         for clause in &self.clauses {
             stream.extend(clause.gen_with_ctx(ctx)?);
+            stream.extend(quote!{ ; });
         }
         let ret = self.return_clause.gen_with_ctx(ctx)?;
         stream.extend(quote! {
@@ -237,9 +240,9 @@ impl TypeCheck {
         });
         if self.new_scope {
             stream = quote! {
-                _gdml_type_checker.push_scope();
+                checker.push_scope();
                 #stream
-                _gdml_type_checker.pop_scope();
+                checker.pop_scope();
             };
         }
         stream.extend(quote! { _gdml_type_ret });

@@ -1,5 +1,5 @@
 use clap::Parser;
-use gdml_compiler::src::Src;
+use gdml_compiler::{src::Src, compiler::{TypeCheck, TypeChecker}};
 use std::path::PathBuf;
 
 /// Simple program to greet a person
@@ -20,6 +20,8 @@ fn main() {
             Ok(src) => match src.parse() {
                 Ok(ast) => {
                     println!("ast: {ast:#?}");
+                    let mut checker = TypeChecker::new();
+                    ast.typecheck(&mut checker);
                 }
                 Err(e) => {
                     println!("Unable to parse src {}: {e}", src.name());

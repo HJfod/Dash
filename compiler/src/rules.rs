@@ -2,7 +2,6 @@ use gdml_macros::define_rules;
 
 define_rules! {
     use crate::src::Level;
-    use crate::compiler;
 
     keywords {
         "let", "fun", "decl", "struct",
@@ -58,7 +57,7 @@ define_rules! {
         }
 
         typecheck {
-            yield Ty::Never;
+            yield Ty::Invalid;
         }
 
         fn path(&self) -> compiler::Path {
@@ -70,7 +69,7 @@ define_rules! {
         match absolute:"::"? components:Ident ~ ("::" :Ident)*;
 
         typecheck {
-            yield Ty::Never;
+            yield Ty::Invalid;
         }
 
         fn path(&self) -> compiler::Path {
@@ -231,7 +230,7 @@ define_rules! {
 
         typecheck {
             index -> Ty::Int;
-            yield Ty::Never;
+            yield Ty::Void;
         }
     }
 
@@ -239,7 +238,7 @@ define_rules! {
         match $expr:Expr "(" args:(:Expr ~ ("," :Expr) until (")") | ("," ")") ","?) unless ")" ")";
 
         typecheck {
-            yield Ty::Never;
+            yield Ty::Void;
         }
     }
 
@@ -247,7 +246,7 @@ define_rules! {
         match "{" list:ExprList "}";
 
         typecheck (new scope) {
-            yield Ty::Never;
+            yield Ty::Void;
         }
     }
 
@@ -256,7 +255,7 @@ define_rules! {
 
         typecheck {
             value -> ty;
-            new var(self.name.full_ident(), ty.or(value));
+            new var(checker.resolve_new(self.name.path()), ty.or(value));
             yield Ty::Void;
         }
     }

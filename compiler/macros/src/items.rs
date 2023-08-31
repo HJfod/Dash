@@ -270,12 +270,12 @@ impl Gen for Rule {
                         Self::#var_name(v) => &v.meta(),
                     });
                     typecheck_stream.extend(quote! {
-                        Self::#var_name(v) => v.typecheck(_gdml_type_checker),
+                        Self::#var_name(v) => v.typecheck(checker),
                     });
                 }
                 trait_impls.extend(quote! {
                     impl<'s, 'l> TypeCheck<'s, 'l> for #name<'s> {
-                        fn typecheck(&self, _gdml_type_checker: &mut TypeChecker<'s, 'l>) -> Ty {
+                        fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty {
                             match self {
                                 #typecheck_stream
                             }
@@ -454,7 +454,7 @@ impl Gen for Rule {
             let body = typecheck.gen_with_ctx(&TypeCtx { members })?;
             trait_impls.extend(quote! {
                 impl<'s, 'l> TypeCheck<'s, 'l> for #name<'s> {
-                    fn typecheck(&self, _gdml_type_checker: &mut TypeChecker<'s, 'l>) -> Ty {
+                    fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty {
                         #body
                     }
                 }
@@ -577,6 +577,12 @@ impl Gen for Enum {
                         #try_from_str
                         _ => Err(()),
                     }
+                }
+            }
+
+            impl<'s, 'l> TypeCheck<'s, 'l> for #name {
+                fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty {
+                    Ty::Invalid
                 }
             }
         })
@@ -729,7 +735,7 @@ impl Gen for Rules {
                 use unicode_xid::UnicodeXID;
                 use crate::src::{Loc, Message};
                 use crate::parser::{Parser, Rule, ExprMeta};
-                use crate::compiler::{TypeCheck, TypeChecker, Ty};
+                use crate::compiler::{self, TypeCheck, TypeChecker, Ty};
 
                 fn is_keyword(value: &str) -> bool {
                     match value {

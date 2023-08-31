@@ -3,7 +3,6 @@
 
 pub mod compiler;
 mod helpers;
-mod r;
 pub mod parser;
 pub mod rules;
 pub mod src;
