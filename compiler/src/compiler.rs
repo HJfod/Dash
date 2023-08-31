@@ -1,6 +1,10 @@
 use std::{collections::HashMap, fmt::Display};
 
-use crate::src::{Logger, Message, ConsoleLogger};
+use crate::{src::{Logger, Message, ConsoleLogger}, rules::ast::Op};
+
+pub trait PathLike {
+    fn resolve<T: Item>(&self, space: &Space<T>) -> FullPath;
+}
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct FullPath {
@@ -20,6 +24,12 @@ impl FullPath {
 impl Display for FullPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("::{}", self.path.join("::")))
+    }
+}
+
+impl PathLike for FullPath {
+    fn resolve<T: Item>(&self, _: &Space<T>) -> FullPath {
+        self.clone()
     }
 }
 
@@ -48,6 +58,12 @@ impl Display for Path {
     }
 }
 
+impl PathLike for Path {
+    fn resolve<T: Item>(&self, space: &Space<T>) -> FullPath {
+        space.resolve(self)
+    }
+}
+
 pub trait Item: Sized {
     fn full_path(&self) -> FullPath;
     fn space<'s>(scope: &'s Scope) -> &'s Space<Self>;
@@ -63,6 +79,10 @@ pub enum Ty {
     Int,
     Float,
     String,
+    Function {
+        params: Vec<(String, Ty)>,
+        ret_ty: Box<Ty>,
+    },
 }
 
 impl Ty {
@@ -72,6 +92,13 @@ impl Ty {
 
     pub fn convertible_to(&self, other: &Ty) -> bool {
         self.is_unreal() || other.is_unreal() || *self == *other
+    }
+
+    pub fn eval_ty(&self) -> Ty {
+        match self {
+            Self::Function { params: _, ret_ty } => *ret_ty.clone(),
+            _ => self.clone(),
+        }
     }
 
     /// Returns `other` if this type is `invalid` or `unknown`
@@ -95,6 +122,12 @@ impl Display for Ty {
             Self::Int => f.write_str("int"),
             Self::Float => f.write_str("float"),
             Self::String => f.write_str("string"),
+            Self::Function { params, ret_ty } => f.write_fmt(format_args!(
+                "fun({}) -> {ret_ty}", params.iter()
+                    .map(|(p, t)| format!("{p}: {t}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
         }
     }
 }
@@ -128,6 +161,20 @@ pub struct Entity {
 impl Entity {
     pub fn new_var(name: FullPath, ty: Ty) -> Entity {
         Entity { name, kind: EntityKind::Variable {}, ty }
+    }
+
+    pub fn new_binop(a: Ty, op: Op, b: Ty, ret: Ty) -> Entity {
+        Entity {
+            name: get_binop_fun_name(&a, op, &b),
+            kind: EntityKind::Function {},
+            ty: Ty::Function {
+                params: vec![
+                    ("a".into(), a),
+                    ("b".into(), b),
+                ],
+                ret_ty: ret.into()
+            }
+        }
     }
 
     pub fn ty(&self) -> Ty {
@@ -169,11 +216,11 @@ impl<T: Item> Space<T> {
         self.entities.get(&name)
     }
 
-    pub fn resolve(&self, path: Path) -> FullPath {
+    pub fn resolve(&self, path: &Path) -> FullPath {
         self.entities.iter()
-            .find(|(full, _)| full.ends_with(&path))
+            .find(|(full, _)| full.ends_with(path))
             .map(|p| p.0.clone())
-            .unwrap_or(path.into_full())
+            .unwrap_or(path.clone().into_full())
     }
 }
 
@@ -197,6 +244,7 @@ impl Scope {
         res.types.push(Ty::Int);
         res.types.push(Ty::Float);
         res.types.push(Ty::String);
+        res.entities.push(Entity::new_binop(Ty::Int, Op::Add, Ty::Int, Ty::Int));
         res
     }
 }
@@ -211,10 +259,10 @@ impl<'s, 'l> TypeChecker<'s, 'l> {
         T::space_mut(self.scopes.last_mut().unwrap()).push(item)
     }
 
-    pub fn find<T: Item>(&self, path: Path) -> Option<&T> {
+    pub fn find<T: Item, P: PathLike>(&self, path: &P) -> Option<&T> {
         self.scopes.iter().rev().find_map(|p| {
             let space = T::space(&p);
-            space.find(space.resolve(path.clone()))
+            space.find(path.resolve(space))
         })
     }
 
@@ -291,4 +339,12 @@ impl<'s, 'l, T: TypeCheck<'s, 'l>> TypeCheck<'s, 'l> for Vec<T> {
         self.iter().for_each(|v| drop(v.typecheck(checker)));
         Ty::Invalid
     }
+}
+
+pub fn get_unop_fun_name(a: &Ty, op: Op) -> FullPath {
+    FullPath::new([format!("@unop`{a}{op}`")])
+}
+
+pub fn get_binop_fun_name(a: &Ty, op: Op, b: &Ty) -> FullPath {
+    FullPath::new([format!("@binop`{a}{op}{b}`")])
 }

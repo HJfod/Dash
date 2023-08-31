@@ -542,7 +542,7 @@ impl Gen for Enum {
             });
         }
         Ok(quote! {
-            #[derive(Debug, Clone)]
+            #[derive(Debug, Clone, Copy)]
             pub enum #name {
                 #variants
             }

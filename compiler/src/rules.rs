@@ -2,6 +2,7 @@ use gdml_macros::define_rules;
 
 define_rules! {
     use crate::src::Level;
+    use crate::compiler::get_binop_fun_name;
 
     keywords {
         "let", "fun", "decl", "struct",
@@ -220,8 +221,21 @@ define_rules! {
         }
 
         typecheck {
-            lhs -> rhs;
-            yield lhs;
+            yield {
+                match checker.find::<compiler::Entity, _>(
+                    &get_binop_fun_name(&lhs, self.op, &rhs)
+                ) {
+                    Some(e) => e.ty().eval_ty(),
+                    None => {
+                        checker.emit_msg(&Message::from_meta(
+                            Level::Error,
+                            format!("Cannot apply '{}' to '{lhs}' and '{rhs}'", self.op),
+                            self.meta()
+                        ));
+                        Ty::Invalid
+                    }
+                }
+            };
         }
     }
 

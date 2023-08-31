@@ -5,8 +5,8 @@ use proc_macro2::TokenStream as TokenStream2;
 use proc_macro2::{Ident, Span};
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
-use syn::token::Paren;
-use syn::{Token, Error, parenthesized, Expr};
+use syn::token::{Paren, Brace};
+use syn::{Token, Error, parenthesized, Expr, ExprBlock};
 use syn::{Result, Path, braced};
 
 use crate::defs::kw;
@@ -45,7 +45,7 @@ impl Parse for TypeOrIdent {
     }
 }
 
-pub enum FindKind {
+pub enum FindAsKind {
     Type,
     Entity,
 }
@@ -60,11 +60,13 @@ pub enum TypeClause {
     // A -> B
     Convertible(Box<TypeClause>, Box<TypeClause>),
     // find A as b
-    Find(Ident, FindKind),
+    Find(Ident, FindAsKind),
     // new kind(...)
     NewEntity(Span, EntityKind, Vec<Expr>),
     // type::name
     Type(Path),
+    // { ... }
+    Code(ExprBlock),
 }
 
 impl Parse for TypeClause {
@@ -74,8 +76,8 @@ impl Parse for TypeClause {
             input.parse::<Token![as]>()?;
             let kind = input.parse::<TypeOrIdent>()?;
             Ok(Self::Find(name, match kind.to_string().as_str() {
-                "type" => FindKind::Type,
-                "entity" => FindKind::Entity,
+                "type" => FindAsKind::Type,
+                "entity" => FindAsKind::Entity,
                 _ => Err(Error::new(kind.span(), "invalid find kind"))?
             }))
         }
@@ -93,6 +95,9 @@ impl Parse for TypeClause {
                 },
                 params.parse_terminated(Expr::parse, Token![,])?.into_iter().collect()
             ))
+        }
+        else if input.peek(Brace) {
+            Ok(Self::Code(input.parse()?))
         }
         else {
             let a = Self::Type(input.parse()?);
@@ -148,41 +153,48 @@ impl TypeClause {
             }
             Self::Find(name, kind) => {
                 match kind {
-                    FindKind::Entity => {
-                        Ok(quote! {
-                            match checker.find::<compiler::Entity>(self.#name.path()) {
-                                Some(e) => e.ty(),
+                    FindAsKind::Entity => {
+                        Ok(quote! { {
+                            let path = self.#name.path();
+                            match checker.find::<compiler::Entity, _>(&path) {
+                                Some(e) => e.ty().eval_ty(),
                                 None => {
                                     checker.emit_msg(&Message::from_meta(
                                         Level::Error,
-                                        format!("Unknown entity '{}'", self.#name.path()),
+                                        format!("Unknown entity '{}'", path),
                                         self.#name.meta(),
                                     ));
                                     Ty::Invalid
                                 }
                             }
-                        })
+                        } })
                     }
-                    FindKind::Type => {
-                        Ok(quote! {
-                            match checker.find::<Ty>(self.#name.path()) {
-                                Some(e) => e.clone(),
+                    FindAsKind::Type => {
+                        Ok(quote! { {
+                            let path = self.#name.path();
+                            match checker.find::<Ty, _>(&path) {
+                                Some(e) => e.clone().eval_ty(),
                                 None => {
                                     checker.emit_msg(&Message::from_meta(
                                         Level::Error,
-                                        format!("Unknown type '{}'", self.#name.path()),
+                                        format!("Unknown type '{}'", path),
                                         self.#name.meta(),
                                     ));
                                     Ty::Invalid
                                 }
                             }
-                        })
+                        } })
                     }
                 }
             }
             Self::Type(path) => {
                 Ok(quote! {
                     #path
+                })
+            }
+            Self::Code(expr) => {
+                Ok(quote! {
+                    #expr
                 })
             }
         }
