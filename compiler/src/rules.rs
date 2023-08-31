@@ -2,6 +2,7 @@ use gdml_macros::define_rules;
 
 define_rules! {
     use crate::src::Level;
+    use crate::compiler;
 
     keywords {
         "let", "fun", "decl", "struct",
@@ -59,13 +60,24 @@ define_rules! {
         typecheck {
             yield Ty::Never;
         }
+
+        fn path(&self) -> compiler::Path {
+            compiler::Path::new([self.value.clone()], false)
+        }
     }
 
     rule Path {
-        match absolute:"::"? items:Ident ~ ("::" :Ident)*;
+        match absolute:"::"? components:Ident ~ ("::" :Ident)*;
 
         typecheck {
             yield Ty::Never;
+        }
+
+        fn path(&self) -> compiler::Path {
+            compiler::Path::new(
+                self.components.iter().map(|c| c.value.clone()).collect::<Vec<_>>(),
+                self.absolute.is_some()
+            )
         }
     }
 
@@ -164,6 +176,10 @@ define_rules! {
 
     rule UnOp {
         match op:Op.* target:Expr[unop];
+
+        typecheck {
+            yield target;
+        }
     }
 
     rule BinOp {
@@ -203,13 +219,18 @@ define_rules! {
                 })
             }))
         }
+
+        typecheck {
+            lhs -> rhs;
+            yield lhs;
+        }
     }
 
     rule Index {
         match $expr:Expr "[" index:Expr "]";
 
         typecheck {
-            index -> i32;
+            index -> Ty::Int;
             yield Ty::Never;
         }
     }
@@ -235,7 +256,7 @@ define_rules! {
 
         typecheck {
             value -> ty;
-            push Var(self.name.full_ident(), ty.or(value));
+            new var(self.name.full_ident(), ty.or(value));
             yield Ty::Void;
         }
     }

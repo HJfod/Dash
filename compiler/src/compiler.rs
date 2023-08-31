@@ -1,14 +1,32 @@
 use std::{collections::HashMap, fmt::Display};
 
-use crate::{
-    parser::Rule,
-    src::{Level, Logger, Message},
-};
+use crate::src::{Logger, Message};
 
-#[derive(Hash, PartialEq, Eq)]
-pub struct FullIdent {
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub struct FullPath {
+    path: Vec<String>,
+}
+
+impl FullPath {
+    pub fn new<T: Into<Vec<String>>>(path: T) -> Self {
+        Self { path: path.into() }
+    }
+}
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub struct Path {
     absolute: bool,
     path: Vec<String>,
+}
+
+impl Path {
+    pub fn new<T: Into<Vec<String>>>(path: T, absolute: bool) -> Self {
+        Self { path: path.into(), absolute }
+    }
+
+    pub fn into_full(self) -> FullPath {
+        FullPath::new(self.path)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -26,8 +44,10 @@ impl Ty {
         *self == *other
     }
 
-    pub fn full_name(&self) -> FullIdent {
-
+    pub fn full_name(&self) -> FullPath {
+        match self {
+            builtin => FullPath::new([format!("{builtin}")])
+        }
     }
 
     /// Returns `other` if this type is `never` or `unknown`
@@ -60,30 +80,44 @@ pub enum EntityKind {
 }
 
 pub struct Entity {
-    name: FullIdent,
+    name: FullPath,
     kind: EntityKind,
     ty: Ty,
 }
 
 impl Entity {
-    pub fn new_var(name: FullIdent, ty: Ty) -> Entity {
+    pub fn new_var(name: FullPath, ty: Ty) -> Entity {
         Entity { name, kind: EntityKind::Variable {}, ty }
+    }
+
+    pub fn ty(&self) -> Ty {
+        self.ty.clone()
     }
 }
 
 pub struct TypeChecker<'s, 'l> {
     logger: &'l dyn Logger<'s>,
-    types: HashMap<FullIdent, Ty>,
-    entities: HashMap<FullIdent, Entity>,
+    types: HashMap<FullPath, Ty>,
+    entities: HashMap<FullPath, Entity>,
 }
 
 impl<'s, 'l> TypeChecker<'s, 'l> {
-    pub fn push_entity(&mut self, entity: Entity) {
-        self.entities.insert(entity.name, entity);
+    pub fn push_entity(&mut self, entity: Entity) -> &Entity {
+        let name = entity.name.clone();
+        self.entities.insert(entity.name.clone(), entity);
+        self.entities.get(&name).unwrap()
+    }
+
+    pub fn find_entity(&self, name: Path) -> Option<&Entity> {
+        todo!()
     }
 
     pub fn push_type(&mut self, ty: Ty) {
         self.types.insert(ty.full_name(), ty);
+    }
+
+    pub fn find_type(&self, name: Path) -> Option<&Ty> {
+        todo!()
     }
 
     pub fn emit_msg(&self, msg: &Message<'s>) {
@@ -95,35 +129,48 @@ impl<'s, 'l> TypeChecker<'s, 'l> {
     }
 }
 
-pub trait TypeCheck<'s, 'l>: Rule<'s> {
+pub trait TypeCheck<'s, 'l> {
     fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty;
+}
 
-    fn expect_ty(&self, checker: &mut TypeChecker<'s, 'l>, ty: Ty) -> Ty {
-        let self_ty = self.typecheck(checker);
-        if !ty.convertible_to(&self_ty) {
-            checker.emit_msg(&Message::from_meta(
-                Level::Error,
-                format!("Expected type '{ty}', got '{self_ty}'"),
-                self.meta(),
-            ));
-        }
-        ty
+impl<'s, 'l> TypeCheck<'s, 'l> for String {
+    fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty {
+        Ty::String
     }
+}
 
-    fn expect_ty_convertible_to<O: TypeCheck<'s, 'l>>(
-        &self,
-        checker: &mut TypeChecker<'s, 'l>,
-        into: &O,
-    ) -> Ty {
-        let self_ty = self.typecheck(checker);
-        let into_ty = into.typecheck(checker);
-        if !self_ty.convertible_to(&into_ty) {
-            checker.emit_msg(&Message::from_meta(
-                Level::Error,
-                format!("Type '{self_ty}' is not convertible to '{into_ty}'"),
-                self.meta(),
-            ));
+impl<'s, 'l> TypeCheck<'s, 'l> for i64 {
+    fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty {
+        Ty::Int
+    }
+}
+
+impl<'s, 'l> TypeCheck<'s, 'l> for f64 {
+    fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty {
+        Ty::Float
+    }
+}
+
+impl<'s, 'l, T: TypeCheck<'s, 'l>> TypeCheck<'s, 'l> for Box<T> {
+    fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty {
+        self.as_ref().typecheck(checker)
+    }
+}
+
+impl<'s, 'l, T: TypeCheck<'s, 'l>> TypeCheck<'s, 'l> for Option<T> {
+    fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty {
+        if let Some(ref value) = self {
+            value.typecheck(checker)
         }
-        into_ty
+        else {
+            Ty::Unknown
+        }
+    }
+}
+
+impl<'s, 'l, T: TypeCheck<'s, 'l>> TypeCheck<'s, 'l> for Vec<T> {
+    fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty {
+        self.iter().for_each(|v| drop(v.typecheck(checker)));
+        Ty::Unknown
     }
 }

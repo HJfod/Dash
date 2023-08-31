@@ -18,7 +18,7 @@ use syn::{
 use crate::{
     clause::{Clause, RuleClause},
     defs::{kw, parse_list, Gen},
-    gen::GenCtx, typecheck::TypeCheck,
+    gen::GenCtx, typecheck::{TypeCheck, TypeCtx},
 };
 
 pub struct Match {
@@ -118,7 +118,7 @@ pub struct Rule {
 impl Parse for Rule {
     fn parse(input: ParseStream) -> Result<Self> {
         input.parse::<kw::rule>()?;
-        let name = input.parse()?;
+        let name = input.parse::<Ident>()?;
         let contents;
         braced!(contents in input);
         let mut kind = RuleKind::Struct { fields: vec![] };
@@ -216,23 +216,32 @@ impl Gen for Rule {
 
         let mut fns = TokenStream2::new();
         let mut trait_impls = TokenStream2::new();
+        let mut members = Vec::new();
 
         let (decl, meta, is_enum) = match &self.kind {
             RuleKind::Struct { fields } => {
-                let mut members = TokenStream2::new();
-                members.extend(first.gen_members()?);
+                let mut members_stream = TokenStream2::new();
+                let (str, mem) = first.gen_members()?;
+                members_stream.extend(str);
+                for m in mem {
+                    members.push(m);
+                }
                 for field in fields {
-                    members.extend(quote! {
+                    members.push(field.ident.clone().unwrap());
+                    members_stream.extend(quote! {
                         #field,
                     });
                 }
-                members.extend(quote! {
+                members_stream.extend(quote! {
                     meta: ExprMeta<'s>,
                 });
+                if self.typecheck.is_none() {
+                    return Err(Error::new(name.span(), "must have typecheck in struct rule"));
+                }
                 (
                     quote! {
                         struct #name<'s> {
-                            #members
+                            #members_stream
                         }
                     },
                     quote! {
@@ -244,6 +253,7 @@ impl Gen for Rule {
             RuleKind::Enum { variants } => {
                 let mut meta_variants = TokenStream2::new();
                 let mut variants_stream = TokenStream2::new();
+                let mut typecheck_stream = TokenStream2::new();
                 for var in variants {
                     let var_name = &var;
                     variants_stream.extend(quote! {
@@ -259,7 +269,19 @@ impl Gen for Rule {
                     meta_variants.extend(quote! {
                         Self::#var_name(v) => &v.meta(),
                     });
+                    typecheck_stream.extend(quote! {
+                        Self::#var_name(v) => v.typecheck(_gdml_type_checker),
+                    });
                 }
+                trait_impls.extend(quote! {
+                    impl<'s, 'l> TypeCheck<'s, 'l> for #name<'s> {
+                        fn typecheck(&self, _gdml_type_checker: &mut TypeChecker<'s, 'l>) -> Ty {
+                            match self {
+                                #typecheck_stream
+                            }
+                        }
+                    }
+                });
                 (
                     quote! {
                         enum #name<'s> {
@@ -425,15 +447,22 @@ impl Gen for Rule {
             }
         });
 
+        if let Some(ref typecheck) = self.typecheck {
+            if is_enum {
+                return Err(Error::new(self.name.span(), "cannot manually typecheck enum rules"));
+            }
+            let body = typecheck.gen_with_ctx(&TypeCtx { members })?;
+            trait_impls.extend(quote! {
+                impl<'s, 'l> TypeCheck<'s, 'l> for #name<'s> {
+                    fn typecheck(&self, _gdml_type_checker: &mut TypeChecker<'s, 'l>) -> Ty {
+                        #body
+                    }
+                }
+            });
+        }
+
         for fun in &self.impls {
             match fun.sig.ident.to_string().as_str() {
-                "typecheck" => {
-                    // impls.extend(quote! {
-                    //     impl TypeCheck for #name {
-                    //         #fun
-                    //     }
-                    // });
-                }
                 _ => {
                     return Err(Error::new(fun.sig.ident.span(), "unknown impl"));
                 }
@@ -700,6 +729,7 @@ impl Gen for Rules {
                 use unicode_xid::UnicodeXID;
                 use crate::src::{Loc, Message};
                 use crate::parser::{Parser, Rule, ExprMeta};
+                use crate::compiler::{TypeCheck, TypeChecker, Ty};
 
                 fn is_keyword(value: &str) -> bool {
                     match value {

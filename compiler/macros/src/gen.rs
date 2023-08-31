@@ -389,13 +389,14 @@ impl Clause {
         }
     }
 
-    pub fn gen_members(&self) -> Result<TokenStream2> {
+    pub fn gen_members(&self) -> Result<(TokenStream2, Vec<Ident>)> {
         match self {
             Self::List {
                 peek_condition,
                 items,
                 rust,
             } => {
+                let mut list = Vec::new();
                 let mut stream = TokenStream2::new();
                 if peek_condition.is_empty() && rust.is_none() {
                     for item in items {
@@ -403,15 +404,16 @@ impl Clause {
                             item
                         {
                             let ty = clause.eval_ty()?.gen()?;
+                            list.push(name.clone());
                             stream.extend(quote! {
                                 #name: #ty,
                             });
                         }
                     }
                 }
-                Ok(stream)
+                Ok((stream, list))
             }
-            _ => Ok(TokenStream2::new()),
+            _ => Ok((TokenStream2::new(), vec![])),
         }
     }
 }
