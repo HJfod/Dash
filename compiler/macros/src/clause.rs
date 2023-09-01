@@ -362,7 +362,12 @@ impl Clause {
                 }
                 Ok(first)
             }
-            Self::Option(clause, _) => Ok(ClauseTy::Option(clause.eval_ty()?.into())),
+            Self::Option(clause, _) => {
+                match clause.eval_ty()? {
+                    vec@ClauseTy::Vec(_) => Ok(vec),
+                    other => Ok(ClauseTy::Option(other.into()))
+                }
+            }
             Self::Concat(list) => {
                 for a in list {
                     if !matches!(a.eval_ty()?, ClauseTy::String | ClauseTy::Char) {

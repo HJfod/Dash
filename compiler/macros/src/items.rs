@@ -12,7 +12,7 @@ use syn::{
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
     token::Bracket,
-    Error, Field, Ident, ImplItemFn, ItemFn, ItemUse, LitStr, Result, Token,
+    Error, Field, Ident, ItemFn, ItemUse, LitStr, Result, Token,
 };
 
 use crate::{
@@ -111,7 +111,6 @@ pub struct Rule {
     kind: RuleKind,
     matches: Vec<Match>,
     fns: Vec<ItemFn>,
-    impls: Vec<ImplItemFn>,
     typecheck: Option<TypeCheck>,
 }
 
@@ -124,7 +123,6 @@ impl Parse for Rule {
         let mut kind = RuleKind::Struct { fields: vec![] };
         let mut matches = vec![];
         let mut fns = vec![];
-        let mut impls = vec![];
         let mut expected = None;
         let mut typecheck = None;
         loop {
@@ -134,10 +132,6 @@ impl Parse for Rule {
             }
             if contents.peek(Token![fn]) {
                 fns.push(contents.parse::<ItemFn>()?);
-                continue;
-            }
-            if contents.parse::<Token![impl]>().is_ok() {
-                impls.push(contents.parse::<ImplItemFn>()?);
                 continue;
             }
             if contents.peek(kw::typecheck) {
@@ -197,7 +191,6 @@ impl Parse for Rule {
             kind,
             matches,
             fns,
-            impls,
             typecheck,
         })
     }
@@ -235,9 +228,6 @@ impl Gen for Rule {
                 members_stream.extend(quote! {
                     meta: ExprMeta<'s>,
                 });
-                if self.typecheck.is_none() {
-                    return Err(Error::new(name.span(), "must have typecheck in struct rule"));
-                }
                 (
                     quote! {
                         struct #name<'s> {
@@ -275,6 +265,7 @@ impl Gen for Rule {
                 }
                 trait_impls.extend(quote! {
                     impl<'s, 'l> TypeCheck<'s, 'l> for #name<'s> {
+                        #[allow(unused)]
                         fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty {
                             match self {
                                 #typecheck_stream
@@ -454,19 +445,22 @@ impl Gen for Rule {
             let body = typecheck.gen_with_ctx(&TypeCtx { members })?;
             trait_impls.extend(quote! {
                 impl<'s, 'l> TypeCheck<'s, 'l> for #name<'s> {
+                    #[allow(unused)]
                     fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty {
                         #body
                     }
                 }
             });
         }
-
-        for fun in &self.impls {
-            match fun.sig.ident.to_string().as_str() {
-                _ => {
-                    return Err(Error::new(fun.sig.ident.span(), "unknown impl"));
+        else if !is_enum {
+            trait_impls.extend(quote! {
+                impl<'r, 's: 'r, 'l> TypeCheckHelper<'r, 's, 'l> for #name<'s> {
+                    type Ret = &'r Self;
+                    fn typecheck_helper(&'r self, checker: &mut TypeChecker<'s, 'l>) -> Self::Ret {
+                        self
+                    }
                 }
-            }
+            });
         }
 
         Ok(quote! {
@@ -736,6 +730,7 @@ impl Gen for Rules {
                 use crate::src::{Loc, Message};
                 use crate::parser::{Parser, Rule, ExprMeta};
                 use crate::compiler::{self, TypeCheck, TypeChecker, Ty};
+                use crate::helpers::{EvalTypeHelper, TypeCheckHelper};
 
                 fn is_keyword(value: &str) -> bool {
                     match value {

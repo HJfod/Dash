@@ -224,6 +224,12 @@ impl Clause {
             }
             Self::Option(clause, unless) => {
                 let body = clause.gen()?;
+                let map_to_vec = if matches!(clause.eval_ty()?, ClauseTy::Vec(_)) {
+                    quote! { .unwrap_or(vec![]) }
+                }
+                else {
+                    quote! {}
+                };
                 if let Some(unless) = unless {
                     let unless = unless.gen()?;
                     Ok(quote! {
@@ -232,11 +238,11 @@ impl Clause {
                         }
                         else {
                             None
-                        }
+                        }#map_to_vec
                     })
                 } else {
                     Ok(quote! {
-                        crate::rule_try!(parser, #body).ok()
+                        crate::rule_try!(parser, #body).ok()#map_to_vec
                     })
                 }
             }

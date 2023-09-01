@@ -1,4 +1,5 @@
 
+use std::collections::HashSet;
 use std::fmt::Display;
 use proc_macro2::TokenStream as TokenStream2;
 
@@ -45,68 +46,79 @@ impl Parse for TypeOrIdent {
     }
 }
 
-pub enum FindAsKind {
+pub enum SpaceKind {
     Type,
     Entity,
-}
-
-pub enum EntityKind {
-    Var,
-    Fun,
-    Type,
 }
 
 pub enum TypeClause {
     // A -> B
     Convertible(Box<TypeClause>, Box<TypeClause>),
     // find A as b
-    Find(Ident, FindAsKind),
-    // new kind(...)
-    NewEntity(Span, EntityKind, Vec<Expr>),
+    Find(Ident, SpaceKind),
+    // new kind name?: ty
+    NewEntity(SpaceKind, Ident, bool, Expr),
     // type::name
     Type(Path),
     // { ... }
     Code(ExprBlock),
+    // scope { ... }
+    Scope(Span, Vec<TypeClause>),
+    // check member
+    Check(Ident),
+    // eval clause
+    Eval(Box<TypeClause>),
 }
 
 impl Parse for TypeClause {
     fn parse(input: ParseStream) -> Result<Self> {
-        if input.parse::<kw::find>().is_ok() {
+        let a = if input.parse::<kw::find>().is_ok() {
             let name = input.parse()?;
             input.parse::<Token![as]>()?;
             let kind = input.parse::<TypeOrIdent>()?;
-            Ok(Self::Find(name, match kind.to_string().as_str() {
-                "type" => FindAsKind::Type,
-                "entity" => FindAsKind::Entity,
-                _ => Err(Error::new(kind.span(), "invalid find kind"))?
-            }))
+            Self::Find(name, match kind.to_string().as_str() {
+                "type" => SpaceKind::Type,
+                "entity" => SpaceKind::Entity,
+                _ => Err(Error::new(kind.span(), "invalid kind"))?
+            })
         }
         else if input.parse::<kw::new>().is_ok() {
             let kind = input.parse::<TypeOrIdent>()?;
-            let params;
-            parenthesized!(params in input);
-            Ok(Self::NewEntity(
-                kind.span(),
+            let name = input.parse()?;
+            let optional = input.parse::<Token![?]>().is_ok();
+            input.parse::<Token![:]>()?;
+            Self::NewEntity(
                 match kind.to_string().as_str() {
-                    "type" => EntityKind::Type,
-                    "fun" => EntityKind::Fun,
-                    "var" => EntityKind::Var,
-                    _ => Err(Error::new(kind.span(), "invalid entity kind"))?
+                    "type" => SpaceKind::Type,
+                    "entity" => SpaceKind::Entity,
+                    _ => Err(Error::new(kind.span(), "invalid kind"))?
                 },
-                params.parse_terminated(Expr::parse, Token![,])?.into_iter().collect()
-            ))
+                name, optional,
+                input.parse()?
+            )
+        }
+        else if input.parse::<kw::check>().is_ok() {
+            Self::Check(input.parse()?)
+        }
+        else if input.parse::<kw::eval>().is_ok() {
+            Self::Eval(input.parse()?)
+        }
+        else if let Ok(scope) = input.parse::<kw::scope>() {
+            let c;
+            braced!(c in input);
+            Self::Scope(scope.span, c.parse_terminated(TypeClause::parse, Token![;])?.into_iter().collect())
         }
         else if input.peek(Brace) {
-            Ok(Self::Code(input.parse()?))
+            Self::Code(input.parse()?)
         }
         else {
-            let a = Self::Type(input.parse()?);
-            if input.parse::<Token![->]>().is_ok() {
-                Ok(Self::Convertible(a.into(), input.parse()?))
-            }
-            else {
-                Ok(a)
-            }
+            Self::Type(input.parse()?)
+        };
+        if input.parse::<Token![->]>().is_ok() {
+            Ok(Self::Convertible(a.into(), input.parse()?))
+        }
+        else {
+            Ok(a)
         }
     }
 }
@@ -116,15 +128,15 @@ pub struct TypeCtx {
 }
 
 impl TypeClause {
-    pub fn gen_with_ctx(&self, ctx: &TypeCtx) -> Result<TokenStream2> {
+    pub fn gen_with_ctx(&self, ctx: &TypeCtx, manual: bool, checked: &mut HashSet<String>) -> Result<TokenStream2> {
         match self {
             Self::Convertible(a, b) => {
-                let a = a.gen_with_ctx(ctx)?;
-                let b = b.gen_with_ctx(ctx)?;
+                let a = a.gen_with_ctx(ctx, manual, checked)?;
+                let b = b.gen_with_ctx(ctx, manual, checked)?;
                 Ok(quote! { {
-                    let a = &#a;
-                    let b = &#b;
-                    if !a.convertible_to(b) {
+                    let a = #a.to_type();
+                    let b = #b.to_type();
+                    if !a.convertible_to(&b) {
                         checker.emit_msg(&Message::from_meta(
                             Level::Error,
                             format!("Type '{a}' is not convertible to '{b}'"),
@@ -134,58 +146,88 @@ impl TypeClause {
                     b
                 } })
             }
-            Self::NewEntity(_, kind, args) => {
-                let mut args_stream = quote! {};
-                for arg in args {
-                    args_stream.extend(quote! { #arg, });
+            Self::NewEntity(kind, name, optional, ty_expr) => {
+                let find_ty;
+                let found_fmt_string;
+                let push = match kind {
+                    SpaceKind::Entity => {
+                        find_ty = quote! { compiler::Entity };
+                        found_fmt_string = quote! { "Entity '{}' already exists in this scope" };
+                        quote! {
+                            checker.push(compiler::Entity::new(path, #ty_expr)).ty()
+                        }
+                    }
+                    SpaceKind::Type => {
+                        find_ty = quote! { Ty };
+                        found_fmt_string = quote! { "Type '{}' already exists in this scope" };
+                        quote! {
+                            checker.push(compiler::Ty::new(path, #ty_expr)).clone()
+                        }
+                    }
+                };
+                let find_or_push = quote! {
+                    let path = checker.resolve_new(name.path());
+                    match checker.last_space::<#find_ty>().find(&path) {
+                        None => {
+                            #push
+                        }
+                        Some(e) => {
+                            checker.emit_msg(&Message::from_meta(
+                                Level::Error,
+                                format!(#found_fmt_string, name.path()),
+                                name.meta(),
+                            ));
+                            Ty::Invalid
+                        }
+                    }
+                };
+                if *optional {
+                    Ok(quote! { {
+                        if let Some(ref name) = self.#name {
+                            #find_or_push
+                        }
+                        else {
+                            #ty_expr
+                        }
+                    } })
                 }
-                Ok(match kind {
-                    EntityKind::Fun => quote! {
-                        checker.push(compiler::Entity::new_fun(#args_stream)).ty()
-                    },
-                    EntityKind::Var => quote! {
-                        checker.push(compiler::Entity::new_var(#args_stream)).ty()
-                    },
-                    EntityKind::Type => quote! {
-                        checker.push(compiler::Ty::new(#args_stream)).clone()
-                    },
-                })
+                else {
+                    Ok(quote! { {                    
+                        let name = &self.#name;
+                        #find_or_push
+                    } })
+                }
             }
             Self::Find(name, kind) => {
+                let find_ty;
+                let notfound_fmt_string;
+                let res_ty;
                 match kind {
-                    FindAsKind::Entity => {
-                        Ok(quote! { {
-                            let path = self.#name.path();
-                            match checker.find::<compiler::Entity, _>(&path) {
-                                Some(e) => e.ty().eval_ty(),
-                                None => {
-                                    checker.emit_msg(&Message::from_meta(
-                                        Level::Error,
-                                        format!("Unknown entity '{}'", path),
-                                        self.#name.meta(),
-                                    ));
-                                    Ty::Invalid
-                                }
-                            }
-                        } })
+                    SpaceKind::Entity => {
+                        find_ty = quote! { compiler::Entity };
+                        notfound_fmt_string = quote! { "Unknown entity '{}'" };
+                        res_ty = quote! { e.ty() };
                     }
-                    FindAsKind::Type => {
-                        Ok(quote! { {
-                            let path = self.#name.path();
-                            match checker.find::<Ty, _>(&path) {
-                                Some(e) => e.clone().eval_ty(),
-                                None => {
-                                    checker.emit_msg(&Message::from_meta(
-                                        Level::Error,
-                                        format!("Unknown type '{}'", path),
-                                        self.#name.meta(),
-                                    ));
-                                    Ty::Invalid
-                                }
-                            }
-                        } })
+                    SpaceKind::Type => {
+                        find_ty = quote! { Ty };
+                        notfound_fmt_string = quote! { "Unknown type '{}'" };
+                        res_ty = quote! { e.clone() };
                     }
                 }
+                Ok(quote! { {
+                    let path = self.#name.path();
+                    match checker.find::<#find_ty, _>(&path) {
+                        Some(e) => #res_ty,
+                        None => {
+                            checker.emit_msg(&Message::from_meta(
+                                Level::Error,
+                                format!(#notfound_fmt_string, path),
+                                self.#name.meta(),
+                            ));
+                            Ty::Invalid
+                        }
+                    }
+                } })
             }
             Self::Type(path) => {
                 Ok(quote! {
@@ -197,24 +239,56 @@ impl TypeClause {
                     #expr
                 })
             }
+            Self::Scope(span, clauses) => {
+                if !manual {
+                    Err(Error::new(span.clone(), "cannot have scope blocks in non-manual typecheck"))?;
+                }
+                let mut stream = quote! {};
+                for clause in clauses {
+                    stream.extend(clause.gen_with_ctx(ctx, manual, checked)?);
+                }
+                Ok(quote! {
+                    checker.push_scope();
+                    #stream;
+                    checker.pop_scope();
+                })
+            }
+            Self::Check(mem) => {
+                if !manual {
+                    Err(Error::new(mem.span(), "cannot have manual checks in non-manual typecheck"))?;
+                }
+                if !checked.contains(&mem.to_string()) {
+                    Err(Error::new(mem.span(), "member doesn't exist or has already been checked"))?;
+                }
+                checked.remove(&mem.to_string());
+                Ok(quote! {
+                    let #mem = self.#mem.typecheck_helper(checker);
+                })
+            }
+            Self::Eval(clause) => {
+                let body = clause.gen_with_ctx(ctx, manual, checked)?;
+                Ok(quote! {
+                    #body.return_ty()
+                })
+            }
         }
     }
 }
 
 pub struct TypeCheck {
-    new_scope: bool,
+    name_span: Span,
+    manual_members: bool,
     clauses: Vec<TypeClause>,
     return_clause: TypeClause,
 }
 
 impl Parse for TypeCheck {
     fn parse(input: ParseStream) -> Result<Self> {
-        input.parse::<kw::typecheck>()?;
-        let new_scope = if input.peek(Paren) {
+        let name_span = input.parse::<kw::typecheck>()?.span;
+        let manual_members = if input.peek(Paren) {
             let content;
             parenthesized!(content in input);
-            content.parse::<kw::new>()?;
-            content.parse::<kw::scope>()?;
+            content.parse::<kw::manual>()?;
             true
         }
         else {
@@ -230,34 +304,36 @@ impl Parse for TypeCheck {
         content.parse::<Token![yield]>()?;
         let return_clause = content.parse()?;
         content.parse::<Token![;]>()?;
-        Ok(Self { clauses, return_clause, new_scope })
+        Ok(Self { name_span, clauses, return_clause, manual_members })
     }
 }
 
 impl TypeCheck {
     pub fn gen_with_ctx(&self, ctx: &TypeCtx) -> Result<TokenStream2> {
         let mut stream = quote! {};
+        let mut checked = HashSet::new();
         for mem in &ctx.members {
-            stream.extend(quote! {
-                let #mem = self.#mem.typecheck(checker);
-            });
+            if !self.manual_members {
+                stream.extend(quote! {
+                    let #mem = self.#mem.typecheck_helper(checker);
+                });
+            }
+            checked.insert(mem.to_string());
         }
         for clause in &self.clauses {
-            stream.extend(clause.gen_with_ctx(ctx)?);
+            stream.extend(clause.gen_with_ctx(ctx, self.manual_members, &mut checked)?);
             stream.extend(quote!{ ; });
         }
-        let ret = self.return_clause.gen_with_ctx(ctx)?;
-        stream.extend(quote! {
-            let _gdml_type_ret = #ret;
-        });
-        if self.new_scope {
-            stream = quote! {
-                checker.push_scope();
-                #stream
-                checker.pop_scope();
-            };
+        let ret = self.return_clause.gen_with_ctx(ctx, self.manual_members, &mut checked)?;
+        if !checked.is_empty() && self.manual_members {
+            Err(Error::new(self.name_span.clone(), format!(
+                "not all members checked, missing: {}",
+                checked.into_iter().collect::<Vec<_>>().join(", ")
+            )))?;
         }
-        stream.extend(quote! { _gdml_type_ret });
-        Ok(stream)
+        Ok(quote! {
+            #stream;
+            #ret
+        })
     }
 }

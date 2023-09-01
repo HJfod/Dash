@@ -6,10 +6,12 @@ define_rules! {
 
     keywords {
         "let", "fun", "decl", "struct",
-        "is", "as",
+        "is", "as", "from", 
         "if", "else", "for", "while",
+        "return",
         "extern", "export", "import",
         reserve "match",
+        reserve "yield",
         reserve "switch",
     }
 
@@ -57,10 +59,6 @@ define_rules! {
             }
         }
 
-        typecheck {
-            yield Ty::Invalid;
-        }
-
         fn path(&self) -> compiler::Path {
             compiler::Path::new([self.value.clone()], false)
         }
@@ -68,10 +66,6 @@ define_rules! {
 
     rule Path {
         match absolute:"::"? components:Ident ~ ("::" :Ident)*;
-
-        typecheck {
-            yield Ty::Invalid;
-        }
 
         fn path(&self) -> compiler::Path {
             compiler::Path::new(
@@ -90,7 +84,7 @@ define_rules! {
     }
 
     rule Expr {
-        enum If, VarDecl, Block, Float, Int, Str, Entity, BinOp, UnOp, Index, Call;
+        enum If, VarDecl, FunDecl, Return, Block, Float, Int, Str, Entity, BinOp, UnOp, Index, Call;
 
         match :BinOp;
         match[unop] ??OP_CHAR :UnOp;
@@ -99,6 +93,8 @@ define_rules! {
             while_peek "[" into Index;
         match[nonop] ??"if" :If;
         match ??"let" :VarDecl;
+        match ??"fun" :FunDecl;
+        match ??"return" :Return;
         match ??"{" :Block;
         match ?"(" :Expr ")";
         match ??'"' :Str;
@@ -225,7 +221,7 @@ define_rules! {
                 match checker.find::<compiler::Entity, _>(
                     &get_binop_fun_name(&lhs, self.op, &rhs)
                 ) {
-                    Some(e) => e.ty().eval_ty(),
+                    Some(e) => e.ty(),
                     None => {
                         checker.emit_msg(&Message::from_meta(
                             Level::Error,
@@ -252,6 +248,19 @@ define_rules! {
         match $expr:Expr "(" args:(:Expr ~ ("," :Expr) until (")") | ("," ")") ","?) unless ")" ")";
 
         typecheck {
+            yield eval {
+                Ty::Function {
+                    params: args.into_iter().map(|a| (String::new(), a)).collect(),
+                    ret_ty: Ty::Inferred.into(),
+                }
+            } -> expr;
+        }
+    }
+
+    rule Return {
+        match "return" expr:Expr?;
+
+        typecheck {
             yield Ty::Void;
         }
     }
@@ -259,7 +268,10 @@ define_rules! {
     rule Block {
         match "{" list:ExprList "}";
 
-        typecheck (new scope) {
+        typecheck (manual) {
+            scope {
+                check list;
+            };
             yield Ty::Void;
         }
     }
@@ -269,8 +281,43 @@ define_rules! {
 
         typecheck {
             value -> ty;
-            new var(checker.resolve_new(self.name.path()), ty.or(value));
+            new entity name: ty.or(value).unwrap_or(Ty::Inferred);
             yield Ty::Void;
+        }
+    }
+
+    rule FunParamDecl {
+        match name: Ident ":" ty:TypeExpr;
+
+        typecheck {
+            yield new entity name: ty;
+        }
+    }
+
+    rule FunDecl {
+        match "fun" name:Ident? "("
+            params:(:FunParamDecl ~ ("," :FunParamDecl) until (")") | ("," ")") ","?) unless ")"
+        ")" "->" ret_ty:TypeExpr "{"
+            body:ExprList
+        "}";
+
+        typecheck (manual) {
+            check name;
+            check ret_ty;
+            scope {
+                check params;
+                scope {
+                    check body;
+                    body -> ret_ty;
+                };
+            };
+            yield new entity name?: Ty::Function {
+                params: self.params.iter()
+                    .zip(params)
+                    .map(|(p, ty)| (p.name.value.clone(), ty))
+                    .collect(),
+                ret_ty: ret_ty.into()
+            };
         }
     }
 

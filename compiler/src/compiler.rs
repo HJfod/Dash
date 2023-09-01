@@ -94,7 +94,7 @@ impl Ty {
         self.is_unreal() || other.is_unreal() || *self == *other
     }
 
-    pub fn eval_ty(&self) -> Ty {
+    pub fn return_ty(&self) -> Ty {
         match self {
             Self::Function { params: _, ret_ty } => *ret_ty.clone(),
             _ => self.clone(),
@@ -147,26 +147,19 @@ impl Item for Ty {
     }
 }
 
-pub enum EntityKind {
-    Variable {},
-    Function {},
-}
-
 pub struct Entity {
     name: FullPath,
-    kind: EntityKind,
     ty: Ty,
 }
 
 impl Entity {
-    pub fn new_var(name: FullPath, ty: Ty) -> Entity {
-        Entity { name, kind: EntityKind::Variable {}, ty }
+    pub fn new(name: FullPath, ty: Ty) -> Entity {
+        Entity { name, ty }
     }
 
     pub fn new_binop(a: Ty, op: Op, b: Ty, ret: Ty) -> Entity {
         Entity {
             name: get_binop_fun_name(&a, op, &b),
-            kind: EntityKind::Function {},
             ty: Ty::Function {
                 params: vec![
                     ("a".into(), a),
@@ -212,8 +205,8 @@ impl<T: Item> Space<T> {
         self.entities.get(&name).unwrap()
     }
 
-    pub fn find(&self, name: FullPath) -> Option<&T> {
-        self.entities.get(&name)
+    pub fn find(&self, name: &FullPath) -> Option<&T> {
+        self.entities.get(name)
     }
 
     pub fn resolve(&self, path: &Path) -> FullPath {
@@ -255,6 +248,10 @@ pub struct TypeChecker<'s, 'l> {
 }
 
 impl<'s, 'l> TypeChecker<'s, 'l> {
+    pub fn last_space<T: Item>(&self) -> &Space<T> {
+        T::space(self.scopes.last().unwrap())
+    }
+
     pub fn push<T: Item>(&mut self, item: T) -> &T {
         T::space_mut(self.scopes.last_mut().unwrap()).push(item)
     }
@@ -262,7 +259,7 @@ impl<'s, 'l> TypeChecker<'s, 'l> {
     pub fn find<T: Item, P: PathLike>(&self, path: &P) -> Option<&T> {
         self.scopes.iter().rev().find_map(|p| {
             let space = T::space(&p);
-            space.find(path.resolve(space))
+            space.find(&path.resolve(space))
         })
     }
 
@@ -297,48 +294,6 @@ impl<'s, 'l> TypeChecker<'s, 'l> {
 
 pub trait TypeCheck<'s, 'l> {
     fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty;
-}
-
-impl<'s, 'l> TypeCheck<'s, 'l> for String {
-    fn typecheck(&self, _: &mut TypeChecker<'s, 'l>) -> Ty {
-        Ty::String
-    }
-}
-
-impl<'s, 'l> TypeCheck<'s, 'l> for i64 {
-    fn typecheck(&self, _: &mut TypeChecker<'s, 'l>) -> Ty {
-        Ty::Int
-    }
-}
-
-impl<'s, 'l> TypeCheck<'s, 'l> for f64 {
-    fn typecheck(&self, _: &mut TypeChecker<'s, 'l>) -> Ty {
-        Ty::Float
-    }
-}
-
-impl<'s, 'l, T: TypeCheck<'s, 'l>> TypeCheck<'s, 'l> for Box<T> {
-    fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty {
-        self.as_ref().typecheck(checker)
-    }
-}
-
-impl<'s, 'l, T: TypeCheck<'s, 'l>> TypeCheck<'s, 'l> for Option<T> {
-    fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty {
-        if let Some(ref value) = self {
-            value.typecheck(checker)
-        }
-        else {
-            Ty::Invalid
-        }
-    }
-}
-
-impl<'s, 'l, T: TypeCheck<'s, 'l>> TypeCheck<'s, 'l> for Vec<T> {
-    fn typecheck(&self, checker: &mut TypeChecker<'s, 'l>) -> Ty {
-        self.iter().for_each(|v| drop(v.typecheck(checker)));
-        Ty::Invalid
-    }
 }
 
 pub fn get_unop_fun_name(a: &Ty, op: Op) -> FullPath {
