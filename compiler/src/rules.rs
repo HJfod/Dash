@@ -163,10 +163,10 @@ define_rules! {
     }
 
     rule Entity {
-        match ident:Ident;
+        match path:Path;
 
         typecheck {
-            yield find ident as entity;
+            yield find path as entity;
         }
     }
 
