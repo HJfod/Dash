@@ -194,18 +194,29 @@ impl Clause {
                     }
                 }
             }
-            Self::OneOf(list) => {
+            Self::OneOf(_, list, as_enum) => {
                 let mut match_options = quote! {
                     let mut furthest_match: Option<(Loc, Message<'s>)> = None;
                 };
 
-                let ty = list.first().unwrap().eval_ty()?.gen()?;
+                let (ty, res) = if let Some(as_enum) = as_enum {
+                    (
+                        quote! { #as_enum },
+                        quote! { Ok(#as_enum::from(r)) }
+                    )
+                }
+                else {
+                    (
+                        list.first().unwrap().eval_ty()?.gen()?,
+                        quote! { Ok(r) }
+                    )
+                };
 
                 for mat in list {
                     let body = mat.gen()?;
                     match_options.extend(quote! {
                         match crate::rule_try!(parser, #body) {
-                            Ok(r) => return Ok(r),
+                            Ok(r) => return #res,
                             Err(e) => {
                                 if !furthest_match.as_ref().is_some_and(|m| e.range.end <= m.0) {
                                     furthest_match = Some((e.range.end.clone(), e));

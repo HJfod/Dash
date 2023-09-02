@@ -129,8 +129,8 @@ pub enum Clause {
         items: Vec<MaybeBinded>,
         rust: Option<ExprBlock>,
     },
-    // a | b
-    OneOf(Vec<Clause>),
+    // a | b    as Enum (a | b)
+    OneOf(Span, Vec<Clause>, Option<Ident>),
     // a? a unless B
     Option(Box<Clause>, Option<Box<Clause>>),
     // a & b
@@ -264,14 +264,28 @@ impl Clause {
     }
 
     fn parse_one_of(input: ParseStream) -> Result<Self> {
-        let mut res = vec![Self::parse_concat(input)?];
-        while input.parse::<Token![|]>().is_ok() {
-            res.push(Self::parse_concat(input)?);
+        let mut pos = input.span();
+        if input.parse::<Token![as]>().is_ok() {
+            let as_ = input.parse()?;
+            let c;
+            parenthesized!(c in input);
+            Ok(Clause::OneOf(
+                pos,
+                c.parse_terminated(Self::parse_concat, Token![|])?.into_iter().collect(),
+                Some(as_)
+            ))
         }
-        if res.len() == 1 {
-            Ok(res.remove(0))
-        } else {
-            Ok(Clause::OneOf(res))
+        else {
+            let mut res = vec![Self::parse_concat(input)?];
+            while input.parse::<Token![|]>().is_ok() {
+                pos = pos.join(input.span()).unwrap();
+                res.push(Self::parse_concat(input)?);
+            }
+            if res.len() == 1 {
+                Ok(res.remove(0))
+            } else {
+                Ok(Clause::OneOf(pos, res, None))
+            }
         }
     }
 
@@ -344,23 +358,22 @@ impl Clause {
                     Ok(ClauseTy::Option(list.into()))
                 }
             }
-            Self::OneOf(list) => {
+            Self::OneOf(span, list, as_) => {
                 if list.is_empty() {
-                    Err(Error::new(
-                        Span::call_site(),
-                        "internal error: empty one-of",
-                    ))?;
+                    Err(Error::new(span.clone(), "internal error: empty one-of"))?;
                 }
-                let first = list.first().unwrap().eval_ty()?;
-                for a in list.iter().skip(1) {
-                    if !a.eval_ty()?.is_convertible(&first) {
-                        Err(Error::new(
-                            Span::call_site(),
-                            "all one-of options must result in the same type",
-                        ))?
+                if let Some(as_enum) = as_ {
+                    Ok(ClauseTy::Rule(as_enum.clone()))
+                }
+                else {
+                    let first = list.first().unwrap().eval_ty()?;
+                    for a in list.iter().skip(1) {
+                        if !a.eval_ty()?.is_convertible(&first) {
+                            Err(Error::new(span.clone(), "all one-of options must result in the same type"))?
+                        }
                     }
+                    Ok(first)
                 }
-                Ok(first)
             }
             Self::Option(clause, _) => {
                 match clause.eval_ty()? {
@@ -422,7 +435,7 @@ impl Clause {
                     .map(|i| i.clause().verify_keywords(kws))
                     .collect::<Result<_>>()?;
             }
-            Self::OneOf(items) | Self::Concat(items) | Self::ConcatVec(items) => {
+            Self::OneOf(_, items, _) | Self::Concat(items) | Self::ConcatVec(items) => {
                 items
                     .iter()
                     .map(|i| i.verify_keywords(kws))

@@ -76,7 +76,7 @@ define_rules! {
     }
 
     rule ExprList {
-        match exprs:(:Expr ";"+) until "}" | EOF;
+        match exprs:(:(:as Expr (Block | If | FunDecl) ";"*) | (:Expr ";"+)) until "}" | EOF;
 
         typecheck {
             yield Ty::Void;
@@ -322,7 +322,7 @@ define_rules! {
     }
 
     rule If {
-        match "if" cond:Expr "{" truthy:Expr "}" falsy:(?"else" :("{" :Expr "}") | If as Expr);
+        match "if" cond:Expr "{" truthy:ExprList "}" falsy:(?"else" :as Expr (Block | If));
 
         typecheck {
             cond -> Ty::Bool;
