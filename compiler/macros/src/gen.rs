@@ -354,6 +354,11 @@ impl Clause {
                         parser.expect_not_ch(#ch)?
                     }
                 }
+                Char::Previous(ch) => {
+                    quote! {
+                        parser.expect_prev_ch(#ch)?
+                    }
+                }
                 Char::Range(a, b) => {
                     quote! {
                         parser.expect_ch_range(#a..=#b)?

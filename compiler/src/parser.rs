@@ -16,12 +16,14 @@ pub struct ExprMeta<'s> {
     pub range: Range,
 }
 
+static BUILTIN_META: ExprMeta<'static> = ExprMeta {
+    src: &Src::Builtin,
+    range: Range::zero(),
+};
+
 impl<'s> ExprMeta<'s> {
-    pub fn builtin() -> Self {
-        Self {
-            src: Src::builtin(),
-            range: Range::zero(),
-        }
+    pub fn builtin() -> &'static Self {
+        &BUILTIN_META
     }
 }
 
@@ -90,6 +92,23 @@ impl<'s> Parser<'s> {
                     "Expected '{}', got '{}'",
                     ch,
                     self.peek().map(|c| String::from(c)).unwrap_or("EOF".into())
+                ),
+            ))
+        }
+    }
+
+    pub fn expect_prev_ch(&mut self, ch: char) -> Result<char, Message<'s>> {
+        let last_pos = self.last_nws_pos();
+        let last = self.src.get(last_pos);
+        if last == Some(ch) {
+            Ok(ch)
+        } else {
+            Err(self.error_at(
+                self.src.range(last_pos, last_pos),
+                format!(
+                    "Expected '{}', got '{}'",
+                    ch,
+                    last.map(|c| String::from(c)).unwrap_or("EOF".into())
                 ),
             ))
         }
@@ -236,14 +255,18 @@ impl<'s> Parser<'s> {
         }
     }
 
-    pub fn error<M: Into<String>>(&self, start: usize, message: M) -> Message<'s> {
+    pub fn error_at<M: Into<String>>(&self, range: Range, message: M) -> Message<'s> {
         Message {
             level: Level::Error,
             info: message.into(),
             notes: Vec::new(),
             src: self.src,
-            range: self.src.range(start, self.pos),
+            range,
         }
+    }
+
+    pub fn error<M: Into<String>>(&self, start: usize, message: M) -> Message<'s> {
+        self.error_at(self.src.range(start, self.pos), message)
     }
 }
 

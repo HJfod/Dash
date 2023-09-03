@@ -18,7 +18,7 @@ pub struct Loc {
 }
 
 impl Loc {
-    pub fn zero() -> Self {
+    pub const fn zero() -> Self {
         Self {
             line: 0,
             column: 0,
@@ -52,7 +52,7 @@ pub struct Range {
 }
 
 impl Range {
-    pub fn zero() -> Self {
+    pub const fn zero() -> Self {
         Self {
             start: Loc::zero(),
             end: Loc::zero(),
@@ -203,13 +203,7 @@ impl Debug for Src {
     }
 }
 
-static BUILTIN_SRC: Src = Src::Builtin;
-
 impl Src {
-    pub fn builtin() -> &'static Self {
-        &BUILTIN_SRC
-    }
-
     pub fn from_file(path: &Path) -> Result<Self, String> {
         Ok(Src::File {
             path: path.to_path_buf(),

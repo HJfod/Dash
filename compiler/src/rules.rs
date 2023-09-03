@@ -1,18 +1,18 @@
+
 use gdml_macros::define_rules;
 
 define_rules! {
     use crate::src::Level;
-    use crate::compiler::get_binop_fun_name;
 
     keywords {
-        "let", "fun", "decl", "struct",
+        "let", "fun", "decl", "struct", "const",
         "is", "as", "from", 
         "if", "else", "for", "while",
-        "return",
+        "return", "yield",
         "extern", "export", "import",
-        reserve "match",
-        reserve "yield",
-        reserve "switch",
+        reserve {
+            "match", "switch", "mut",
+        },
     }
 
     enum Op as "operator" {
@@ -76,7 +76,7 @@ define_rules! {
     }
 
     rule ExprList {
-        match exprs:(:(:as Expr (Block | If | FunDecl) ";"*) | (:Expr ";"+)) until "}" | EOF;
+        match exprs:(:Expr ";"+ | (<='}' :";"*)) until "}" | EOF;
 
         typecheck {
             yield Ty::Void;
@@ -84,7 +84,7 @@ define_rules! {
     }
 
     rule Expr {
-        enum If, VarDecl, FunDecl, Return, Block, Float, Int, Str, Entity, BinOp, UnOp, Index, Call;
+        enum If, VarDecl, ConstDecl, FunDecl, Yield, Return, Block, Float, Int, Str, Entity, BinOp, UnOp, Index, Call;
 
         match :BinOp;
         match[unop] ??OP_CHAR :UnOp;
@@ -93,7 +93,9 @@ define_rules! {
             while_peek "[" into Index;
         match[nonop] ??"if" :If;
         match ??"let" :VarDecl;
+        match ??"const" :ConstDecl;
         match ??"fun" :FunDecl;
+        match ??"yield" :Yield;
         match ??"return" :Return;
         match ??"{" :Block;
         match ?"(" :Expr ")";
@@ -218,10 +220,8 @@ define_rules! {
 
         typecheck {
             yield {
-                match checker.find::<compiler::Entity, _>(
-                    &get_binop_fun_name(&lhs, self.op, &rhs)
-                ) {
-                    Some(e) => e.ty(),
+                match checker.binop_ty(&lhs, self.op, &rhs) {
+                    Some(ty) => ty,
                     None => {
                         checker.emit_msg(&Message::from_meta(
                             Level::Error,
@@ -252,8 +252,18 @@ define_rules! {
                 Ty::Function {
                     params: args.into_iter().map(|a| (String::new(), a)).collect(),
                     ret_ty: Ty::Inferred.into(),
+                    decl: ASTNode::Call(self)
                 }
             } -> expr;
+        }
+    }
+
+    rule Yield {
+        match "yield" expr:Expr?;
+
+        typecheck {
+            return expr from opaque;
+            yield Ty::Invalid; // todo: yield Never
         }
     }
 
@@ -261,7 +271,8 @@ define_rules! {
         match "return" expr:Expr?;
 
         typecheck {
-            yield Ty::Void;
+            return expr from function;
+            yield Ty::Invalid; // todo: yield Never
         }
     }
 
@@ -276,12 +287,22 @@ define_rules! {
         }
     }
 
+    rule ConstDecl {
+        match "const" name:Ident ty:(?":" :TypeExpr) value:(?"=" :Expr);
+
+        typecheck {
+            value -> ty;
+            new entity name: ty.or(value).unwrap_or(Ty::Inferred);
+            yield Ty::Void;
+        }
+    }
+
     rule VarDecl {
         match "let" name:Ident ty:(?":" :TypeExpr) value:(?"=" :Expr);
 
         typecheck {
             value -> ty;
-            new entity name: ty.or(value).unwrap_or(Ty::Inferred);
+            new entity mut name: ty.or(value).unwrap_or(Ty::Inferred);
             yield Ty::Void;
         }
     }
@@ -297,26 +318,23 @@ define_rules! {
     rule FunDecl {
         match "fun" name:Ident? "("
             params:(:FunParamDecl ~ ("," :FunParamDecl) until (")") | ("," ")") ","?) unless ")"
-        ")" "->" ret_ty:TypeExpr "{"
-            body:ExprList
-        "}";
+        ")" "->" ret_ty:TypeExpr body:Block as Expr? | ("=>" :Expr)?;
 
         typecheck (manual) {
             check name;
             check ret_ty;
-            scope {
+            scope function {
                 check params;
-                scope {
-                    check body;
-                    body -> ret_ty;
-                };
+                check body;
+                body -> ret_ty;
             };
             yield new entity name?: Ty::Function {
                 params: self.params.iter()
                     .zip(params)
                     .map(|(p, ty)| (p.name.value.clone(), ty))
                     .collect(),
-                ret_ty: ret_ty.into()
+                ret_ty: ret_ty.into(),
+                decl: ASTNode::FunDecl(self)
             };
         }
     }
@@ -324,8 +342,16 @@ define_rules! {
     rule If {
         match "if" cond:Expr "{" truthy:ExprList "}" falsy:(?"else" :as Expr (Block | If));
 
-        typecheck {
-            cond -> Ty::Bool;
+        typecheck (manual) {
+            scope {
+                // check cond and truthy in same scope so any let bindings in 
+                // the condition are available inside truthy
+                check cond;
+                check truthy;
+            };
+            check falsy;
+            cond -> Ty::Bool for cond;
+            // both branches must result in the same type
             falsy -> truthy;
             yield truthy;
         }
@@ -347,3 +373,5 @@ define_rules! {
     }
 
 }
+
+pub use parse_op_impl as parse_op;

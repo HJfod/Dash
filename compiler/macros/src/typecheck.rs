@@ -51,23 +51,46 @@ pub enum SpaceKind {
     Entity,
 }
 
+pub enum NewEntityKind {
+    Type,
+    // mut
+    Entity(bool),
+}
+
+pub enum ScopeKind {
+    Opaque,
+    Function,
+}
+
+impl ScopeKind {
+    pub fn parse(ident: &Ident) -> std::result::Result<Self, Error> {
+        match ident.to_string().as_str() {
+            "opaque" => Ok(Self::Opaque),
+            "function" => Ok(Self::Function),
+            _ => Err(Error::new(ident.span(), "invalid scope kind"))?
+        }
+    }
+}
+
 pub enum TypeClause {
-    // A -> B
-    Convertible(Box<TypeClause>, Box<TypeClause>),
+    // A -> B for a
+    Convertible(Box<TypeClause>, Box<TypeClause>, Option<Box<Ident>>),
     // find A as b
     Find(Ident, SpaceKind),
     // new kind name?: ty
-    NewEntity(SpaceKind, Ident, bool, Expr),
+    NewEntity(NewEntityKind, Ident, bool, Expr),
     // type::name
     Type(Path),
     // { ... }
     Code(ExprBlock),
-    // scope { ... }
-    Scope(Span, Vec<TypeClause>),
+    // scope function { ... }
+    Scope(Span, Vec<TypeClause>, ScopeKind),
     // check member
     Check(Ident),
     // eval clause
     Eval(Box<TypeClause>),
+    // return A from kind
+    ReturnFromScope(Box<TypeClause>, ScopeKind),
 }
 
 impl Parse for TypeClause {
@@ -83,19 +106,16 @@ impl Parse for TypeClause {
             })
         }
         else if input.parse::<kw::new>().is_ok() {
-            let kind = input.parse::<TypeOrIdent>()?;
+            let k = input.parse::<TypeOrIdent>()?;
+            let kind = match k.to_string().as_str() {
+                "type" => NewEntityKind::Type,
+                "entity" => NewEntityKind::Entity(input.parse::<Token![mut]>().is_ok()),
+                _ => Err(Error::new(k.span(), "invalid kind"))?
+            };
             let name = input.parse()?;
             let optional = input.parse::<Token![?]>().is_ok();
             input.parse::<Token![:]>()?;
-            Self::NewEntity(
-                match kind.to_string().as_str() {
-                    "type" => SpaceKind::Type,
-                    "entity" => SpaceKind::Entity,
-                    _ => Err(Error::new(kind.span(), "invalid kind"))?
-                },
-                name, optional,
-                input.parse()?
-            )
+            Self::NewEntity(kind, name, optional, input.parse()?)
         }
         else if input.parse::<kw::check>().is_ok() {
             Self::Check(input.parse()?)
@@ -103,10 +123,26 @@ impl Parse for TypeClause {
         else if input.parse::<kw::eval>().is_ok() {
             Self::Eval(input.parse()?)
         }
+        else if input.parse::<Token![return]>().is_ok() {
+            let name = input.parse()?;
+            input.parse::<kw::from>()?;
+            let kind = input.parse::<Ident>()?;
+            Self::ReturnFromScope(name, ScopeKind::parse(&kind)?)
+        }
         else if let Ok(scope) = input.parse::<kw::scope>() {
+            let kind = if let Ok(ident) = input.parse::<Ident>() {
+                ScopeKind::parse(&ident)?
+            }
+            else {
+                ScopeKind::Opaque
+            };
             let c;
             braced!(c in input);
-            Self::Scope(scope.span, c.parse_terminated(TypeClause::parse, Token![;])?.into_iter().collect())
+            Self::Scope(
+                scope.span,
+                c.parse_terminated(TypeClause::parse, Token![;])?.into_iter().collect(),
+                kind
+            )
         }
         else if input.peek(Brace) {
             Self::Code(input.parse()?)
@@ -115,7 +151,14 @@ impl Parse for TypeClause {
             Self::Type(input.parse()?)
         };
         if input.parse::<Token![->]>().is_ok() {
-            Ok(Self::Convertible(a.into(), input.parse()?))
+            let b = input.parse()?;
+            let span = if input.parse::<Token![for]>().is_ok() {
+                Some(input.parse()?)
+            }
+            else {
+                None
+            };
+            Ok(Self::Convertible(a.into(), b, span))
         }
         else {
             Ok(a)
@@ -130,9 +173,10 @@ pub struct TypeCtx {
 impl TypeClause {
     pub fn gen_with_ctx(&self, ctx: &TypeCtx, manual: bool, checked: &mut HashSet<String>) -> Result<TokenStream2> {
         match self {
-            Self::Convertible(a, b) => {
+            Self::Convertible(a, b, span) => {
                 let a = a.gen_with_ctx(ctx, manual, checked)?;
                 let b = b.gen_with_ctx(ctx, manual, checked)?;
+                let span = span.as_ref().map(|s| quote! { self.#s }).unwrap_or(quote! { self });
                 Ok(quote! { {
                     let a = #a.to_type();
                     let b = #b.to_type();
@@ -140,7 +184,7 @@ impl TypeClause {
                         checker.emit_msg(&Message::from_meta(
                             Level::Error,
                             format!("Type '{a}' is not convertible to '{b}'"),
-                            self.meta(),
+                            #span.meta(),
                         ));
                     }
                     b
@@ -150,14 +194,18 @@ impl TypeClause {
                 let find_ty;
                 let found_fmt_string;
                 let push = match kind {
-                    SpaceKind::Entity => {
+                    NewEntityKind::Entity(mutable) => {
                         find_ty = quote! { compiler::Entity };
                         found_fmt_string = quote! { "Entity '{}' already exists in this scope" };
                         quote! {
-                            checker.push(compiler::Entity::new(path, #ty_expr)).ty()
+                            checker.push(compiler::Entity::new(
+                                path,
+                                self.meta.src, self.meta.range.clone(),
+                                #ty_expr, #mutable
+                            )).ty()
                         }
                     }
-                    SpaceKind::Type => {
+                    NewEntityKind::Type => {
                         find_ty = quote! { Ty };
                         found_fmt_string = quote! { "Type '{}' already exists in this scope" };
                         quote! {
@@ -201,27 +249,41 @@ impl TypeClause {
             Self::Find(name, kind) => {
                 let find_ty;
                 let notfound_fmt_string;
+                let notaccessible_fmt_string;
                 let res_ty;
                 match kind {
                     SpaceKind::Entity => {
                         find_ty = quote! { compiler::Entity };
-                        notfound_fmt_string = quote! { "Unknown entity '{}'" };
+                        notfound_fmt_string = quote! { "Unknown entity '{path}'" };
+                        notaccessible_fmt_string = quote! { "Entity '{path}' can not be used here" };
                         res_ty = quote! { e.ty() };
                     }
                     SpaceKind::Type => {
                         find_ty = quote! { Ty };
-                        notfound_fmt_string = quote! { "Unknown type '{}'" };
+                        notfound_fmt_string = quote! { "Unknown type '{path}'" };
+                        notaccessible_fmt_string = quote! { "Type '{path}' can not be used here" };
                         res_ty = quote! { e.clone() };
                     }
                 }
                 Ok(quote! { {
                     let path = self.#name.path();
                     match checker.find::<#find_ty, _>(&path) {
-                        Some(e) => #res_ty,
-                        None => {
+                        FindItem::Some(e) => #res_ty,
+                        FindItem::NotAvailable(e) => {
                             checker.emit_msg(&Message::from_meta(
                                 Level::Error,
-                                format!(#notfound_fmt_string, path),
+                                format!(#notaccessible_fmt_string),
+                                self.#name.meta(),
+                            ).note(Note::new_at(
+                                format!("'{path}' declared here"),
+                                e.src(), e.range()
+                            )));
+                            Ty::Invalid
+                        }
+                        FindItem::None => {
+                            checker.emit_msg(&Message::from_meta(
+                                Level::Error,
+                                format!(#notfound_fmt_string),
                                 self.#name.meta(),
                             ));
                             Ty::Invalid
@@ -239,7 +301,7 @@ impl TypeClause {
                     #expr
                 })
             }
-            Self::Scope(span, clauses) => {
+            Self::Scope(span, clauses, kind) => {
                 if !manual {
                     Err(Error::new(span.clone(), "cannot have scope blocks in non-manual typecheck"))?;
                 }
@@ -247,8 +309,12 @@ impl TypeClause {
                 for clause in clauses {
                     stream.extend(clause.gen_with_ctx(ctx, manual, checked)?);
                 }
+                let level = match kind {
+                    ScopeKind::Function => quote! { Function },
+                    ScopeKind::Opaque => quote! { Opaque },
+                };
                 Ok(quote! {
-                    checker.push_scope();
+                    checker.push_scope(crate::compiler::ScopeLevel::#level);
                     #stream;
                     checker.pop_scope();
                 })
@@ -270,6 +336,9 @@ impl TypeClause {
                 Ok(quote! {
                     #body.return_ty()
                 })
+            }
+            Self::ReturnFromScope(clause, kind) => {
+                Ok(quote! {})
             }
         }
     }

@@ -44,6 +44,7 @@ impl MaybeBinded {
 pub enum Char {
     Single(LitChar),
     Not(LitChar),
+    Previous(LitChar),
     Range(LitChar, LitChar),
     XidStart,
     XidContinue,
@@ -163,19 +164,24 @@ impl Clause {
         if ahead.peek(kw::XID_Start) {
             input.parse::<kw::XID_Start>()?;
             res = Clause::Char(Char::XidStart)
-        } else if ahead.peek(kw::XID_Continue) {
+        }
+        else if ahead.peek(kw::XID_Continue) {
             input.parse::<kw::XID_Continue>()?;
             res = Clause::Char(Char::XidContinue)
-        } else if ahead.peek(kw::OP_CHAR) {
+        }
+        else if ahead.peek(kw::OP_CHAR) {
             input.parse::<kw::OP_CHAR>()?;
             res = Clause::Char(Char::OpChar)
-        } else if ahead.peek(kw::ANY_CHAR) {
+        }
+        else if ahead.peek(kw::ANY_CHAR) {
             input.parse::<kw::ANY_CHAR>()?;
             res = Clause::Char(Char::Any)
-        } else if ahead.peek(kw::EOF) {
+        }
+        else if ahead.peek(kw::EOF) {
             input.parse::<kw::EOF>()?;
             res = Clause::Char(Char::EOF)
-        } else if ahead.peek(Ident) {
+        }
+        else if ahead.peek(Ident) {
             // enum variants are `Enum.Variant`
             if input.peek2(Token![.]) {
                 let ident = input.parse::<Ident>()?;
@@ -190,51 +196,67 @@ impl Clause {
             else {
                 res = Clause::Rule(RuleClause::parse(input)?)
             }
-        } else if ahead.peek(Paren) {
+        }
+        else if ahead.peek(Paren) {
             let contents;
             parenthesized!(contents in input);
             res = contents.parse()?;
-        } else if ahead.peek(LitStr) {
+        }
+        else if ahead.peek(LitStr) {
             res = Clause::String(input.parse()?);
-        } else if ahead.peek(LitChar) {
+        }
+        else if ahead.peek(LitChar) {
             let ch = input.parse()?;
             if input.parse::<Token![..]>().is_ok() {
                 res = Clause::Char(Char::Range(ch, input.parse()?));
             } else {
                 res = Clause::Char(Char::Single(ch));
             }
-        } else if ahead.peek(Token![^]) {
+        }
+        else if ahead.peek(Token![<=]) {
+            input.parse::<Token![<=]>()?;
+            res = Clause::Char(Char::Previous(input.parse()?))
+        }
+        else if ahead.peek(Token![^]) {
             input.parse::<Token![^]>()?;
             res = Clause::Char(Char::Not(input.parse()?));
-        } else if ahead.peek(Token![_]) {
+        }
+        else if ahead.peek(Token![_]) {
             input.parse::<Token![_]>()?;
             res = Clause::Default;
-        } else if ahead.peek(Token![fn]) {
+        }
+        else if ahead.peek(Token![fn]) {
             input.parse::<Token![fn]>()?;
             input.parse::<Token![->]>()?;
             let ret_ty = input.parse()?;
             let body = input.parse()?;
             res = Clause::FnMatcher { ret_ty, body };
-        } else {
+        }
+        else {
             return Err(ahead.error());
         }
         if input.parse::<Token![*]>().is_ok() {
             Ok(Clause::Repeat(res.into(), RepeatMode::ZeroOrMore))
-        } else if input.parse::<Token![+]>().is_ok() {
+        }
+        else if input.parse::<Token![+]>().is_ok() {
             Ok(Clause::Repeat(res.into(), RepeatMode::OneOrMore))
-        } else if input.parse::<kw::until>().is_ok() {
+        }
+        else if input.parse::<kw::until>().is_ok() {
             Ok(Clause::Repeat(
                 res.into(),
                 RepeatMode::Until(Self::parse_one_of(input)?.into()),
             ))
-        } else if input.parse::<Token![?]>().is_ok() {
+        }
+        else if input.parse::<Token![?]>().is_ok() {
             Ok(Clause::Option(res.into(), None))
-        } else if input.parse::<kw::unless>().is_ok() {
+        }
+        else if input.parse::<kw::unless>().is_ok() {
             Ok(Clause::Option(
                 res.into(),
                 Some(Self::parse_one_of(input)?.into()),
             ))
-        } else {
+        }
+        else {
             Ok(res)
         }
     }

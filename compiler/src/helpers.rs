@@ -55,65 +55,65 @@ impl<A, T: ConcatInto<A>> ConcatInto<A> for Option<T> {
     }
 }
 
-pub trait TypeCheckHelper<'r, 's: 'r, 'l> {
+pub trait TypeCheckHelper<'a, 's> {
     type Ret;
-    fn typecheck_helper(&'r self, checker: &mut TypeChecker<'s, 'l>) -> Self::Ret;
+    fn typecheck_helper(&'a self, checker: &mut TypeChecker<'s>) -> Self::Ret;
 }
 
-impl<'r, 's: 'r, 'l, T: TypeCheck<'s, 'l>> TypeCheckHelper<'r, 's, 'l> for T {
-    type Ret = Ty;
-    fn typecheck_helper(&'r self, checker: &mut TypeChecker<'s, 'l>) -> Self::Ret {
+impl<'a, 's, T: TypeCheck<'s>> TypeCheckHelper<'a, 's> for T {
+    type Ret = Ty<'s>;
+    fn typecheck_helper(&'a self, checker: &mut TypeChecker<'s>) -> Self::Ret {
         self.typecheck(checker)
     }
 }
 
-impl<'r, 's: 'r, 'l> TypeCheckHelper<'r, 's, 'l> for String {
-    type Ret = &'r String;
-    fn typecheck_helper(&'r self, _: &mut TypeChecker<'s, 'l>) -> Self::Ret {
+impl<'a, 's> TypeCheckHelper<'a, 's> for String {
+    type Ret = &'a String;
+    fn typecheck_helper(&'a self, _: &mut TypeChecker<'s>) -> Self::Ret {
         self
     }
 }
 
-impl<'r, 's: 'r, 'l> TypeCheckHelper<'r, 's, 'l> for i64 {
+impl<'a, 's> TypeCheckHelper<'a, 's> for i64 {
     type Ret = i64;
-    fn typecheck_helper(&'r self, _: &mut TypeChecker<'s, 'l>) -> Self::Ret {
+    fn typecheck_helper(&'a self, _: &mut TypeChecker<'s>) -> Self::Ret {
         *self
     }
 }
 
-impl<'r, 's: 'r, 'l> TypeCheckHelper<'r, 's, 'l> for f64 {
+impl<'a, 's> TypeCheckHelper<'a, 's> for f64 {
     type Ret = f64;
-    fn typecheck_helper(&'r self, _: &mut TypeChecker<'s, 'l>) -> Self::Ret {
+    fn typecheck_helper(&'a self, _: &mut TypeChecker<'s>) -> Self::Ret {
         *self
     }
 }
 
-impl<'r, 's: 'r, 'l, T: TypeCheckHelper<'r, 's, 'l>> TypeCheckHelper<'r, 's, 'l> for Option<T> {
+impl<'a, 's, T: TypeCheckHelper<'a, 's>> TypeCheckHelper<'a, 's> for Option<T> {
     type Ret = Option<T::Ret>;
-    fn typecheck_helper(&'r self, checker: &mut TypeChecker<'s, 'l>) -> Self::Ret {
+    fn typecheck_helper(&'a self, checker: &mut TypeChecker<'s>) -> Self::Ret {
         self.as_ref().map(|v| v.typecheck_helper(checker))
     }
 }
 
-impl<'r, 's: 'r, 'l, T: TypeCheckHelper<'r, 's, 'l>> TypeCheckHelper<'r, 's, 'l> for Vec<T> {
+impl<'a, 's, T: TypeCheckHelper<'a, 's>> TypeCheckHelper<'a, 's> for Vec<T> {
     type Ret = Vec<T::Ret>;
-    fn typecheck_helper(&'r self, checker: &mut TypeChecker<'s, 'l>) -> Self::Ret {
+    fn typecheck_helper(&'a self, checker: &mut TypeChecker<'s>) -> Self::Ret {
         self.iter().map(|v| v.typecheck_helper(checker)).collect()
     }
 }
 
-pub trait EvalTypeHelper {
-    fn to_type(&self) -> Ty;
+pub trait EvalTypeHelper<'s> {
+    fn to_type(&self) -> Ty<'s>;
 }
 
-impl EvalTypeHelper for Ty {
-    fn to_type(&self) -> Ty {
+impl<'s> EvalTypeHelper<'s> for Ty<'s> {
+    fn to_type(&self) -> Ty<'s> {
         self.clone()
     }
 }
 
-impl EvalTypeHelper for Option<Ty> {
-    fn to_type(&self) -> Ty {
-        self.clone().unwrap_or(Ty::Invalid)
+impl<'s> EvalTypeHelper<'s> for Option<Ty<'s>> {
+    fn to_type(&self) -> Ty<'s> {
+        self.clone().unwrap_or(Ty::Inferred)
     }
 }

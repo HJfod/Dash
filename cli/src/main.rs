@@ -8,6 +8,9 @@ use std::path::PathBuf;
 struct Args {
     /// Files to compile
     files: Vec<PathBuf>,
+
+    #[clap(long)]
+    debug_ast: bool,
 }
 
 fn main() {
@@ -19,7 +22,9 @@ fn main() {
         match Src::from_file(&file) {
             Ok(src) => match src.parse() {
                 Ok(ast) => {
-                    println!("ast: {ast:#?}");
+                    if args.debug_ast {
+                        println!("AST for {}: {ast:#?}", src.name());
+                    }
                     let mut checker = TypeChecker::new();
                     ast.typecheck(&mut checker);
                 }
