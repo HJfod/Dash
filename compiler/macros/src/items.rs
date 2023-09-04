@@ -264,9 +264,9 @@ impl Gen for Rule {
                     });
                 }
                 trait_impls.extend(quote! {
-                    impl<'s> TypeCheck<'s> for #name<'s> {
+                    impl<'s, 'n> TypeCheck<'s, 'n> for #name<'s> {
                         #[allow(unused)]
-                        fn typecheck(&self, checker: &mut TypeChecker<'s>) -> Ty<'s> {
+                        fn typecheck(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
                             match self {
                                 #typecheck_stream
                             }
@@ -427,13 +427,19 @@ impl Gen for Rule {
         }
 
         trait_impls.extend(quote! {
+            impl<'s> ASTNode<'s> for #name<'s> {
+                fn meta(&self) -> &ExprMeta<'s> {
+                    #meta
+                }
+
+                fn as_ref<'n>(&'n self) -> ASTRef<'s, 'n> {
+                    ASTRef::#name(self.into())
+                }
+            }
+
             impl<'s> Rule<'s> for #name<'s> {
                 fn expect(parser: &mut Parser<'s>) -> Result<Self, Message<'s>> {
                     #matcher_body
-                }
-
-                fn meta(&self) -> &ExprMeta<'s> {
-                    #meta
                 }
             }
         });
@@ -444,9 +450,9 @@ impl Gen for Rule {
             }
             let body = typecheck.gen_with_ctx(&TypeCtx { members })?;
             trait_impls.extend(quote! {
-                impl<'s> TypeCheck<'s> for #name<'s> {
+                impl<'s, 'n> TypeCheck<'s, 'n> for #name<'s> {
                     #[allow(unused)]
-                    fn typecheck(&self, checker: &mut TypeChecker<'s>) -> Ty<'s> {
+                    fn typecheck(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
                         #body
                     }
                 }
@@ -454,9 +460,9 @@ impl Gen for Rule {
         }
         else if !is_enum {
             trait_impls.extend(quote! {
-                impl<'a, 's: 'a> TypeCheckHelper<'a, 's> for #name<'s> {
-                    type Ret = &'a Self;
-                    fn typecheck_helper(&'a self, _: &mut TypeChecker<'s>) -> Self::Ret {
+                impl<'n, 's: 'n> TypeCheckHelper<'s, 'n> for #name<'s> {
+                    type Ret = &'n Self;
+                    fn typecheck_helper(&'n self, _: &mut TypeChecker<'s, 'n>) -> Self::Ret {
                         self
                     }
                 }
@@ -464,7 +470,7 @@ impl Gen for Rule {
         }
 
         Ok(quote! {
-            #[derive(Debug, PartialEq)]
+            #[derive(Debug)]
             pub #decl
 
             impl<'s> #name<'s> {
@@ -580,9 +586,9 @@ impl Gen for Enum {
                 }
             }
 
-            impl<'a, 's> TypeCheckHelper<'a, 's> for #name {
-                type Ret = &'a Self;
-                fn typecheck_helper(&'a self, _: &mut TypeChecker<'s>) -> Self::Ret {
+            impl<'s, 'n> TypeCheckHelper<'s, 'n> for #name {
+                type Ret = &'n Self;
+                fn typecheck_helper(&'n self, _: &mut TypeChecker<'s, 'n>) -> Self::Ret {
                     self
                 }
             }
@@ -725,7 +731,6 @@ impl Gen for Rules {
 
         let mut all_rules = TokenStream2::new();
         let mut all_rules_meta = TokenStream2::new();
-        let mut all_rules_from = TokenStream2::new();
 
         for rule in &self.items {
             stream.extend(rule.gen()?);
@@ -733,17 +738,10 @@ impl Gen for Rules {
                 Item::MatchRule(rule) => {
                     let name = &rule.name;
                     all_rules.extend(quote! {
-                        #name(&'s #name<'s>),
+                        #name(RefWrapper<'n, #name<'s>>),
                     });
                     all_rules_meta.extend(quote! {
                         Self::#name(e) => e.meta(),
-                    });
-                    all_rules_from.extend(quote! {
-                        impl<'s> Into<ASTNode<'s>> for &'s #name<'s> {
-                            fn into(self) -> ASTNode<'s> {
-                                ASTNode::#name(self)
-                            }
-                        }
                     });
                     rule.matches
                         .iter()
@@ -769,10 +767,10 @@ impl Gen for Rules {
             #[macro_use]
             pub mod ast {
                 use unicode_xid::UnicodeXID;
-                use crate::src::{Loc, Message, Note};
+                use crate::src::{Loc, Message, Note, ASTNode};
                 use crate::parser::{Parser, Rule, ExprMeta};
                 use crate::compiler::{self, TypeCheck, TypeChecker, Ty, FindItem};
-                use crate::helpers::{EvalTypeHelper, TypeCheckHelper};
+                use crate::helpers::{EvalTypeHelper, TypeCheckHelper, RefWrapper};
 
                 fn is_keyword(value: &str) -> bool {
                     match value {
@@ -797,13 +795,13 @@ impl Gen for Rules {
 
                 #stream
 
-                #[derive(Debug, Clone, PartialEq)]
-                pub enum ASTNode<'s> {
+                #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+                pub enum ASTRef<'s, 'n> {
                     #all_rules
                     Builtin,
                 }
 
-                impl<'s> ASTNode<'s> {
+                impl<'s, 'n> ASTRef<'s, 'n> {
                     pub fn meta(&self) -> &ExprMeta<'s> {
                         match self {
                             #all_rules_meta
@@ -812,7 +810,11 @@ impl Gen for Rules {
                     }
                 }
 
-                #all_rules_from
+                impl<'s, 'n, T: ASTNode<'s>> From<&'n T> for ASTRef<'s, 'n> {
+                    fn from(value: &'n T) -> Self {
+                        value.as_ref()
+                    }
+                }
             }
         })
     }

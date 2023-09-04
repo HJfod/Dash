@@ -223,7 +223,7 @@ define_rules! {
                 match checker.binop_ty(&lhs, self.op, &rhs) {
                     Some(ty) => ty,
                     None => {
-                        checker.emit_msg(&Message::from_meta(
+                        checker.emit_msg(Message::from_meta(
                             Level::Error,
                             format!("Cannot apply '{}' to '{lhs}' and '{rhs}'", self.op),
                             self.meta()
@@ -252,7 +252,7 @@ define_rules! {
                 Ty::Function {
                     params: args.into_iter().map(|a| (String::new(), a)).collect(),
                     ret_ty: Ty::Inferred.into(),
-                    decl: ASTNode::Call(self)
+                    decl: self.as_ref(),
                 }
             } -> expr;
         }
@@ -334,7 +334,7 @@ define_rules! {
                     .map(|(p, ty)| (p.name.value.clone(), ty))
                     .collect(),
                 ret_ty: ret_ty.into(),
-                decl: ASTNode::FunDecl(self)
+                decl: self.into(),
             };
         }
     }

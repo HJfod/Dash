@@ -181,7 +181,7 @@ impl TypeClause {
                     let a = #a.to_type();
                     let b = #b.to_type();
                     if !a.convertible_to(&b) {
-                        checker.emit_msg(&Message::from_meta(
+                        checker.emit_msg(Message::from_meta(
                             Level::Error,
                             format!("Type '{a}' is not convertible to '{b}'"),
                             #span.meta(),
@@ -199,9 +199,7 @@ impl TypeClause {
                         found_fmt_string = quote! { "Entity '{}' already exists in this scope" };
                         quote! {
                             checker.push(compiler::Entity::new(
-                                path,
-                                self.meta.src, self.meta.range.clone(),
-                                #ty_expr, #mutable
+                                path, self.into(), #ty_expr, #mutable
                             )).ty()
                         }
                     }
@@ -220,7 +218,7 @@ impl TypeClause {
                             #push
                         }
                         Some(e) => {
-                            checker.emit_msg(&Message::from_meta(
+                            checker.emit_msg(Message::from_meta(
                                 Level::Error,
                                 format!(#found_fmt_string, name.path()),
                                 name.meta(),
@@ -270,18 +268,18 @@ impl TypeClause {
                     match checker.find::<#find_ty, _>(&path) {
                         FindItem::Some(e) => #res_ty,
                         FindItem::NotAvailable(e) => {
-                            checker.emit_msg(&Message::from_meta(
+                            checker.emit_msg(Message::from_meta(
                                 Level::Error,
                                 format!(#notaccessible_fmt_string),
                                 self.#name.meta(),
                             ).note(Note::new_at(
                                 format!("'{path}' declared here"),
-                                e.src(), e.range()
+                                e.decl().meta().src, e.decl().meta().range.clone()
                             )));
                             Ty::Invalid
                         }
                         FindItem::None => {
-                            checker.emit_msg(&Message::from_meta(
+                            checker.emit_msg(Message::from_meta(
                                 Level::Error,
                                 format!(#notfound_fmt_string),
                                 self.#name.meta(),
@@ -314,7 +312,7 @@ impl TypeClause {
                     ScopeKind::Opaque => quote! { Opaque },
                 };
                 Ok(quote! {
-                    checker.push_scope(crate::compiler::ScopeLevel::#level);
+                    checker.push_scope(crate::compiler::ScopeLevel::#level, self.as_ref());
                     #stream;
                     checker.pop_scope();
                 })
@@ -338,7 +336,17 @@ impl TypeClause {
                 })
             }
             Self::ReturnFromScope(clause, kind) => {
-                Ok(quote! {})
+                let ty = clause.gen_with_ctx(ctx, manual, checked)?;
+                let level = match kind {
+                    ScopeKind::Function => quote! { Function },
+                    ScopeKind::Opaque => quote! { Opaque },
+                };
+                Ok(quote! { {
+                    let ty = #ty.to_type();
+                    checker.add_return_type(crate::compiler::ScopeLevel::#level, ty, self.as_ref());
+                    // todo: return Ty::Never
+                    Ty::Void
+                } })
             }
         }
     }

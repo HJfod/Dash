@@ -3,7 +3,7 @@ use std::{
     ops::{Bound, RangeBounds},
 };
 
-use crate::src::{Level, Message, Range, Src};
+use crate::src::{Level, Message, Range, Src, ASTNode};
 use unicode_xid::UnicodeXID;
 
 pub fn is_op_char(ch: char) -> bool {
@@ -270,7 +270,6 @@ impl<'s> Parser<'s> {
     }
 }
 
-pub trait Rule<'s>: Sized {
+pub trait Rule<'s>: Sized + ASTNode<'s> {
     fn expect(parser: &mut Parser<'s>) -> Result<Self, Message<'s>>;
-    fn meta(&self) -> &ExprMeta<'s>;
 }

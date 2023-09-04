@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     parser::{ExprMeta, Parser, Rule},
-    rules::ast::ExprList,
+    rules::ast::{ExprList, ASTRef},
 };
 
 #[derive(Debug, Clone)]
@@ -336,13 +336,18 @@ impl Src {
 }
 
 pub trait Logger<'s> {
-    fn log_msg(&self, msg: &Message<'s>);
+    fn log_msg(&self, msg: Message<'s>);
 }
 
 pub struct ConsoleLogger;
 
 impl<'s> Logger<'s> for ConsoleLogger {
-    fn log_msg(&self, msg: &Message<'s>) {
+    fn log_msg(&self, msg: Message<'s>) {
         println!("{msg}");
     }
+}
+
+pub trait ASTNode<'s> {
+    fn meta(&self) -> &ExprMeta<'s>;
+    fn as_ref<'n>(&'n self) -> ASTRef<'s, 'n>;
 }
