@@ -6,6 +6,8 @@ fun what(a: int, b: int) -> int {
     else {
         return a - b;
     }
+
+    yield "";
 }
 
 let x = what(2, 5) + 6;

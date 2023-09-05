@@ -43,6 +43,7 @@ pub mod kw {
     syn::custom_keyword!(check);
     syn::custom_keyword!(eval);
     syn::custom_keyword!(from);
+    syn::custom_keyword!(default);
     syn::custom_keyword!(XID_Start);
     syn::custom_keyword!(XID_Continue);
     syn::custom_keyword!(OP_CHAR);

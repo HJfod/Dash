@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fmt::Display, marker::PhantomData, sync::Arc};
 
 use crate::{
-    src::{Logger, Message, ConsoleLogger, Src, Level, Note},
+    src::{Logger, Message, ConsoleLogger, Src, Level, Note, ASTNode},
     rules::ast::{Op, ASTRef}
 };
 
@@ -87,13 +87,31 @@ pub trait Item<'s, 'n>: Sized {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Ty<'s, 'n> {
+    /// Represents that an error occurred during typechecking. Only produced on 
+    /// errors - should **never** appear on a succesful compilation!
+    /// Always convertible to all other types in all contexts to avoid further 
+    /// typechecking errors
     Invalid,
+    /// Represents a type whose value is not known yet, but will be inferred 
+    /// later
     Inferred,
+    /// Represents that the branch which produced this value will never 
+    /// finish execution (for example because it returned to an outer scope)
+    /// Always convertible to all other types
+    /// No value of type `never` can ever exist
+    Never,
+    /// An unit type, can only have the value `void`
     Void,
+    /// Boolean type
     Bool,
+    /// 64-bit integer type
     Int,
+    /// 64-bit floating point type
     Float,
+    /// UTF-8 string type
     String,
+    /// Function type (used for named functions that can't capture mutable 
+    /// variables from the outer scope)
     Function {
         params: Vec<(String, Ty<'s, 'n>)>,
         ret_ty: Box<Ty<'s, 'n>>,
@@ -102,14 +120,28 @@ pub enum Ty<'s, 'n> {
 }
 
 impl<'s, 'n> Ty<'s, 'n> {
+    /// Whether this type is one that can't exist as a value (`unknown`, `invalid`, or `never`)
     pub fn is_unreal(&self) -> bool {
-        matches!(self, Ty::Inferred | Ty::Invalid)
+        matches!(self, Ty::Inferred | Ty::Invalid | Ty::Never)
     }
 
+    /// Whether this type is  `never` 
+    pub fn is_never(&self) -> bool {
+        matches!(self, Ty::Never)
+    }
+
+    /// Test whether this type is implicitly convertible to another type or 
+    /// not
+    /// 
+    /// In most cases this means equality
     pub fn convertible_to(&self, other: &Ty) -> bool {
         self.is_unreal() || other.is_unreal() || *self == *other
     }
 
+    /// Get the return type of this type
+    /// 
+    /// Returns the return type if the type is a function type, or itself 
+    /// if it's something else
     pub fn return_ty(&self) -> Ty<'s, 'n> {
         match self {
             Self::Function { params: _, ret_ty, decl: _ } => *ret_ty.clone(),
@@ -117,10 +149,12 @@ impl<'s, 'n> Ty<'s, 'n> {
         }
     }
 
+    /// Get the corresponding AST declaration that produced this type
     pub fn decl(&self) -> ASTRef<'s, 'n> {
         match self {
             Ty::Invalid => ASTRef::Builtin,
             Ty::Inferred => ASTRef::Builtin,
+            Ty::Never => ASTRef::Builtin,
             Ty::Void => ASTRef::Builtin,
             Ty::Bool => ASTRef::Builtin,
             Ty::Int => ASTRef::Builtin,
@@ -146,6 +180,7 @@ impl Display for Ty<'_, '_> {
         match self {
             Self::Invalid => f.write_str("invalid"),
             Self::Inferred => f.write_str("unknown"),
+            Self::Never => f.write_str("never"),
             Self::Void => f.write_str("void"),
             Self::Bool => f.write_str("bool"),
             Self::Int => f.write_str("int"),
@@ -279,20 +314,31 @@ pub struct Scope<'s, 'n> {
     entities: Space<'s, 'n, Entity<'s, 'n>>,
     level: ScopeLevel,
     decl: ASTRef<'s, 'n>,
+    return_type: Option<Ty<'s, 'n>>,
+    return_type_inferred_from: Option<ASTRef<'s, 'n>>,
+    is_returned_to: bool,
+    /// Just stores if unreachable expressions have already been found in this scope
+    /// Prevents producing six billion "unreachable expression" from a single let statement
+    /// after a return
+    unreachable_expression_logged: bool,
 }
 
 impl<'s, 'n> Scope<'s, 'n> {
-    pub fn new(level: ScopeLevel, decl: ASTRef<'s, 'n>) -> Self {
+    pub fn new(level: ScopeLevel, decl: ASTRef<'s, 'n>, return_type: Option<Ty<'s, 'n>>) -> Self {
         Self {
             types: Space::new(),
             entities: Space::new(),
             level,
             decl,
+            return_type,
+            return_type_inferred_from: None,
+            is_returned_to: false,
+            unreachable_expression_logged: false,
         }
     }
 
     pub fn new_top() -> Self {
-        let mut res = Self::new(ScopeLevel::Opaque, ASTRef::Builtin);
+        let mut res = Self::new(ScopeLevel::Opaque, ASTRef::Builtin, None);
         res.types.push(Ty::Void);
         res.types.push(Ty::Bool);
         res.types.push(Ty::Int);
@@ -358,10 +404,25 @@ impl<T> Into<Option<T>> for FindItem<T> {
     }
 }
 
+pub enum FindScope<'s, 'n> {
+    ByLevel(ScopeLevel),
+    ByDecl(ASTRef<'s, 'n>),
+    TopMost,
+}
+
+impl<'s, 'n> FindScope<'s, 'n> {
+    pub fn matches(&self, scope: &Scope<'s, 'n>) -> bool {
+        match self {
+            Self::ByLevel(level) => scope.level >= *level,
+            Self::ByDecl(decl) => scope.decl == *decl,
+            Self::TopMost => true,
+        }
+    }
+}
+
 pub struct TypeChecker<'s, 'n> {
     logger: Arc<dyn Logger<'s>>,
     scopes: Vec<Scope<'s, 'n>>,
-    return_type: HashMap<ASTRef<'s, 'n>, Ty<'s, 'n>>,
 }
 
 impl<'s, 'n> TypeChecker<'s, 'n> {
@@ -417,24 +478,28 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
         path.into_full()
     }
 
-    pub fn add_return_type(&mut self, level: ScopeLevel, ty: Ty<'s, 'n>, node: ASTRef<'s, 'n>) {
-        match self.scopes.iter().rev().find(|s| s.level == level).map(|s| s.decl) {
-            Some(decl) => {
-                if let Some(old) = self.return_type.get(&decl) {
+    pub fn infer_return_type(&mut self, find: FindScope, ty: Ty<'s, 'n>, node: ASTRef<'s, 'n>) {
+        match self.scopes.iter_mut().rev().find(|s| find.matches(s)) {
+            Some(scope) => {
+                if let Some(ref old) = scope.return_type {
                     if !ty.convertible_to(&old) {
-                        self.emit_msg(Message::from_meta(
+                        self.logger.log_msg(Message::from_meta(
                             Level::Error,
                             format!("Expected return type to be '{old}', got '{ty}'"),
                             node.meta(),
-                        ).note(Note::new_at(
-                            "Return type defined here",
-                            decl.meta().src, decl.meta().range.clone()
+                        ).note_if(scope.return_type_inferred_from.map(|infer|
+                            Note::new_at(
+                                "Return type inferred from here",
+                                infer.meta().src, infer.meta().range.clone()
+                            )
                         )));
                     }
                 }
                 else {
-                    self.return_type.insert(decl, ty);
+                    scope.return_type = Some(ty);
+                    scope.return_type_inferred_from = Some(node);
                 }
+                scope.is_returned_to = true;
             }
             None => {
                 self.emit_msg(Message::from_meta(
@@ -445,13 +510,74 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
             }
         }
     }
-    
-    pub fn push_scope(&mut self, level: ScopeLevel, decl: ASTRef<'s, 'n>) {
-        self.scopes.push(Scope::new(level, decl));
+
+    /// Push a scope onto the top of the scope stack
+    pub fn push_scope(&mut self, level: ScopeLevel, decl: ASTRef<'s, 'n>, return_type: Option<Ty<'s, 'n>>) {
+        self.scopes.push(Scope::new(level, decl, return_type));
     }
 
-    pub fn pop_scope(&mut self) {
-        self.scopes.pop();
+    /// Pop the topmost scope from the scope stack with a default return type and 
+    /// which expression resulted in that
+    /// 
+    /// If the scope contains an explicit return value (such as `yield value`) then 
+    /// the default type does nothing (the default type is things like the final 
+    /// expression in a block)
+    pub fn pop_scope(&mut self, ty: Ty<'s, 'n>, yielding_expr: ASTRef<'s, 'n>) -> Ty<'s, 'n> {
+        let scope = self.scopes.pop().expect("internal error: scope stack was empty");
+        let ret_ty = if scope.is_returned_to {
+            scope.return_type.unwrap()
+        }
+        else {
+            if let Some(ref old) = scope.return_type {
+                if !ty.convertible_to(&old) {
+                    self.logger.log_msg(Message::from_meta(
+                        Level::Error,
+                        format!("Expected return type to be '{old}', got '{ty}'"),
+                        yielding_expr.meta(),
+                    ));
+                }
+            }
+            ty
+        };
+
+        // if any scope above this one has been returned to, this scope will never finish execution
+        if self.any_upper_scope_returns() {
+            Ty::Never
+        }
+        else {
+            ret_ty
+        }
+    }
+
+    fn any_upper_scope_returns(&self) -> bool {
+        for scope in self.scopes.iter().rev() {
+            if scope.is_returned_to {
+                return true;
+            }
+            // if this scope is a function boundary then any returns outside that 
+            // can't affect this scope
+            if scope.level >= ScopeLevel::Function {
+                break;
+            }
+        }
+        false
+    }
+
+    pub fn check_if_current_expression_is_unreachable(&mut self, expr: ASTRef<'s, 'n>) {
+        // if any scope above this one has been returned to, whatever expression 
+        // called this is never going to be executed since before it has been 
+        // returned
+        if self.any_upper_scope_returns() {
+            let scope = self.scopes.last_mut().unwrap();
+            if !scope.unreachable_expression_logged {
+                scope.unreachable_expression_logged = true;
+                self.logger.log_msg(Message::from_meta(
+                    Level::Error,
+                    format!("Unreachable expression"),
+                    expr.meta(),
+                ));
+            }
+        }
     }
 
     pub fn emit_msg(&self, msg: Message<'s>) {
@@ -466,13 +592,17 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
         Self {
             logger: Arc::from(ConsoleLogger),
             scopes: vec![Scope::new_top()],
-            return_type: Default::default(),
         }
     }
 }
 
-pub trait TypeCheck<'s, 'n> {
-    fn typecheck(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n>;
+pub trait TypeCheck<'s, 'n>: ASTNode<'s> {
+    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n>;
+
+    fn typecheck(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+        checker.check_if_current_expression_is_unreachable(self.as_ref());
+        self.typecheck_impl(checker)
+    }
 }
 
 fn get_unop_fun_name<'s, 'n>(a: &Ty<'s, 'n>, op: Op) -> FullPath {

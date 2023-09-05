@@ -266,7 +266,7 @@ impl Gen for Rule {
                 trait_impls.extend(quote! {
                     impl<'s, 'n> TypeCheck<'s, 'n> for #name<'s> {
                         #[allow(unused)]
-                        fn typecheck(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+                        fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
                             match self {
                                 #typecheck_stream
                             }
@@ -452,7 +452,7 @@ impl Gen for Rule {
             trait_impls.extend(quote! {
                 impl<'s, 'n> TypeCheck<'s, 'n> for #name<'s> {
                     #[allow(unused)]
-                    fn typecheck(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+                    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
                         #body
                     }
                 }

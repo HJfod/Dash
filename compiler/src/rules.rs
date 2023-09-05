@@ -263,7 +263,7 @@ define_rules! {
 
         typecheck {
             return expr from opaque;
-            yield Ty::Invalid; // todo: yield Never
+            yield Ty::Never;
         }
     }
 
@@ -272,7 +272,7 @@ define_rules! {
 
         typecheck {
             return expr from function;
-            yield Ty::Invalid; // todo: yield Never
+            yield Ty::Never;
         }
     }
 
@@ -280,10 +280,10 @@ define_rules! {
         match "{" list:ExprList "}";
 
         typecheck (manual) {
-            scope {
+            yield scope {
                 check list;
+                yield default list;
             };
-            yield Ty::Void;
         }
     }
 
@@ -323,12 +323,12 @@ define_rules! {
         typecheck (manual) {
             check name;
             check ret_ty;
-            scope function {
+            scope function -> ret_ty {
                 check params;
                 check body;
-                body -> ret_ty;
+                yield default body;
             };
-            yield new entity name?: Ty::Function {
+            new entity name?: Ty::Function {
                 params: self.params.iter()
                     .zip(params)
                     .map(|(p, ty)| (p.name.value.clone(), ty))
@@ -336,18 +336,22 @@ define_rules! {
                 ret_ty: ret_ty.into(),
                 decl: self.into(),
             };
+            yield Ty::Void;
         }
     }
 
     rule If {
-        match "if" cond:Expr "{" truthy:ExprList "}" falsy:(?"else" :as Expr (Block | If));
+        match "if" cond:Expr truthy:Block falsy:(?"else" :as Expr (Block | If));
 
         typecheck (manual) {
             scope {
                 // check cond and truthy in same scope so any let bindings in 
                 // the condition are available inside truthy
+                // truthy is a block but that's fine because actually that lets you 
+                // shadow let bindings made in cond
                 check cond;
                 check truthy;
+                yield default truthy;
             };
             check falsy;
             cond -> Ty::Bool for cond;

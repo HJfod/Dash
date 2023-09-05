@@ -165,6 +165,13 @@ impl<'s> Message<'s> {
         self
     }
 
+    pub fn note_if(mut self, note: Option<Note<'s>>) -> Self {
+        if let Some(note) = note {
+            self.notes.push(note);
+        }
+        self
+    }
+
     pub fn augment<F: Fn(String) -> String>(mut self, info: F) -> Self {
         self.info = info(self.info);
         self

@@ -6,7 +6,7 @@ version = "0.1.0"
 proc-macro = true
 
 [dependencies]
-syn = { version = "2.0.29", features = ["full"] }
+syn = { version = "2.0.31", features = ["full"] }
 quote = "1.0"
 proc-macro2 = "1.0.47"
 unicode-xid = "0.2.4"

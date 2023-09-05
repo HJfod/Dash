@@ -84,7 +84,13 @@ pub enum TypeClause {
     // { ... }
     Code(ExprBlock),
     // scope function { ... }
-    Scope(Span, Vec<TypeClause>, ScopeKind),
+    Scope {
+        span: Span,
+        clauses: Vec<TypeClause>,
+        return_ty: Option<Box<TypeClause>>,
+        default_yield: Option<Box<TypeClause>>,
+        kind: ScopeKind
+    },
     // check member
     Check(Ident),
     // eval clause
@@ -136,13 +142,33 @@ impl Parse for TypeClause {
             else {
                 ScopeKind::Opaque
             };
+            let return_ty = if input.parse::<Token![->]>().is_ok() {
+                Some(input.parse()?)
+            }
+            else {
+                None
+            };
             let c;
             braced!(c in input);
-            Self::Scope(
-                scope.span,
-                c.parse_terminated(TypeClause::parse, Token![;])?.into_iter().collect(),
+            let mut clauses = vec![];
+            let mut default_yield = None;
+            while !c.is_empty() {
+                if c.parse::<Token![yield]>().is_ok() {
+                    c.parse::<kw::default>()?;
+                    default_yield = Some(c.parse()?);
+                    c.parse::<Token![;]>()?;
+                    break;
+                }
+                clauses.push(c.parse()?);
+                c.parse::<Token![;]>()?;
+            }
+            Self::Scope {
+                span: scope.span,
+                clauses,
+                return_ty,
+                default_yield,
                 kind
-            )
+            }
         }
         else if input.peek(Brace) {
             Self::Code(input.parse()?)
@@ -299,23 +325,41 @@ impl TypeClause {
                     #expr
                 })
             }
-            Self::Scope(span, clauses, kind) => {
+            Self::Scope { span, clauses, return_ty, default_yield, kind } => {
                 if !manual {
                     Err(Error::new(span.clone(), "cannot have scope blocks in non-manual typecheck"))?;
                 }
+                if default_yield.is_none() {
+                    Err(Error::new(span.clone(), "scope doesn't yield a default value"))?;
+                }
                 let mut stream = quote! {};
                 for clause in clauses {
-                    stream.extend(clause.gen_with_ctx(ctx, manual, checked)?);
+                    let gen = clause.gen_with_ctx(ctx, manual, checked)?;
+                    stream.extend(quote! { #gen; });
                 }
                 let level = match kind {
                     ScopeKind::Function => quote! { Function },
                     ScopeKind::Opaque => quote! { Opaque },
                 };
-                Ok(quote! {
-                    checker.push_scope(crate::compiler::ScopeLevel::#level, self.as_ref());
+                let return_ty = match return_ty {
+                    Some(ty) => {
+                        let gen = ty.gen_with_ctx(ctx, manual, checked)?;
+                        quote! { Some(#gen.clone()) }
+                    }
+                    None => quote! { None }
+                };
+                let default_yield = default_yield.as_ref().unwrap().gen_with_ctx(ctx, manual, checked)?;
+                Ok(quote! { {
+                    checker.push_scope(
+                        crate::compiler::ScopeLevel::#level,
+                        self.as_ref(), #return_ty
+                    );
                     #stream;
-                    checker.pop_scope();
-                })
+                    checker.pop_scope(
+                        #default_yield.to_type(),
+                        self.as_ref()
+                    )
+                } })
             }
             Self::Check(mem) => {
                 if !manual {
@@ -326,7 +370,7 @@ impl TypeClause {
                 }
                 checked.remove(&mem.to_string());
                 Ok(quote! {
-                    let #mem = self.#mem.typecheck_helper(checker);
+                    #mem = self.#mem.typecheck_helper(checker);
                 })
             }
             Self::Eval(clause) => {
@@ -343,9 +387,12 @@ impl TypeClause {
                 };
                 Ok(quote! { {
                     let ty = #ty.to_type();
-                    checker.add_return_type(crate::compiler::ScopeLevel::#level, ty, self.as_ref());
-                    // todo: return Ty::Never
-                    Ty::Void
+                    checker.infer_return_type(
+                        crate::compiler::FindScope::ByLevel(
+                            crate::compiler::ScopeLevel::#level
+                        ), ty, self.as_ref()
+                    );
+                    Ty::Never
                 } })
             }
         }
@@ -390,7 +437,12 @@ impl TypeCheck {
         let mut stream = quote! {};
         let mut checked = HashSet::new();
         for mem in &ctx.members {
-            if !self.manual_members {
+            if self.manual_members {
+                stream.extend(quote! {
+                    let #mem;
+                });
+            }
+            else {
                 stream.extend(quote! {
                     let #mem = self.#mem.typecheck_helper(checker);
                 });
