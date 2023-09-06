@@ -317,6 +317,7 @@ pub struct Scope<'s, 'n> {
     return_type: Option<Ty<'s, 'n>>,
     return_type_inferred_from: Option<ASTRef<'s, 'n>>,
     is_returned_to: bool,
+    has_encountered_never: bool,
     /// Just stores if unreachable expressions have already been found in this scope
     /// Prevents producing six billion "unreachable expression" from a single let statement
     /// after a return
@@ -333,6 +334,7 @@ impl<'s, 'n> Scope<'s, 'n> {
             return_type,
             return_type_inferred_from: None,
             is_returned_to: false,
+            has_encountered_never: false,
             unreachable_expression_logged: false,
         }
     }
@@ -524,7 +526,7 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
     /// expression in a block)
     pub fn pop_scope(&mut self, ty: Ty<'s, 'n>, yielding_expr: ASTRef<'s, 'n>) -> Ty<'s, 'n> {
         let scope = self.scopes.pop().expect("internal error: scope stack was empty");
-        let ret_ty = if scope.is_returned_to {
+        let mut ret_ty = if scope.is_returned_to {
             scope.return_type.unwrap()
         }
         else {
@@ -541,12 +543,21 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
         };
 
         // if any scope above this one has been returned to, this scope will never finish execution
-        if self.any_upper_scope_returns() {
-            Ty::Never
+        // if self.any_upper_scope_returns() {
+            // ret_ty = Ty::Never;
+        // }
+        if scope.has_encountered_never {
+            ret_ty = Ty::Never;
         }
-        else {
-            ret_ty
-        }
+
+        // if ret_ty.is_never() {
+        //     self.encountered_never();
+        // }
+        ret_ty
+    }
+
+    fn encountered_never(&mut self) {
+        self.scopes.last_mut().unwrap().has_encountered_never = true;
     }
 
     fn any_upper_scope_returns(&self) -> bool {
@@ -563,20 +574,18 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
         false
     }
 
-    pub fn check_if_current_expression_is_unreachable(&mut self, expr: ASTRef<'s, 'n>) {
-        // if any scope above this one has been returned to, whatever expression 
-        // called this is never going to be executed since before it has been 
-        // returned
-        if self.any_upper_scope_returns() {
-            let scope = self.scopes.last_mut().unwrap();
-            if !scope.unreachable_expression_logged {
-                scope.unreachable_expression_logged = true;
-                self.logger.log_msg(Message::from_meta(
-                    Level::Error,
-                    format!("Unreachable expression"),
-                    expr.meta(),
-                ));
-            }
+    fn check_if_current_expression_is_unreachable(&mut self, expr: ASTRef<'s, 'n>) {
+        // if any expression before whatever expression called this function 
+        // has returned never, then this experssion is never going to be 
+        // executed (by definition of never) 
+        let scope = self.scopes.last_mut().unwrap();
+        if scope.has_encountered_never && !scope.unreachable_expression_logged {
+            scope.unreachable_expression_logged = true;
+            self.logger.log_msg(Message::from_meta(
+                Level::Error,
+                format!("Unreachable expression"),
+                expr.meta(),
+            ));
         }
     }
 
@@ -601,7 +610,11 @@ pub trait TypeCheck<'s, 'n>: ASTNode<'s> {
 
     fn typecheck(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
         checker.check_if_current_expression_is_unreachable(self.as_ref());
-        self.typecheck_impl(checker)
+        let ret = self.typecheck_impl(checker);
+        if ret.is_never() {
+            checker.encountered_never();
+        }
+        ret
     }
 }
 

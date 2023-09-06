@@ -7,7 +7,7 @@ fun what(a: int, b: int) -> int {
         return a - b;
     }
 
-    yield "";
+    // yield "";
 }
 
 let x = what(2, 5) + 6;

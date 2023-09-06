@@ -318,7 +318,7 @@ define_rules! {
     rule FunDecl {
         match "fun" name:Ident? "("
             params:(:FunParamDecl ~ ("," :FunParamDecl) until (")") | ("," ")") ","?) unless ")"
-        ")" "->" ret_ty:TypeExpr body:Block as Expr? | ("=>" :Expr)?;
+        ")" "->" ret_ty:TypeExpr body:(??"{" :Block as Expr) | (?"=>" :Expr);
 
         typecheck (manual) {
             check name;
@@ -356,8 +356,10 @@ define_rules! {
             check falsy;
             cond -> Ty::Bool for cond;
             // both branches must result in the same type
-            falsy -> truthy;
-            yield truthy;
+            // also it's important to return the result of the conversion check 
+            // because that also checks if only one of the types is never, in 
+            // which case it returns the other one
+            yield falsy -> truthy;
         }
     }
 

@@ -260,7 +260,7 @@ impl Gen for Rule {
                         Self::#var_name(v) => &v.meta(),
                     });
                     typecheck_stream.extend(quote! {
-                        Self::#var_name(v) => v.typecheck(checker),
+                        Self::#var_name(v) => v.typecheck_impl(checker),
                     });
                 }
                 trait_impls.extend(quote! {

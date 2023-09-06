@@ -213,7 +213,7 @@ impl TypeClause {
                             #span.meta(),
                         ));
                     }
-                    b
+                    b.or(a)
                 } })
             }
             Self::NewEntity(kind, name, optional, ty_expr) => {
