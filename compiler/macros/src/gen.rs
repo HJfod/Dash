@@ -14,12 +14,11 @@ use crate::{
     ty::ClauseTy,
 };
 
-pub enum GenCtx {
-    None,
-    TopLevel {
-        is_enum: bool,
-        err_branch: TokenStream2,
-    },
+#[derive(Default)]
+pub struct GenCtx {
+    top_level: bool,
+    is_enum: bool,
+    err_branch: Option<TokenStream2>,
 }
 
 impl Clause {
@@ -109,33 +108,28 @@ impl Clause {
                 if let Some(rust) = rust {
                     result_stream = quote! { #rust };
                 } else {
-                    match ctx {
-                        GenCtx::TopLevel {
-                            is_enum,
-                            err_branch: _,
-                        } => {
+                    if ctx.top_level {
+                        for r in binded_vars {
+                            result_stream.extend(quote! { #r, });
+                        }
+                        if ctx.is_enum {
+                            result_stream = quote! { Ok(Self::from(#result_stream)) };
+                        } else {
+                            result_stream = quote! { Ok(Self {
+                                #result_stream
+                                meta: parser.get_meta(start),
+                            }) };
+                        }
+                    }
+                    else {
+                        if binded_vars.len() == 1 {
+                            let f = binded_vars.first().unwrap();
+                            result_stream.extend(quote! { #f });
+                        } else {
                             for r in binded_vars {
                                 result_stream.extend(quote! { #r, });
                             }
-                            if is_enum {
-                                result_stream = quote! { Ok(Self::from(#result_stream)) };
-                            } else {
-                                result_stream = quote! { Ok(Self {
-                                    #result_stream
-                                    meta: parser.get_meta(start),
-                                }) };
-                            }
-                        }
-                        GenCtx::None => {
-                            if binded_vars.len() == 1 {
-                                let f = binded_vars.first().unwrap();
-                                result_stream.extend(quote! { #f });
-                            } else {
-                                for r in binded_vars {
-                                    result_stream.extend(quote! { #r, });
-                                }
-                                result_stream = quote! { (#result_stream) };
-                            }
+                            result_stream = quote! { (#result_stream) };
                         }
                     }
                 }
@@ -146,21 +140,13 @@ impl Clause {
                     }
                 };
                 if !peek_condition.is_empty() {
-                    match ctx {
-                        GenCtx::None => Ok(quote! {
-                            if crate::rule_peek!(parser, #cond) {
-                                let start = parser.skip_ws();
-                                #body
+                    if let Some(err_branch) = ctx.err_branch {
+                        if !ctx.top_level {
+                            result_stream = quote! {
                                 Some(#result_stream)
-                            }
-                            else {
-                                None
-                            }
-                        }),
-                        GenCtx::TopLevel {
-                            is_enum: _,
-                            err_branch,
-                        } => Ok(quote! {
+                            };
+                        }
+                        Ok(quote! {
                             let start = parser.skip_ws();
                             if crate::rule_peek!(parser, #cond) {
                                 #body
@@ -169,19 +155,25 @@ impl Clause {
                             else {
                                 #err_branch
                             }
-                        }),
+                        })
                     }
-                } else {
-                    match ctx {
-                        GenCtx::None => Ok(quote! { {
-                            let start = parser.skip_ws();
-                            #body
-                            #result_stream
-                        } }),
-                        GenCtx::TopLevel {
-                            is_enum: _,
-                            err_branch,
-                        } => Ok(quote! {
+                    else {
+                        Ok(quote! {
+                            if crate::rule_peek!(parser, #cond) {
+                                let start = parser.skip_ws();
+                                #body
+                                Some(#result_stream)
+                            }
+                            else {
+                                None
+                            }
+                        })
+                    }
+                }
+                else {
+                    if ctx.err_branch.is_some() && ctx.top_level {
+                        let err_branch = ctx.err_branch.unwrap();
+                        Ok(quote! {
                             let start = parser.skip_ws();
                             match crate::rule_try!(parser, {
                                 #body
@@ -190,7 +182,14 @@ impl Clause {
                                 Ok(r) => Ok(r),
                                 Err(e) => #err_branch,
                             }
-                        }),
+                        })
+                    }
+                    else {
+                        Ok(quote! { {
+                            let start = parser.skip_ws();
+                            #body
+                            #result_stream
+                        } })
                     }
                 }
             }
@@ -213,7 +212,11 @@ impl Clause {
                 };
 
                 for mat in list {
-                    let body = mat.gen()?;
+                    let body = mat.gen_with_ctx(GenCtx {
+                        top_level: false,
+                        is_enum: ctx.is_enum,
+                        err_branch: 
+                    })?;
                     match_options.extend(quote! {
                         match crate::rule_try!(parser, #body) {
                             Ok(r) => return #res,

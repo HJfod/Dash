@@ -389,9 +389,10 @@ impl Gen for Rule {
                     });
                 }
                 body = mat.clause.gen_top_prefun(expect_with_name.clone())?;
-                let with_body = mat.gen_with_ctx(GenCtx::TopLevel {
+                let with_body = mat.gen_with_ctx(GenCtx {
                     is_enum,
-                    err_branch,
+                    top_level: true,
+                    err_branch: Some(err_branch),
                 })?;
                 fns.extend(quote! {
                     fn #expect_with_name(parser: &mut Parser<'s>, #args_stream) -> Result<#ty, Message<'s>> {
@@ -403,10 +404,12 @@ impl Gen for Rule {
                         Self::#expect_with_name(parser, #pass_args_stream)
                     }
                 });
-            } else {
-                body = mat.gen_with_ctx(GenCtx::TopLevel {
+            }
+            else {
+                body = mat.gen_with_ctx(GenCtx {
                     is_enum,
-                    err_branch,
+                    top_level: true,
+                    err_branch: Some(err_branch),
                 })?;
             }
             if !(mat.result_type.is_none() && fallthrough_matcher_count == 1) {
