@@ -85,6 +85,9 @@ impl<'s> ASTNode<'s> for Token<'s> {
     }
 }
 
+// todo: have subtrees be a Vec of parsed tokens instead and make the TokenStream<'s>
+// parameter in `parse` be just an iterator that produces tokens
+
 /// Parses a source into a list of tokens
 #[derive(Debug)]
 pub struct TokenStream<'s> {
@@ -100,7 +103,7 @@ impl<'s> TokenStream<'s> {
 
     /// Creates a new TokenStream on the same source at the same position.
     /// Used for parenthesized substreams
-    pub fn fork(&self, eof_char: Option<char>) -> Self {
+    pub fn fork(&mut self, eof_char: Option<char>) -> Self {
         Self { src: self.src, pos: self.pos, eof_char }
     }
 
