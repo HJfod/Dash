@@ -5,7 +5,7 @@ use crate::{
         node::{Parse, ParseValue, Span, ASTNode, ASTRef}
     },
     shared::{logging::{Message, Level, Note}, is_none_or::IsNoneOr},
-    compiler::{typecheck::{TypeCheck, TypeChecker, Ty, Entity},
+    compiler::{typecheck::{TypeCheck, TypeChecker, Ty, Entity, ScopeLevel},
     typehelper::TypeCheckHelper}
 };
 use super::{ty::Type, expr::Expr, token::{Ident, Kw, Op, Parenthesized, Braced}};
@@ -50,27 +50,13 @@ impl<'s, 'n> TypeCheck<'s, 'n> for VarDecl<'s> {
             (None,    None)    => Ty::Inferred,
         };
         let name = checker.resolve_new(self.ident.path());
-        match checker.last_space::<Entity>().find(&name) {
-            None => {
-                checker.push(Entity::new(name, ASTRef::VarDecl(self.into()), eval_ty, true));
-            }
-            Some(e) => {
-                checker.emit_msg(Message::from_span(
-                    Level::Error,
-                    format!("Entity '{}' already exists in this scope", self.ident.path()),
-                    &self.span
-                ).note(Note::from_span(
-                    "Previous declaration here",
-                    e.decl().span()
-                )));
-            }
-        }
+        checker.try_push(Entity::new(name, ASTRef::VarDecl(self.into()), eval_ty, true), &self.span);
         Ty::Void
     }
 }
 
 #[derive(Debug)]
-struct FunParam<'s> {
+pub struct FunParam<'s> {
     ident: Ident<'s>,
     ty: Type<'s>,
     default_value: Option<Expr<'s>>,
@@ -93,6 +79,20 @@ impl<'s> Parse<'s> for FunParam<'s> {
 impl<'s> ASTNode<'s> for FunParam<'s> {
     fn span(&self) -> &Span<'s> {
         &self.span
+    }
+}
+
+impl<'s, 'n> TypeCheck<'s, 'n> for FunParam<'s> {
+    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+        let ty = self.ty.typecheck_helper(checker);
+        let value = self.default_value.typecheck_helper(checker);
+        let eval_ty = match (ty, value) {
+            (a, Some(b)) => checker.expect_eq(a, b, self.span()),
+            (a, None)    => a,
+        };
+        let name = checker.resolve_new(self.ident.path());
+        checker.try_push(Entity::new(name, ASTRef::FunParam(self.into()), eval_ty, true), &self.span);
+        Ty::Void
     }
 }
 
@@ -149,6 +149,28 @@ impl<'s> ASTNode<'s> for FunDecl<'s> {
 
 impl<'s, 'n> TypeCheck<'s, 'n> for FunDecl<'s> {
     fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
-        todo!()
+        let ret_ty = self.ret_ty.typecheck_helper(checker);
+        checker.push_scope(ScopeLevel::Function, ASTRef::FunDecl(self.into()), ret_ty.clone());
+        let param_tys = self.params.typecheck_helper(checker);
+        let body_ty = self.body.typecheck_helper(checker);
+        checker.pop_scope(body_ty.unwrap_or(Ty::Inferred), ASTRef::FunDecl(self.into()));
+        if let Some(ref ident) = self.ident {
+            let name = checker.resolve_new(ident.path());
+            checker.try_push(
+                Entity::new(
+                    name, ASTRef::FunDecl(self.into()), Ty::Function {
+                        params: self.params.iter()
+                            .zip(param_tys)
+                            .map(|(p, ty)| (p.ident.value().clone(), ty))
+                            .collect(),
+                        ret_ty: ret_ty.unwrap_or(Ty::Inferred).into(),
+                        decl: ASTRef::FunDecl(self.into())
+                    },
+                    false
+                ),
+                &self.span
+            );
+        }
+        Ty::Void
     }
 }

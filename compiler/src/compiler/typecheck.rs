@@ -474,8 +474,23 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
         T::space(self.scopes.last().unwrap())
     }
 
-    pub fn push<T: Item<'s, 'n>>(&mut self, item: T) -> &T {
-        T::space_mut(self.scopes.last_mut().unwrap()).push(item)
+    pub fn try_push<T: Item<'s, 'n>>(&mut self, item: T, span: &Span<'s>) -> Option<&T> {
+        match self.last_space::<Entity>().find(&item.full_path()) {
+            None => {
+                Some(T::space_mut(self.scopes.last_mut().unwrap()).push(item))
+            }
+            Some(e) => {
+                self.emit_msg(Message::from_span(
+                    Level::Error,
+                    format!("Entity '{}' already exists in this scope", item.full_path()),
+                    &span
+                ).note(Note::from_span(
+                    "Previous declaration here",
+                    e.decl().span()
+                )));
+                None
+            }
+        }
     }
 
     pub fn find<'a, T: Item<'s, 'n>, P: PathLike<'s, 'n>>(&'a self, path: &P) -> FindItem<&'a T> {
