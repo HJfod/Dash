@@ -1,9 +1,25 @@
-use std::{collections::HashMap, fmt::Display, marker::PhantomData, sync::Arc};
 
-use crate::{
-    src::{Logger, Message, ConsoleLogger, Src, Level, Note, ASTNode},
-    rules::ast::{Op, ASTRef}
-};
+use std::{collections::HashMap, fmt::Display, marker::PhantomData, sync::Arc};
+use crate::parser::node::{ASTNode, ASTRef, Span};
+use crate::parser::ast::token::Op;
+use crate::shared::logging::{Logger, Message, Level, Note, ConsoleLogger};
+use crate::shared::src::Src;
+
+macro_rules! parse_op {
+    (+)  => { Op::Add };
+    (-)  => { Op::Sub };
+    (*)  => { Op::Mul };
+    (/)  => { Op::Div };
+    (%)  => { Op::Mod };
+    (==) => { Op::Eq };
+    (!=) => { Op::Neq };
+    (<)  => { Op::Lss };
+    (<=) => { Op::Leq };
+    (>)  => { Op::Gtr };
+    (>=) => { Op::Geq };
+    (&&) => { Op::And };
+    (||) => { Op::Or };
+}
 
 macro_rules! define_ops {
     ($res:ident; $a:ident $op:tt $b:ident -> $r:ident; $($rest:tt)+) => {
@@ -12,7 +28,7 @@ macro_rules! define_ops {
     };
 
     ($res:ident; $a:ident $op:tt $b:ident -> $r:ident;) => {
-        $res.entities.push(Entity::new_builtin_binop(Ty::$a, crate::rules::parse_op!($op), Ty::$b, Ty::$r));
+        $res.entities.push(Entity::new_builtin_binop(Ty::$a, parse_op!($op), Ty::$b, Ty::$r));
     };
 }
 
@@ -134,7 +150,7 @@ impl<'s, 'n> Ty<'s, 'n> {
     /// not
     /// 
     /// In most cases this means equality
-    pub fn convertible_to(&self, other: &Ty) -> bool {
+    pub fn convertible_to(&self, other: &Ty<'s, 'n>) -> bool {
         self.is_unreal() || other.is_unreal() || *self == *other
     }
 
@@ -428,6 +444,13 @@ pub struct TypeChecker<'s, 'n> {
 }
 
 impl<'s, 'n> TypeChecker<'s, 'n> {
+    pub fn new() -> Self {
+        Self {
+            logger: Arc::from(ConsoleLogger),
+            scopes: vec![Scope::new_top()],
+        }
+    }
+
     fn try_find(&self, a: &Ty<'s, 'n>, op: Op, b: &Ty<'s, 'n>) -> Option<Ty<'s, 'n>> {
         self.find::<Entity<'s, 'n>, _>(&get_binop_fun_name(a, op, b))
             .option()
@@ -480,19 +503,19 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
         path.into_full()
     }
 
-    pub fn infer_return_type(&mut self, find: FindScope, ty: Ty<'s, 'n>, node: ASTRef<'s, 'n>) {
+    pub fn infer_return_type(&mut self, find: FindScope<'s, 'n>, ty: Ty<'s, 'n>, node: ASTRef<'s, 'n>) {
         match self.scopes.iter_mut().rev().find(|s| find.matches(s)) {
             Some(scope) => {
                 if let Some(ref old) = scope.return_type {
                     if !ty.convertible_to(&old) {
-                        self.logger.log_msg(Message::from_meta(
+                        self.logger.log_msg(Message::from_span(
                             Level::Error,
                             format!("Expected return type to be '{old}', got '{ty}'"),
-                            node.meta(),
+                            node.span(),
                         ).note_if(scope.return_type_inferred_from.map(|infer|
                             Note::new_at(
                                 "Return type inferred from here",
-                                infer.meta().src, infer.meta().range.clone()
+                                infer.span().src, infer.span().range.clone()
                             )
                         )));
                     }
@@ -504,10 +527,10 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
                 scope.is_returned_to = true;
             }
             None => {
-                self.emit_msg(Message::from_meta(
+                self.emit_msg(Message::from_span(
                     Level::Error,
                     format!("Can not return here"),
-                    node.meta(),
+                    node.span(),
                 ));
             }
         }
@@ -532,10 +555,10 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
         else {
             if let Some(ref old) = scope.return_type {
                 if !ty.convertible_to(&old) {
-                    self.logger.log_msg(Message::from_meta(
+                    self.logger.log_msg(Message::from_span(
                         Level::Error,
                         format!("Expected return type to be '{old}', got '{ty}'"),
-                        yielding_expr.meta(),
+                        yielding_expr.span(),
                     ));
                 }
             }
@@ -574,17 +597,17 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
         false
     }
 
-    fn check_if_current_expression_is_unreachable(&mut self, expr: ASTRef<'s, 'n>) {
+    fn check_if_current_expression_is_unreachable<E: ASTNode<'s> + ?Sized>(&mut self, expr: &E) {
         // if any expression before whatever expression called this function 
         // has returned never, then this experssion is never going to be 
         // executed (by definition of never) 
         let scope = self.scopes.last_mut().unwrap();
         if scope.has_encountered_never && !scope.unreachable_expression_logged {
             scope.unreachable_expression_logged = true;
-            self.logger.log_msg(Message::from_meta(
+            self.logger.log_msg(Message::from_span(
                 Level::Error,
                 format!("Unreachable expression"),
-                expr.meta(),
+                expr.span(),
             ));
         }
     }
@@ -597,11 +620,15 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
         self.logger = logger;
     }
 
-    pub fn new() -> Self {
-        Self {
-            logger: Arc::from(ConsoleLogger),
-            scopes: vec![Scope::new_top()],
+    pub fn expect_eq(&self, a: Ty<'s, 'n>, b: Ty<'s, 'n>, span: &Span<'s>) -> Ty<'s, 'n> {
+        if !a.convertible_to(&b) {
+            self.emit_msg(Message::from_span(
+                Level::Error,
+                format!("Type '{a}' is not convertible to '{b}'"),
+                span,
+            ));
         }
+        b.or(a)
     }
 }
 
@@ -609,12 +636,18 @@ pub trait TypeCheck<'s, 'n>: ASTNode<'s> {
     fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n>;
 
     fn typecheck(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
-        checker.check_if_current_expression_is_unreachable(self.as_ref());
+        checker.check_if_current_expression_is_unreachable(self);
         let ret = self.typecheck_impl(checker);
         if ret.is_never() {
             checker.encountered_never();
         }
         ret
+    }
+}
+
+impl<'s, 'n, T: TypeCheck<'s, 'n>> TypeCheck<'s, 'n> for Box<T> {
+    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+        self.as_ref().typecheck_impl(checker)
     }
 }
 

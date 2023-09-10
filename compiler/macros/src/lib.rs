@@ -1,27 +1,27 @@
-#![feature(proc_macro_diagnostic)]
 
 extern crate proc_macro;
 extern crate proc_macro2;
-extern crate quote;
 extern crate syn;
-extern crate unicode_xid;
+extern crate quote;
 
-use defs::Gen;
-use items::Rules;
 use proc_macro::TokenStream;
-use syn::parse_macro_input;
+use quote::quote;
+use syn::{parse_macro_input, Block, ItemFn};
 
-mod clause;
-mod typecheck;
-mod defs;
-mod gen;
-mod items;
-mod ty;
-
-#[proc_macro]
-pub fn define_rules(input: TokenStream) -> TokenStream {
-    match parse_macro_input!(input as Rules).gen() {
-        Ok(s) => s.into(),
-        Err(e) => TokenStream::from(e.to_compile_error()),
-    }
+#[proc_macro_attribute]
+pub fn gdml_log(_: TokenStream, stream: TokenStream) -> TokenStream {
+    let mut fun = parse_macro_input!(stream as ItemFn);
+    let name = fun.sig.ident.to_string();
+    let oblock = &fun.block;
+    let ty = &fun.sig.output;
+    let nblock = quote! { {
+        println!("call {}", #name);
+        let ret = || #ty {
+            #oblock
+        }();
+        println!("finish {}", #name);
+        ret
+    } }.into();
+    fun.block = parse_macro_input!(nblock as Block).into();
+    quote! { #fun }.into()
 }

@@ -67,7 +67,7 @@
 			"patterns": [
 				{
 					"name": "keyword.control.gdml",
-					"match": "\\b(for|while|if|else|try|return|break|from|continue|new)\\b"
+					"match": "\\b(for|while|if|else|try|return|yield|break|from|continue|new|match|switch)\\b"
 				},
 				{
 					"name": "keyword.control.meta.gdml",
@@ -87,7 +87,7 @@
 				},
 				{
 					"name": "storage.type.gdml",
-					"match": "\\b(let|const|fun|decl|struct|namespace|enum|extends|using|scope)\\b"
+					"match": "\\b(let|var|const|fun|mut|decl|struct|namespace|enum|extends|using|scope)\\b"
 				},
 				{
 					"name": "punctuation.gdml",

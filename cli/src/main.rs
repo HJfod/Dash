@@ -1,5 +1,5 @@
 use clap::Parser;
-use gdml_compiler::{src::Src, compiler::{TypeCheck, TypeChecker}};
+use gdml_compiler::{shared::src::Src, compiler::typecheck::{TypeChecker, TypeCheck}};
 use std::path::PathBuf;
 
 /// Simple program to greet a person

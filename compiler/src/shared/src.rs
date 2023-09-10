@@ -1,14 +1,13 @@
+
 use std::{
     cmp::max,
     fmt::{Debug, Display},
     fs,
     path::{Path, PathBuf},
 };
+use crate::parser::{stream::TokenStream, ast::expr::ExprList};
 
-use crate::{
-    parser::{ExprMeta, Parser, Rule},
-    rules::ast::{ExprList, ASTRef},
-};
+use super::logging::Message;
 
 #[derive(Debug, Clone)]
 pub struct Loc {
@@ -83,115 +82,6 @@ impl Display for Range {
         } else {
             f.write_fmt(format_args!("{}-{}", self.start, self.end))
         }
-    }
-}
-
-#[allow(unused)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Level {
-    Info,
-    Warning,
-    Error,
-}
-
-impl Display for Level {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Level::Info => "Info",
-            Level::Warning => "Warning",
-            Level::Error => "Error",
-        })
-    }
-}
-
-pub struct Note<'s> {
-    info: String,
-    at: Option<(&'s Src, Range)>,
-}
-
-impl<'s> Note<'s> {
-    pub fn new(info: &str) -> Self {
-        Self {
-            info: info.into(),
-            at: None,
-        }
-    }
-
-    pub fn new_at<S: Into<String>>(info: S, src: &'s Src, range: Range) -> Self {
-        Self {
-            info: info.into(),
-            at: Some((src, range)),
-        }
-    }
-}
-
-impl Display for Note<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some((ref src, ref range)) = self.at {
-            f.write_fmt(format_args!(
-                "Note: {}\n{}\n(In {} at {})",
-                self.info,
-                src.underlined(&range),
-                src.name(),
-                range
-            ))
-        } else {
-            f.write_fmt(format_args!("Note: {}", self.info))
-        }
-    }
-}
-
-pub struct Message<'s> {
-    pub level: Level,
-    pub info: String,
-    pub notes: Vec<Note<'s>>,
-    pub src: &'s Src,
-    pub range: Range,
-}
-
-impl<'s> Message<'s> {
-    pub fn from_meta(level: Level, info: String, meta: &ExprMeta<'s>) -> Self {
-        Self {
-            level,
-            info,
-            notes: vec![],
-            src: meta.src,
-            range: meta.range.clone(),
-        }
-    }
-
-    pub fn note(mut self, note: Note<'s>) -> Self {
-        self.notes.push(note);
-        self
-    }
-
-    pub fn note_if(mut self, note: Option<Note<'s>>) -> Self {
-        if let Some(note) = note {
-            self.notes.push(note);
-        }
-        self
-    }
-
-    pub fn augment<F: Fn(String) -> String>(mut self, info: F) -> Self {
-        self.info = info(self.info);
-        self
-    }
-}
-
-impl Display for Message<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!(
-            "{} in {} at {}:\n{}{}{}",
-            self.level,
-            self.src.name(),
-            self.range,
-            self.src.underlined(&self.range),
-            self.info,
-            self.notes
-                .iter()
-                .map(|note| format!("\n * {}", note))
-                .collect::<String>()
-        ))
     }
 }
 
@@ -328,33 +218,11 @@ impl Src {
         }
     }
 
+    pub fn tokenize<'s>(&'s self) -> TokenStream<'s> {
+        TokenStream::new(self)
+    }
+
     pub fn parse<'s>(&'s self) -> Result<ExprList<'s>, Message<'s>> {
-        let mut parser = Parser::new(self);
-        let ast = ExprList::expect(&mut parser)?;
-        if !parser.is_eof() {
-            Err(parser.error(
-                parser.pos(),
-                format!("Unexpected character '{}'", parser.peek().unwrap()),
-            ))
-        } else {
-            Ok(ast)
-        }
+        self.tokenize().parse()
     }
-}
-
-pub trait Logger<'s> {
-    fn log_msg(&self, msg: Message<'s>);
-}
-
-pub struct ConsoleLogger;
-
-impl<'s> Logger<'s> for ConsoleLogger {
-    fn log_msg(&self, msg: Message<'s>) {
-        println!("{msg}");
-    }
-}
-
-pub trait ASTNode<'s> {
-    fn meta(&self) -> &ExprMeta<'s>;
-    fn as_ref<'n>(&'n self) -> ASTRef<'s, 'n>;
 }
