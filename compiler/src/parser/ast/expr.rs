@@ -79,7 +79,7 @@ impl<'s> Expr<'s> {
         let mut expr = Self::parse_single(stream)?;
         loop {
             if Parenthesized::peek(stream) {
-                expr = Expr::Call(stream.parse()?);
+                expr = Expr::Call(Call::parse_with(expr, stream)?);
             }
             else {
                 break;

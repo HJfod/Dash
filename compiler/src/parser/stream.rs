@@ -330,10 +330,7 @@ impl<'s> Iterator for TokenStream<'s> {
                         self.pos += 1;
                         break 'find_closing;
                     }
-                    Some(_) => {
-                        // consume any sort of character
-                        self.pos += 1;
-                    }
+                    Some(_) => {}
                     None => {
                         return make_error(match ch {
                             '(' => "unclosed parenthesis",
@@ -343,6 +340,8 @@ impl<'s> Iterator for TokenStream<'s> {
                         }.into(), first_pos);
                     }
                 }
+                // get next token
+                self.next();
             }
             match ch {
                 '(' => Some(Token::Parenthesized(Parenthesized::new(tree, make_span(self.pos)))),
