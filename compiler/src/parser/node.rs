@@ -1,7 +1,7 @@
 
 use std::fmt::Debug;
 use crate::shared::{src::{Src, Range}, logging::Message, wrappers::RefWrapper};
-use super::{stream::TokenStream, ast::{expr::Expr, ty::Type, decls::{VarDecl, FunDecl, FunParam}}};
+use super::{stream::{TokenStream, Token}, ast::{expr::Expr, ty::Type, decls::{VarDecl, FunDecl, FunParam}}};
 use std::hash::Hash;
 
 pub trait ASTNode<'s>: Debug {
@@ -38,8 +38,11 @@ impl<'s, 'n> ASTNode<'s> for ASTRef<'s, 'n> {
 }
 
 pub trait Parse<'s>: Sized + ASTNode<'s> {
-    fn parse_impl(stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>>;
-    fn parse(stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
+    fn parse_impl<S>(stream: &mut S) -> Result<Self, Message<'s>>
+        where S: IntoIterator<Item = Token<'s>>;
+    fn parse<S>(stream: &mut S) -> Result<Self, Message<'s>>
+        where S: IntoIterator<Item = Token<'s>>
+    {
         let start = stream.pos();
         match Self::parse_impl(stream) {
             Ok(node) => Ok(node),
