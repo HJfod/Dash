@@ -14,7 +14,7 @@ trait ParseToken<'s>: Sized + PartialEq + Display + ASTNode<'s> {
     fn expected_type() -> &'static str;
     fn from_token(tk: Token<'s>) -> Result<Self, Token<'s>>;
 
-    fn parse_token<S: TokenStream<'s>>(stream: &mut S, expected: String) -> Result<Self, Message<'s>> {
+    fn parse_token(stream: &mut TokenStream<'s>, expected: String) -> Result<Self, Message<'s>> {
         let start = stream.pos();
         let Some(tk) = stream.next() else {
             return Err(stream.error(format!("Expected {expected}, got {}", stream.whats_eof()), start));
@@ -27,13 +27,13 @@ trait ParseToken<'s>: Sized + PartialEq + Display + ASTNode<'s> {
 }
 
 impl<'s, T: ParseToken<'s>> Parse<'s> for T {
-    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         Self::parse_token(stream, Self::expected_type().into())
     }
 }
 
 impl<'s, T: ParseToken<'s>> ParseValue<'s> for T {
-    fn parse_value_impl<S: TokenStream<'s>>(self, stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_value_impl(self, stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
         let start = stream.pos();
         let tk = Self::parse_token(stream, format!("'{}'", self.to_string()))?;
         if tk == self {
@@ -127,7 +127,7 @@ pub enum Prec {
 }
 
 impl Prec {
-    pub fn peek<'s, S: TokenStream<'s>>(&self, stream: &mut S) -> bool {
+    pub fn peek<'s>(&self, stream: &mut TokenStream<'s>) -> bool {
         let start = stream.pos();
         if let Ok(op) = Op::parse(stream) {
             stream.goto(start);
@@ -310,7 +310,7 @@ impl<'s> Parenthesized<'s> {
 }
 
 impl<'s> Parse<'s> for Parenthesized<'s> {
-    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         match stream.next() {
             Some(Token::Parenthesized(p)) => Ok(p),
@@ -347,7 +347,7 @@ impl<'s> Bracketed<'s> {
 }
 
 impl<'s> Parse<'s> for Bracketed<'s> {
-    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         match stream.next() {
             Some(Token::Bracketed(p)) => Ok(p),
@@ -384,7 +384,7 @@ impl<'s> Braced<'s> {
 }
 
 impl<'s> Parse<'s> for Braced<'s> {
-    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         match stream.next() {
             Some(Token::Braced(p)) => Ok(p),
@@ -405,7 +405,7 @@ impl<'s> ASTNode<'s> for Braced<'s> {
 }
 
 impl<'s> ParseValue<'s> for &'static str {
-    fn parse_value_impl<S: TokenStream<'s>>(self, stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_value_impl(self, stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
         let start = stream.pos();
         let Some(tk) = stream.next() else {
             return Err(stream.error(format!("Expected '{self}', got {}", stream.whats_eof()), start));
@@ -440,7 +440,7 @@ impl<'s> Path<'s> {
 }
 
 impl<'s> Parse<'s> for Path<'s> {
-    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         let absolute = "::".parse_value(stream).is_ok();
         let mut components = vec![];

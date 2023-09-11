@@ -18,10 +18,9 @@ pub struct BinOp<'s> {
 }
 
 impl<'s> BinOp<'s> {
-    pub fn parse_with<F, S>(lhs: Expr<'s>, mut rhs: F, stream: &mut S) -> Result<Self, Message<'s>>
+    pub fn parse_with<F>(lhs: Expr<'s>, mut rhs: F, stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>>
         where
-            S: TokenStream<'s>,
-            F: FnMut(&mut S) -> Result<Expr<'s>, Message<'s>>
+            F: FnMut(&mut TokenStream<'s>) -> Result<Expr<'s>, Message<'s>>
     {
         let lhs = lhs.into();
         let op = stream.parse()?;

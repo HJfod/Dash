@@ -19,7 +19,7 @@ pub struct VarDecl<'s> {
 }
 
 impl<'s> Parse<'s> for VarDecl<'s> {
-    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let var = Kw::Var.parse_value(stream)?;
         let ident = Ident::parse(stream)?;
         let ty = if_then_some!(
@@ -28,7 +28,7 @@ impl<'s> Parse<'s> for VarDecl<'s> {
         let value = if_then_some!(
             Op::Seq.parse_value(stream).is_ok() => Expr::parse(stream)?.into()
         );
-        Ok(VarDecl { ident, ty, value, span: var.span().join(other) })
+        Ok(VarDecl { ident, ty, value, span: var.span() })
     }
 }
 
@@ -63,7 +63,7 @@ pub struct FunParam<'s> {
 }
 
 impl<'s> Parse<'s> for FunParam<'s> {
-    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         let ident = Ident::parse(stream)?;
         ":".parse_value(stream)?;
@@ -111,7 +111,7 @@ impl<'s> FunDecl<'s> {
 }
 
 impl<'s> Parse<'s> for FunDecl<'s> {
-    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         Kw::Fun.parse_value(stream)?;
         let ident = Ident::parse(stream).ok();

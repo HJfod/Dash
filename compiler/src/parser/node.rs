@@ -1,7 +1,7 @@
 
 use std::fmt::Debug;
 use crate::shared::{src::{Src, Range}, logging::Message, wrappers::RefWrapper};
-use super::{stream::{TokenStream, Token, Forkable}, ast::{expr::Expr, ty::Type, decls::{VarDecl, FunDecl, FunParam}}};
+use super::{stream::{TokenStream, Token}, ast::{expr::Expr, ty::Type, decls::{VarDecl, FunDecl, FunParam}}};
 use std::hash::Hash;
 
 pub trait ASTNode<'s>: Debug {
@@ -38,8 +38,8 @@ impl<'s, 'n> ASTNode<'s> for ASTRef<'s, 'n> {
 }
 
 pub trait Parse<'s>: Sized + ASTNode<'s> {
-    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>>;
-    fn parse<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>>;
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.pos();
         match Self::parse_impl(stream.into_iter().pee) {
             Ok(node) => Ok(node),
@@ -49,7 +49,7 @@ pub trait Parse<'s>: Sized + ASTNode<'s> {
             }
         }
     }
-    fn peek<S: TokenStream<'s>>(stream: &mut S) -> bool {
+    fn peek<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> bool {
         let start = stream.pos();
         let node = Self::parse_impl(stream).ok();
         stream.goto(start);
@@ -58,8 +58,8 @@ pub trait Parse<'s>: Sized + ASTNode<'s> {
 }
 
 pub trait ParseValue<'s>: Sized {
-    fn parse_value_impl<S: TokenStream<'s>>(self, stream: &mut S) -> Result<Self, Message<'s>>;
-    fn parse_value<S: TokenStream<'s>>(self, stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_value_impl<I: Iterator<Item = Token<'s>>>(self, stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>>;
+    fn parse_value<I: Iterator<Item = Token<'s>>>(self, stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.pos();
         match self.parse_value_impl(stream) {
             Ok(node) => Ok(node),
@@ -69,7 +69,7 @@ pub trait ParseValue<'s>: Sized {
             }
         }
     }
-    fn peek_value<S: TokenStream<'s>>(self, stream: &mut S) -> bool {
+    fn peek_value(self, stream: &mut TokenStream<'s>) -> bool {
         let start = stream.pos();
         let node = self.parse_value_impl(stream).ok();
         stream.goto(start);

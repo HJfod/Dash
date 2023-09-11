@@ -1,5 +1,5 @@
 
-use std::fmt::{Debug, Display};
+use std::{fmt::{Debug, Display}, iter::Peekable};
 use crate::shared::{src::Src, logging::{Message, Level}};
 use unicode_xid::UnicodeXID;
 use super::{
@@ -348,15 +348,24 @@ impl<'s> Iterator for SrcReader<'s> {
         else {
             make_error(format!("invalid symbol '{ch}'"), self.pos)
         }
+        self.peekable()
     }
 }
 
-pub trait TokenStream<'s>: Iterator<Item = Token<'s>> {
-    fn next(&self) -> Result<Token<'s>, Message<'s>> {
-        
-    }
+pub struct TokenStream<'s, I: Iterator<Item = Token<'s>>> {
+    iter: Peekable<I>,
+}
 
-    fn parse<P: Parse<'s>>(&mut self) -> Result<P, Message<'s>> {
+impl<'s, I: IntoIterator<Item = Token<'s>>> From<I> for TokenStream<'s, I> {
+    fn from(value: I) -> Self {
+        Self {
+            iter: value.into_iter().peekable()
+        }
+    }
+}
+
+impl<'s, I: Iterator<Item = Token<'s>>> TokenStream<'s, I> {
+    pub fn parse<P: Parse<'s>>(&mut self) -> Result<P, Message<'s>> {
         P::parse(self)
     }
 }

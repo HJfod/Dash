@@ -17,7 +17,7 @@ pub struct If<'s> {
 }
 
 impl<'s> Parse<'s> for If<'s> {
-    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         Kw::If.parse_value(stream)?;
         let cond = Box::from(stream.parse::<Expr<'s>>()?);
@@ -56,7 +56,7 @@ pub struct Return<'s> {
 }
 
 impl<'s> Parse<'s> for Return<'s> {
-    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         Kw::Return.parse_value(stream)?;
         let expr = Expr::parse(stream).ok().map(|e| e.into());

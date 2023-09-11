@@ -16,7 +16,7 @@ pub enum Type<'s> {
 }
 
 impl<'s> Parse<'s> for Type<'s> {
-    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         Ok(Type::TypeName(TypeName::parse(stream)?))
     }
 }
@@ -44,7 +44,7 @@ pub struct TypeName<'s> {
 }
 
 impl<'s> Parse<'s> for TypeName<'s> {
-    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         let ident = Ident::parse(stream)?;
         Ok(TypeName { ident, span: stream.span(start) })
