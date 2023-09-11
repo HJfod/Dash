@@ -351,17 +351,11 @@ impl<'s> Iterator for SrcReader<'s> {
     }
 }
 
-pub trait Forkable {
-    fn fork(&self) -> Self;
-}
-
-impl<'s> Forkable for SrcReader<'s> {
-    fn fork(&self) -> Self {
-        Self { src: self.src, pos: self.pos }
+pub trait TokenStream<'s>: Iterator<Item = Token<'s>> {
+    fn next(&self) -> Result<Token<'s>, Message<'s>> {
+        
     }
-}
 
-pub trait TokenStream<'s>: IntoIterator<Item = Token<'s>> + Forkable + Sized {
     fn parse<P: Parse<'s>>(&mut self) -> Result<P, Message<'s>> {
         P::parse(self)
     }

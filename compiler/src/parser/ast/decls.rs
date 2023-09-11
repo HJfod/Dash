@@ -28,7 +28,7 @@ impl<'s> Parse<'s> for VarDecl<'s> {
         let value = if_then_some!(
             Op::Seq.parse_value(stream).is_ok() => Expr::parse(stream)?.into()
         );
-        Ok(VarDecl { ident, ty, value, span: stream.span(start) })
+        Ok(VarDecl { ident, ty, value, span: var.span().join(other) })
     }
 }
 
