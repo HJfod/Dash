@@ -4,7 +4,7 @@ use strum::IntoEnumIterator;
 
 use crate::{
     parser::{
-        node::{Parse, ParseValue, ASTNode, Span},
+        node::{Parse, ASTNode, Span},
         stream::{TokenStream, Token},
         ast::token::{Kw, StringLit, IntLit, FloatLit, VoidLit, BoolLit, Ident, Op}
     },
@@ -95,9 +95,10 @@ impl<'s> Expr<'s> {
         }
     }
     
-    fn parse_binop_prec<F>(prec: Prec, sides: &mut F, stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>>
+    fn parse_binop_prec<F, I>(prec: Prec, sides: &mut F, stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>>
         where
-            F: FnMut(&mut TokenStream<'s>) -> Result<Expr<'s>, Message<'s>>
+            I: Iterator<Item = Token<'s>>,
+            F: FnMut(&mut TokenStream<'s, I>) -> Result<Expr<'s>, Message<'s>>
     {
         let mut lhs = sides(stream)?;
         while prec.peek(stream) {
@@ -126,7 +127,7 @@ impl<'s> Expr<'s> {
 }
 
 impl<'s> Parse<'s> for Expr<'s> {
-    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         Self::parse_binop(stream)
     }
 }
@@ -204,7 +205,7 @@ pub struct ExprList<'s> {
 }
 
 impl<'s> Parse<'s> for ExprList<'s> {
-    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         // just parse until the stream is over
         // since braces are treated as a single token that result in a substream 
@@ -249,7 +250,7 @@ pub struct Block<'s> {
 }
 
 impl<'s> Parse<'s> for Block<'s> {
-    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         let mut braced = Braced::parse(stream)?.into_stream();
         Ok(Self { list: braced.parse()?, span: stream.span(start) })

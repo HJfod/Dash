@@ -38,43 +38,7 @@ impl<'s, 'n> ASTNode<'s> for ASTRef<'s, 'n> {
 }
 
 pub trait Parse<'s>: Sized + ASTNode<'s> {
-    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>>;
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.pos();
-        match Self::parse_impl(stream.into_iter().pee) {
-            Ok(node) => Ok(node),
-            Err(e) => {
-                stream.goto(start);
-                Err(e)
-            }
-        }
-    }
-    fn peek<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> bool {
-        let start = stream.pos();
-        let node = Self::parse_impl(stream).ok();
-        stream.goto(start);
-        node.is_some()
-    }
-}
-
-pub trait ParseValue<'s>: Sized {
-    fn parse_value_impl<I: Iterator<Item = Token<'s>>>(self, stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>>;
-    fn parse_value<I: Iterator<Item = Token<'s>>>(self, stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.pos();
-        match self.parse_value_impl(stream) {
-            Ok(node) => Ok(node),
-            Err(e) => {
-                stream.goto(start);
-                Err(e)
-            }
-        }
-    }
-    fn peek_value(self, stream: &mut TokenStream<'s>) -> bool {
-        let start = stream.pos();
-        let node = self.parse_value_impl(stream).ok();
-        stream.goto(start);
-        node.is_some()
-    }
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>>;
 }
 
 #[derive(PartialEq, Clone)]

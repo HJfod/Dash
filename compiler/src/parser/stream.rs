@@ -178,29 +178,13 @@ impl<'s> SrcReader<'s> {
         match self.next() {
             Some(tk) => {
                 self.goto(pos);
-                if let Some(ch) = self.eof_char {
-                    Err(Message::from_span(
-                        Level::Error,
-                        format!("Expected '{ch}', got {tk}"),
-                        tk.span()
-                    ))
-                }
-                else {
-                    Err(Message::from_span(
-                        Level::Error,
-                        format!("Expected EOF, got {tk}"),
-                        tk.span()
-                    ))
-                }
+                Err(Message::from_span(
+                    Level::Error,
+                    format!("Expected EOF, got {tk}"),
+                    tk.span()
+                ))
             }
             None => Ok(())
-        }
-    }
-
-    pub fn whats_eof(&self) -> String {
-        match self.eof_char {
-            Some(c) => format!("'{c}'"),
-            None => String::from("EOF"),
         }
     }
 
@@ -356,7 +340,7 @@ pub struct TokenStream<'s, I: Iterator<Item = Token<'s>>> {
     iter: Peekable<I>,
 }
 
-impl<'s, I: IntoIterator<Item = Token<'s>>> From<I> for TokenStream<'s, I> {
+impl<'s, I: IntoIterator<Item = Token<'s>>> From<I> for TokenStream<'s, I::IntoIter> {
     fn from(value: I) -> Self {
         Self {
             iter: value.into_iter().peekable()

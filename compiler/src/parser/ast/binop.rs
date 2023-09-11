@@ -1,7 +1,7 @@
 
 use crate::{
     parser::{
-        stream::TokenStream,
+        stream::{TokenStream, Token},
         node::{ASTNode, Span}
     },
     shared::logging::Message,
@@ -18,9 +18,14 @@ pub struct BinOp<'s> {
 }
 
 impl<'s> BinOp<'s> {
-    pub fn parse_with<F>(lhs: Expr<'s>, mut rhs: F, stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>>
+    pub fn parse_with<F, I>(
+        lhs: Expr<'s>,
+        mut rhs: F,
+        stream: &mut TokenStream<'s, I>
+    ) -> Result<Self, Message<'s>>
         where
-            F: FnMut(&mut TokenStream<'s>) -> Result<Expr<'s>, Message<'s>>
+            I: Iterator<Item = Token<'s>>,
+            F: FnMut(&mut TokenStream<'s, I>) -> Result<Expr<'s>, Message<'s>>
     {
         let lhs = lhs.into();
         let op = stream.parse()?;

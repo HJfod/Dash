@@ -4,45 +4,15 @@ use strum::{EnumString, Display, EnumIter};
 
 use crate::{
     parser::{
-        node::{Parse, ParseValue, Span, ASTNode},
+        node::{Parse, Span, ASTNode},
         stream::{TokenStream, Token}
     },
     shared::logging::{Message, Level}, compiler::typecheck
 };
+use paste::paste;
 
-trait ParseToken<'s>: Sized + PartialEq + Display + ASTNode<'s> {
-    fn expected_type() -> &'static str;
-    fn from_token(tk: Token<'s>) -> Result<Self, Token<'s>>;
-
-    fn parse_token(stream: &mut TokenStream<'s>, expected: String) -> Result<Self, Message<'s>> {
-        let start = stream.pos();
-        let Some(tk) = stream.next() else {
-            return Err(stream.error(format!("Expected {expected}, got {}", stream.whats_eof()), start));
-        };
-        match Self::from_token(tk) {
-            Ok(t) => Ok(t),
-            Err(tk) => Err(stream.error(format!("Expected {expected}, got {tk}"), start)),
-        }
-    }
-}
-
-impl<'s, T: ParseToken<'s>> Parse<'s> for T {
-    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        Self::parse_token(stream, Self::expected_type().into())
-    }
-}
-
-impl<'s, T: ParseToken<'s>> ParseValue<'s> for T {
-    fn parse_value_impl(self, stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
-        let start = stream.pos();
-        let tk = Self::parse_token(stream, format!("'{}'", self.to_string()))?;
-        if tk == self {
-            Ok(self)
-        }
-        else {
-            Err(stream.error(format!("Expected '{self}', got {tk}"), start))
-        }
-    }
+pub trait Tokenize<'s>: ASTNode<'s> {
+    fn name() -> &'static str;
 }
 
 pub fn is_op_char(ch: char) -> bool {
@@ -58,61 +28,81 @@ pub fn closing_paren(ch: char) -> char {
     }
 }
 
-/// A keyword token in GDML
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, EnumString, Display)]
-#[strum(serialize_all = "snake_case")]
-pub enum Kw {
-    Void, True, False,
-    Var, Let, Fun, Decl, Struct, Const,
-    Is, As, From,
-    If, Else, For, While,
-    Return, Break,
-    Extern, Export, Import,
-    Yield, Match, Switch, Mut,
+macro_rules! declare_kws {
+    ($($kind:ident { $($kw: ident,)* })*) => {
+        $($(
+            #[derive(Debug)]
+            pub struct $kw<'s> {
+                span: Span<'s>,
+            }
+
+            impl<'s> Tokenize<'s> for $kw<'s> {
+                fn name() -> &'static str {
+                    paste!([<$kw:snake>])
+                }
+            }
+
+            impl<'s> ASTNode<'s> for $kw<'s> {
+                fn span(&self) -> &Span<'s> {
+                    &self.span
+                }
+            }
+
+            impl<'s> Parse<'s> for $kw<'s> {
+                fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+                    match stream.next() {
+                        Some(Kw::$kw(kw)) => Ok(kw),
+                        Some(t) => Err(Message::from_span(
+                            Level::Error, 
+                            format!("Expected keyword TODO, got {}", t.kind_name()),
+                            t.span()
+                        )),
+                        None => Err(Message::from_eof(
+                            Level::Error,
+                            format!("Expected keyword TODO, got EOF"),
+                            stream.src()
+                        ))
+                    }
+                }
+            }
+        )*)*
+
+        #[derive(Debug)]
+        pub enum Kw<'s> {
+            $($($kw($kw<'s>),)*)*
+        }
+
+        impl<'s> Kw<'s> {
+            $(
+                pub fn $kind(&self) -> bool {
+                    match self {
+                        $(Self::$kw(t) => t.$kind(),)*
+                        _ => false
+                    }
+                }
+            )*
+        }
+    };
+}
+
+declare_kws! {
+    is_strict {
+        Void, True, False,
+        Var, Let, Fun, Decl, Struct, Const,
+        Is, As, From,
+        If, Else, For, While,
+        Return, Break,
+        Extern, Export, Import,
+    }
+    is_contextual {}
+    is_reserved {
+        Yield, Match, Switch, Mut,
+    }
 }
 
 const FIRST_STRICT_KW: Kw = Kw::Var;
 const FIRST_CONTEXTUAL_KW: Kw = Kw::Yield;
 const FIRST_RESERVED_KW: Kw = Kw::Yield;
-
-impl Kw {
-    /// Whether this keyword is strict, i.e. not allowed to be used in 
-    /// identifiers
-    pub fn is_strict(&self) -> bool {
-        *self >= FIRST_STRICT_KW && *self < FIRST_CONTEXTUAL_KW
-    }
-
-    /// Whether this keyword is contextual, i.e. allowed to be used in 
-    /// identifiers
-    pub fn is_contextual(&self) -> bool {
-        *self >= FIRST_CONTEXTUAL_KW && *self < FIRST_RESERVED_KW
-    }
-
-    /// Whether this keyword is reserved, i.e. not allowed to be used 
-    /// anywhere
-    pub fn is_reserved(&self) -> bool {
-        *self >= FIRST_RESERVED_KW
-    }
-}
-
-impl<'s> ASTNode<'s> for Kw {
-    fn span(&self) -> &Span<'s> {
-        panic!("cannot get span of keyword")
-    }
-}
-
-impl<'s> ParseToken<'s> for Kw {
-    fn expected_type() -> &'static str {
-        "keyword"
-    }
-
-    fn from_token(tk: Token<'s>) -> Result<Self, Token<'s>> {
-        match tk {
-            Token::Kw(kw, _) => Ok(kw),
-            other => Err(other),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
 pub enum Prec {
@@ -127,7 +117,7 @@ pub enum Prec {
 }
 
 impl Prec {
-    pub fn peek<'s>(&self, stream: &mut TokenStream<'s>) -> bool {
+    pub fn peek<'s>(&self, stream: &mut TokenStream<'s, impl Iterator<Item = Token<'s>>>) -> bool {
         let start = stream.pos();
         if let Ok(op) = Op::parse(stream) {
             stream.goto(start);
@@ -210,19 +200,6 @@ impl<'s> ASTNode<'s> for Op {
     }
 }
 
-impl<'s> ParseToken<'s> for Op {
-    fn expected_type() -> &'static str {
-        "operator"
-    }
-
-    fn from_token(tk: Token<'s>) -> Result<Self, Token<'s>> {
-        match tk {
-            Token::Op(op, _) => Ok(op),
-            other => Err(other),
-        }
-    }
-}
-
 #[derive(PartialEq, Debug)]
 pub struct Ident<'s>(String, Span<'s>);
 
@@ -253,19 +230,6 @@ impl Display for Ident<'_> {
 impl<'s> ASTNode<'s> for Ident<'s> {
     fn span(&self) -> &Span<'s> {
         &self.1
-    }
-}
-
-impl<'s> ParseToken<'s> for Ident<'s> {
-    fn expected_type() -> &'static str {
-        "identifier"
-    }
-
-    fn from_token(tk: Token<'s>) -> Result<Self, Token<'s>> {
-        match tk {
-            Token::Ident(i) => Ok(i),
-            other => Err(other),
-        }
     }
 }
 
@@ -310,7 +274,7 @@ impl<'s> Parenthesized<'s> {
 }
 
 impl<'s> Parse<'s> for Parenthesized<'s> {
-    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         match stream.next() {
             Some(Token::Parenthesized(p)) => Ok(p),
@@ -347,7 +311,7 @@ impl<'s> Bracketed<'s> {
 }
 
 impl<'s> Parse<'s> for Bracketed<'s> {
-    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         match stream.next() {
             Some(Token::Bracketed(p)) => Ok(p),
@@ -384,7 +348,7 @@ impl<'s> Braced<'s> {
 }
 
 impl<'s> Parse<'s> for Braced<'s> {
-    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         match stream.next() {
             Some(Token::Braced(p)) => Ok(p),
@@ -404,24 +368,24 @@ impl<'s> ASTNode<'s> for Braced<'s> {
     }
 }
 
-impl<'s> ParseValue<'s> for &'static str {
-    fn parse_value_impl(self, stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
-        let start = stream.pos();
-        let Some(tk) = stream.next() else {
-            return Err(stream.error(format!("Expected '{self}', got {}", stream.whats_eof()), start));
-        };
-        let value = match tk {
-            Token::Punct(ref p, _) => p,
-            _ => return Err(stream.error(format!("Expected '{self}', got {tk}"), start)),
-        };
-        if value == self {
-            Ok(self)
-        }
-        else {
-            Err(stream.error(format!("Expected '{self}', got {tk}"), start))
-        }
-    }
-}
+// impl<'s> ParseValue<'s> for &'static str {
+//     fn parse_value_impl(self, stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
+//         let start = stream.pos();
+//         let Some(tk) = stream.next() else {
+//             return Err(stream.error(format!("Expected '{self}', got {}", stream.whats_eof()), start));
+//         };
+//         let value = match tk {
+//             Token::Punct(ref p, _) => p,
+//             _ => return Err(stream.error(format!("Expected '{self}', got {tk}"), start)),
+//         };
+//         if value == self {
+//             Ok(self)
+//         }
+//         else {
+//             Err(stream.error(format!("Expected '{self}', got {tk}"), start))
+//         }
+//     }
+// }
 
 #[derive(Debug)]
 pub struct Path<'s> {
@@ -440,7 +404,7 @@ impl<'s> Path<'s> {
 }
 
 impl<'s> Parse<'s> for Path<'s> {
-    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         let absolute = "::".parse_value(stream).is_ok();
         let mut components = vec![];

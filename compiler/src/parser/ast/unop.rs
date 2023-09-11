@@ -1,9 +1,9 @@
 
 use crate::{
     parser::{
-        stream::TokenStream,
+        stream::{TokenStream, Token},
         ast::token::Op,
-        node::{Parse, ASTNode, Span, ParseValue}
+        node::{Parse, ASTNode, Span}
     },
     shared::logging::Message,
     compiler::typecheck::{TypeCheck, TypeChecker, Ty}
@@ -18,7 +18,7 @@ pub struct UnOp<'s> {
 }
 
 impl<'s> Parse<'s> for UnOp<'s> {
-    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         let op = Op::parse(stream)?;
         let target = Expr::parse_unop(stream)?.into();
@@ -46,7 +46,9 @@ pub struct Call<'s> {
 }
 
 impl<'s> Call<'s> {
-    pub fn parse_with(target: Expr<'s>, stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
+    pub fn parse_with<I: Iterator<Item = Token<'s>>>(
+        target: Expr<'s>, stream: &mut TokenStream<'s, I>
+    ) -> Result<Self, Message<'s>> {
         let start = target.span().range.start.offset;
         let mut args_stream = Parenthesized::parse(stream)?.into_stream();
         let mut args = Vec::new();
@@ -62,7 +64,7 @@ impl<'s> Call<'s> {
 }
 
 impl<'s> Parse<'s> for Call<'s> {
-    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         Self::parse_with(stream.parse()?, stream)
     }
 }
@@ -87,7 +89,7 @@ pub struct Index<'s> {
 }
 
 impl<'s> Index<'s> {
-    pub fn parse_with(target: Expr<'s>, stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
+    pub fn parse_with<I: Iterator<Item = Token<'s>>>(target: Expr<'s>, stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = target.span().range.start.offset;
         let mut args_stream = Bracketed::parse(stream)?.into_stream();
         let index = args_stream.parse::<Expr<'s>>()?.into();
@@ -97,7 +99,7 @@ impl<'s> Index<'s> {
 }
 
 impl<'s> Parse<'s> for Index<'s> {
-    fn parse_impl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         Self::parse_with(stream.parse()?, stream)
     }
 }
