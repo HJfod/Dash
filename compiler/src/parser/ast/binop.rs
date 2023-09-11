@@ -18,15 +18,16 @@ pub struct BinOp<'s> {
 }
 
 impl<'s> BinOp<'s> {
-    pub fn parse_with<F>(lhs: Expr<'s>, mut rhs: F, stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>>
-        where F: FnMut(&mut TokenStream<'s>) -> Result<Expr<'s>, Message<'s>>
+    pub fn parse_with<F, S>(lhs: Expr<'s>, mut rhs: F, stream: &mut S) -> Result<Self, Message<'s>>
+        where
+            S: TokenStream<'s>,
+            F: FnMut(&mut S) -> Result<Expr<'s>, Message<'s>>
     {
-        let start = lhs.span().range.start.offset;
+        let lhs = lhs.into();
+        let op = stream.parse()?;
+        let rhs = rhs(stream)?.into();
         Ok(Self {
-            lhs: lhs.into(),
-            op: stream.parse()?,
-            rhs: rhs(stream)?.into(),
-            span: stream.span(start)
+            lhs, op, rhs, span: lhs.span().join(rhs.span()),
         })
     }
 }

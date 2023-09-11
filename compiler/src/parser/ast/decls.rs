@@ -4,7 +4,7 @@ use crate::{
         stream::TokenStream,
         node::{Parse, ParseValue, Span, ASTNode, ASTRef}
     },
-    shared::{logging::{Message, Level, Note}, is_none_or::IsNoneOr},
+    shared::{logging::Message, is_none_or::IsNoneOr},
     compiler::{typecheck::{TypeCheck, TypeChecker, Ty, Entity, ScopeLevel},
     typehelper::TypeCheckHelper}
 };
@@ -19,9 +19,8 @@ pub struct VarDecl<'s> {
 }
 
 impl<'s> Parse<'s> for VarDecl<'s> {
-    fn parse_impl(stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
-        Kw::Var.parse_value(stream)?;
+    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+        let var = Kw::Var.parse_value(stream)?;
         let ident = Ident::parse(stream)?;
         let ty = if_then_some!(
             ":".parse_value(stream).is_ok() => Type::parse(stream)?
@@ -64,7 +63,7 @@ pub struct FunParam<'s> {
 }
 
 impl<'s> Parse<'s> for FunParam<'s> {
-    fn parse_impl(stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
+    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         let ident = Ident::parse(stream)?;
         ":".parse_value(stream)?;
@@ -112,7 +111,7 @@ impl<'s> FunDecl<'s> {
 }
 
 impl<'s> Parse<'s> for FunDecl<'s> {
-    fn parse_impl(stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
+    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         Kw::Fun.parse_value(stream)?;
         let ident = Ident::parse(stream).ok();

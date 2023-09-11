@@ -1,7 +1,5 @@
 
 use std::fmt::Debug;
-
-use gdml_macros::gdml_log;
 use strum::IntoEnumIterator;
 
 use crate::{
@@ -43,7 +41,7 @@ pub enum Expr<'s> {
 }
 
 impl<'s> Expr<'s> {
-    fn parse_single(stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
+    fn parse_single<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         if Kw::Var.peek_value(stream) {
             Ok(Self::VarDecl(stream.parse()?))
@@ -75,7 +73,7 @@ impl<'s> Expr<'s> {
         }
     }
 
-    fn parse_postfix(stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
+    fn parse_postfix<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
         let mut expr = Self::parse_single(stream)?;
         loop {
             if Parenthesized::peek(stream) {
@@ -88,7 +86,7 @@ impl<'s> Expr<'s> {
         Ok(expr)
     }
 
-    pub fn parse_unop(stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
+    pub fn parse_unop<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
         if Op::peek(stream) {
             Ok(Self::UnOp(stream.parse()?))
         }
@@ -97,8 +95,10 @@ impl<'s> Expr<'s> {
         }
     }
     
-    fn parse_binop_prec<F>(prec: Prec, sides: &mut F, stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>>
-        where F: FnMut(&mut TokenStream<'s>) -> Result<Expr<'s>, Message<'s>>
+    fn parse_binop_prec<F, S>(prec: Prec, sides: &mut F, stream: &mut S) -> Result<Self, Message<'s>>
+        where
+            S: TokenStream<'s>,
+            F: FnMut(&mut S) -> Result<Expr<'s>, Message<'s>>
     {
         let mut lhs = sides(stream)?;
         while prec.peek(stream) {
@@ -107,11 +107,11 @@ impl<'s> Expr<'s> {
         Ok(lhs)
     }
 
-    fn parse_binop(stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
-        let mut sides: Box<dyn FnMut(&mut TokenStream<'s>) -> _> = Box::from(Self::parse_unop);
+    fn parse_binop<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
+        let mut sides: Box<dyn FnMut(&mut S) -> _> = Box::from(Self::parse_unop);
         for prec in Prec::iter().skip(1) {
             sides = Box::from(
-                move |stream: &mut TokenStream<'s>| Self::parse_binop_prec(prec, &mut sides, stream)
+                move |stream: &mut S| Self::parse_binop_prec(prec, &mut sides, stream)
             );
         }
         sides(stream)
@@ -127,7 +127,7 @@ impl<'s> Expr<'s> {
 }
 
 impl<'s> Parse<'s> for Expr<'s> {
-    fn parse_impl(stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
+    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
         Self::parse_binop(stream)
     }
 }
@@ -205,7 +205,7 @@ pub struct ExprList<'s> {
 }
 
 impl<'s> Parse<'s> for ExprList<'s> {
-    fn parse_impl(stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
+    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         // just parse until the stream is over
         // since braces are treated as a single token that result in a substream 
@@ -250,7 +250,7 @@ pub struct Block<'s> {
 }
 
 impl<'s> Parse<'s> for Block<'s> {
-    fn parse_impl(stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
+    fn parse_impl<S: TokenStream<'s>>(stream: &mut S) -> Result<Self, Message<'s>> {
         let start = stream.skip_ws();
         let mut braced = Braced::parse(stream)?.into_stream();
         Ok(Self { list: braced.parse()?, span: stream.span(start) })

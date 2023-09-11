@@ -5,7 +5,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use crate::parser::{stream::TokenStream, ast::expr::ExprList};
+use crate::parser::{stream::{TokenStream, SrcReader}, ast::expr::ExprList};
 
 use super::logging::Message;
 
@@ -218,11 +218,11 @@ impl Src {
         }
     }
 
-    pub fn tokenize<'s>(&'s self) -> TokenStream<'s> {
-        TokenStream::new(self)
+    pub fn read<'s>(&'s self) -> SrcReader<'s> {
+        SrcReader::new(self)
     }
 
     pub fn parse<'s>(&'s self) -> Result<ExprList<'s>, Message<'s>> {
-        self.tokenize().parse()
+        self.read().parse()
     }
 }

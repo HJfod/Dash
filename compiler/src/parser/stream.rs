@@ -1,7 +1,6 @@
 
 use std::fmt::{Debug, Display};
 use crate::shared::{src::Src, logging::{Message, Level}};
-use gdml_macros::gdml_log;
 use unicode_xid::UnicodeXID;
 use super::{
     node::{Span, ASTNode, Parse},
@@ -85,26 +84,19 @@ impl<'s> ASTNode<'s> for Token<'s> {
     }
 }
 
-// todo: have subtrees be a Vec of parsed tokens instead and make the TokenStream<'s>
+// todo: have subtrees be a Vec of parsed tokens instead and make the SrcReader<'s>
 // parameter in `parse` be just an iterator that produces tokens
 
 /// Parses a source into a list of tokens
 #[derive(Debug)]
-pub struct TokenStream<'s> {
+pub struct SrcReader<'s> {
     src: &'s Src,
     pos: usize,
-    eof_char: Option<char>,
 }
 
-impl<'s> TokenStream<'s> {
+impl<'s> SrcReader<'s> {
     pub fn new(src: &'s Src) -> Self {
-        Self { src, pos: 0, eof_char: None }
-    }
-
-    /// Creates a new TokenStream on the same source at the same position.
-    /// Used for parenthesized substreams
-    pub fn fork(&mut self, eof_char: Option<char>) -> Self {
-        Self { src: self.src, pos: self.pos, eof_char }
+        Self { src, pos: 0 }
     }
 
     fn get_while<F: FnMut(char) -> bool>(&mut self, mut fun: F, res: &mut String) {
@@ -219,7 +211,7 @@ impl<'s> TokenStream<'s> {
     }
 }
 
-impl<'s> Iterator for TokenStream<'s> {
+impl<'s> Iterator for SrcReader<'s> {
     type Item = Token<'s>;
     fn next(&mut self) -> Option<Self::Item> {
         // Skip all whitespace and comments
@@ -323,7 +315,7 @@ impl<'s> Iterator for TokenStream<'s> {
         }
         // Parenthesized subtrees
         else if matches!(ch, '(' | '[' | '{') {
-            let tree = self.fork(Some(closing_paren(ch)));
+            let mut tree = vec![];
             'find_closing: loop {
                 // skip whitespace
                 self.skip_ws();
@@ -356,6 +348,22 @@ impl<'s> Iterator for TokenStream<'s> {
         else {
             make_error(format!("invalid symbol '{ch}'"), self.pos)
         }
+    }
+}
+
+pub trait Forkable {
+    fn fork(&self) -> Self;
+}
+
+impl<'s> Forkable for SrcReader<'s> {
+    fn fork(&self) -> Self {
+        Self { src: self.src, pos: self.pos }
+    }
+}
+
+pub trait TokenStream<'s>: IntoIterator<Item = Token<'s>> + Forkable + Sized {
+    fn parse<P: Parse<'s>>(&mut self) -> Result<P, Message<'s>> {
+        P::parse(self)
     }
 }
 
