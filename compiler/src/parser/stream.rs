@@ -7,7 +7,7 @@ use super::{
     ast::token::{
         Kw, Op, Ident, VoidLit, BoolLit, StringLit, IntLit, FloatLit,
         Parenthesized, Braced, Bracketed, Lit,
-        is_op_char, closing_paren
+        is_op_char, closing_paren, Punct
     }
 };
 
@@ -17,13 +17,13 @@ use super::{
 #[derive(Debug)]
 pub enum Token<'s> {
     /// Keyword e.g. `return`
-    Kw(Kw, Span<'s>),
+    Kw(Kw<'s>),
     /// Operator e.g. `+=`
-    Op(Op, Span<'s>),
+    Op(Op<'s>),
     /// Identifier e.g. `ident`
     Ident(Ident<'s>),
     /// Punctuation e.g. `;`, `,`, `...`
-    Punct(String, Span<'s>),
+    Punct(Punct<'s>),
     /// Void literal `void`
     Void(VoidLit<'s>),
     /// Void literal e.g. `true`, `false`
@@ -332,23 +332,35 @@ impl<'s> Iterator for SrcReader<'s> {
         else {
             make_error(format!("invalid symbol '{ch}'"), self.pos)
         }
-        self.peekable()
     }
 }
 
 pub struct TokenStream<'s, I: Iterator<Item = Token<'s>>> {
-    iter: Peekable<I>,
+    iter: I,
+    /// Stored for peeking
+    next_token: Option<Token<'s>>,
 }
 
 impl<'s, I: IntoIterator<Item = Token<'s>>> From<I> for TokenStream<'s, I::IntoIter> {
     fn from(value: I) -> Self {
-        Self {
-            iter: value.into_iter().peekable()
-        }
+        let mut iter = value.into_iter();
+        let peeked = iter.next();
+        Self { iter, next_token: peeked }
+    }
+}
+
+impl<'s, I: Iterator<Item = Token<'s>>> Iterator for TokenStream<'s, I> {
+    type Item = Token<'s>;
+    fn next(&mut self) -> Option<Self::Item> {
+        std::mem::replace(&mut self.next_token, self.iter.next())
     }
 }
 
 impl<'s, I: Iterator<Item = Token<'s>>> TokenStream<'s, I> {
+    pub fn peek(&self) -> Option<Token<'s>> {
+        self.next_token
+    }
+
     pub fn parse<P: Parse<'s>>(&mut self) -> Result<P, Message<'s>> {
         P::parse(self)
     }

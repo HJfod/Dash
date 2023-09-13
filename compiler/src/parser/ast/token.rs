@@ -1,7 +1,7 @@
 
-use std::fmt::{Display, Debug};
+use std::{fmt::{Display, Debug}, marker::PhantomData};
 use strum::{EnumString, Display, EnumIter};
-
+use gdml_macros::snake_case_ident;
 use crate::{
     parser::{
         node::{Parse, Span, ASTNode},
@@ -9,10 +9,15 @@ use crate::{
     },
     shared::logging::{Message, Level}, compiler::typecheck
 };
-use paste::paste;
 
 pub trait Tokenize<'s>: ASTNode<'s> {
     fn name() -> &'static str;
+}
+
+impl<'s, T: Tokenize<'s>> Display for T {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(Self::name())
+    }
 }
 
 pub fn is_op_char(ch: char) -> bool {
@@ -28,38 +33,60 @@ pub fn closing_paren(ch: char) -> char {
     }
 }
 
-macro_rules! declare_kws {
-    ($($kind:ident { $($kw: ident,)* })*) => {
+macro_rules! declare_token {
+    (
+        [$class:ident $class_as_str:literal]
+        $(
+            $kind:ident {
+                $(
+                    $item:ident $(= $as_str:literal)?
+                    $(($($trait:ident $(
+                        ($($arg:ident: $arg_type:ty),*)
+                    )? -> $type:ty = $value:expr),+))?,
+                )*
+            }
+        )*
+    ) => {
         $($(
             #[derive(Debug)]
-            pub struct $kw<'s> {
+            pub struct $item<'s> {
                 span: Span<'s>,
             }
 
-            impl<'s> Tokenize<'s> for $kw<'s> {
+            impl<'s> $item<'s> {
+                $(
+                    $(
+                        fn $trait($($($arg: $arg_type),*)?) -> $type {
+                            $value
+                        }
+                    )+
+                )?
+            }
+
+            impl<'s> Tokenize<'s> for $item<'s> {
                 fn name() -> &'static str {
-                    paste!([<$kw:snake>])
+                    declare_token!(#get_name $($as_str)? $class_as_str $item) 
                 }
             }
 
-            impl<'s> ASTNode<'s> for $kw<'s> {
+            impl<'s> ASTNode<'s> for $item<'s> {
                 fn span(&self) -> &Span<'s> {
                     &self.span
                 }
             }
 
-            impl<'s> Parse<'s> for $kw<'s> {
+            impl<'s> Parse<'s> for $item<'s> {
                 fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
                     match stream.next() {
-                        Some(Kw::$kw(kw)) => Ok(kw),
+                        Some(Token::$class($class::$item(kw))) => Ok(kw),
                         Some(t) => Err(Message::from_span(
                             Level::Error, 
-                            format!("Expected keyword TODO, got {}", t.kind_name()),
+                            format!("Expected {}, got {t}", Self::name()),
                             t.span()
                         )),
                         None => Err(Message::from_eof(
                             Level::Error,
-                            format!("Expected keyword TODO, got EOF"),
+                            format!("Expected {}, got EOF", Self::name()),
                             stream.src()
                         ))
                     }
@@ -68,24 +95,33 @@ macro_rules! declare_kws {
         )*)*
 
         #[derive(Debug)]
-        pub enum Kw<'s> {
-            $($($kw($kw<'s>),)*)*
+        pub enum $class<'s> {
+            $($($item($item<'s>),)*)*
         }
 
-        impl<'s> Kw<'s> {
+        impl<'s> $class<'s> {
             $(
                 pub fn $kind(&self) -> bool {
                     match self {
-                        $(Self::$kw(t) => t.$kind(),)*
+                        $(Self::$item(t) => true,)*
                         _ => false
                     }
                 }
             )*
         }
     };
+
+    (#get_name $as_str:literal $_0:literal $_1:ident) => {
+        $as_str
+    };
+
+    (#get_name $class_as_str:literal $name:ident) => {
+        concat!($class_as_str, " '", snake_case_ident!($name), "'")
+    };
 }
 
-declare_kws! {
+declare_token! {
+    [Kw "keyword"]
     is_strict {
         Void, True, False,
         Var, Let, Fun, Decl, Struct, Const,
@@ -100,10 +136,6 @@ declare_kws! {
     }
 }
 
-const FIRST_STRICT_KW: Kw = Kw::Var;
-const FIRST_CONTEXTUAL_KW: Kw = Kw::Yield;
-const FIRST_RESERVED_KW: Kw = Kw::Yield;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, EnumIter)]
 pub enum Prec {
     Unary,
@@ -116,87 +148,56 @@ pub enum Prec {
     Seq,
 }
 
-impl Prec {
-    pub fn peek<'s>(&self, stream: &mut TokenStream<'s, impl Iterator<Item = Token<'s>>>) -> bool {
-        let start = stream.pos();
-        if let Ok(op) = Op::parse(stream) {
-            stream.goto(start);
-            op.prec() == *self
-        }
-        else {
-            stream.goto(start);
-            false
-        }
+declare_token! {
+    [Op "operator"]
+    is_unary {
+        Not = "!" (prec -> Prec = Prec::Unary),
+    }
+    is_binary {
+        Mul = "*" (prec -> Prec = Prec::Mul),
+        Div = "/" (prec -> Prec = Prec::Mul),
+        Mod = "%" (prec -> Prec = Prec::Mul),
+
+        Add = "+" (prec -> Prec = Prec::Add),
+        Sub = "-" (prec -> Prec = Prec::Add),
+
+        Lss = "<"  (prec -> Prec = Prec::Ord),
+        Gtr = ">"  (prec -> Prec = Prec::Ord),
+        Leq = "<=" (prec -> Prec = Prec::Ord),
+        Geq = ">=" (prec -> Prec = Prec::Ord),
+
+        Eq  = "==" (prec -> Prec = Prec::Eq),
+        Neq = "!=" (prec -> Prec = Prec::Eq),
+
+        And = "&&" (prec -> Prec = Prec::And),
+
+        Or  = "||" (prec -> Prec = Prec::Or),
+
+        Seq    = "="  (prec -> Prec = Prec::Seq),
+        AddSeq = "+=" (prec -> Prec = Prec::Seq),
+        SubSeq = "-=" (prec -> Prec = Prec::Seq),
+        MulSeq = "*=" (prec -> Prec = Prec::Seq),
+        DivSeq = "/=" (prec -> Prec = Prec::Seq),
+        ModSeq = "%=" (prec -> Prec = Prec::Seq),
     }
 }
 
-/// An operator token in GDML
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, EnumString, Display)]
-pub enum Op {
-    #[strum(serialize = "+")]
-    Add,
-    #[strum(serialize = "-")]
-    Sub,
-    #[strum(serialize = "*")]
-    Mul,
-    #[strum(serialize = "/")]
-    Div,
-    #[strum(serialize = "%")]
-    Mod,
-
-    #[strum(serialize = "=")]
-    Seq,
-    #[strum(serialize = "+=")]
-    AddSeq,
-    #[strum(serialize = "-=")]
-    SubSeq,
-    #[strum(serialize = "*=")]
-    MulSeq,
-    #[strum(serialize = "/=")]
-    DivSeq,
-    #[strum(serialize = "%=")]
-    ModSeq,
-    
-    #[strum(serialize = "==")]
-    Eq,
-    #[strum(serialize = "!=")]
-    Neq,
-    #[strum(serialize = "<")]
-    Lss,
-    #[strum(serialize = ">")]
-    Gtr,
-    #[strum(serialize = "<=")]
-    Leq,
-    #[strum(serialize = ">=")]
-    Geq,
-    
-    #[strum(serialize = "&&")]
-    And,
-    #[strum(serialize = "||")]
-    Or,
-    
-    #[strum(serialize = "!")]
-    Not,
-}
-
-impl Op {
-    pub fn prec(&self) -> Prec {
-        match self {
-            Op::Not => Prec::Unary,
-            Op::Mul | Op::Div | Op::Mod => Prec::Mul,
-            Op::Add | Op::Sub => Prec::Add,
-            Op::Lss | Op::Gtr | Op::Leq | Op::Geq => Prec::Ord,
-            Op::Eq | Op::Neq => Prec::Eq,
-            Op::And => Prec::And,
-            Op::Or => Prec::Or,
-            Op::Seq | Op::AddSeq | Op::SubSeq | Op::MulSeq | Op::DivSeq | Op::ModSeq => Prec::Seq,
-        }
+declare_token! {
+    [Punct "punctuation"]
+    is_chained {
+        Dot     = ".",
+        Didot   = "..",
+        Tridot  = "...",
+        Colon   = ":",
+        Dicolon = "::",
     }
-}
-
-impl<'s> ASTNode<'s> for Op {
-    fn span(&self) -> &Span<'s> {
-        panic!("cannot get span of operator")
+    is_single {
+        Comma     = ",",
+        Semicolon = ";",
+    }
+    is_symbol {
+        Arrow    = "->",
+        FatArrow = "=>",
     }
 }
 
@@ -234,160 +235,6 @@ impl<'s> ASTNode<'s> for Ident<'s> {
 }
 
 #[derive(Debug)]
-pub struct Lit<'s, T: Debug> {
-    value: T,
-    span: Span<'s>,
-}
-
-impl<'s, T: Debug> Lit<'s, T> {
-    pub fn new(value: T, span: Span<'s>) -> Self {
-        Self { value, span }
-    }
-}
-
-impl<'s, T: Debug> ASTNode<'s> for Lit<'s, T> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
-}
-
-pub type VoidLit<'s> = Lit<'s, ()>;
-pub type BoolLit<'s> = Lit<'s, bool>;
-pub type IntLit<'s> = Lit<'s, i64>;
-pub type FloatLit<'s> = Lit<'s, f64>;
-pub type StringLit<'s> = Lit<'s, String>;
-
-#[derive(Debug)]
-pub struct Parenthesized<'s> {
-    substream: Vec<Token<'s>>,
-    span: Span<'s>,
-}
-
-impl<'s> Parenthesized<'s> {
-    pub fn new(substream: Vec<Token<'s>>, span: Span<'s>) -> Self {
-        Self { substream, span }
-    }
-
-    pub fn into_stream(self) -> Vec<Token<'s>> {
-        self.substream
-    }
-}
-
-impl<'s> Parse<'s> for Parenthesized<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
-        match stream.next() {
-            Some(Token::Parenthesized(p)) => Ok(p),
-            Some(other) => Err(Message::from_span(
-                Level::Error,
-                format!("Expected parenthesized expression, got {other}"),
-                other.span()
-            )),
-            None => Err(stream.error(format!("Expected parenthesized expression, got {}", stream.whats_eof()), start))
-        }
-    }
-}
-
-impl<'s> ASTNode<'s> for Parenthesized<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
-}
-
-#[derive(Debug)]
-pub struct Bracketed<'s> {
-    substream: Vec<Token<'s>>,
-    span: Span<'s>,
-}
-
-impl<'s> Bracketed<'s> {
-    pub fn new(substream: Vec<Token<'s>>, span: Span<'s>) -> Self {
-        Self { substream, span }
-    }
-
-    pub fn into_stream(self) -> Vec<Token<'s>> {
-        self.substream
-    }
-}
-
-impl<'s> Parse<'s> for Bracketed<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
-        match stream.next() {
-            Some(Token::Bracketed(p)) => Ok(p),
-            Some(other) => Err(Message::from_span(
-                Level::Error,
-                format!("Expected bracketed expression, got {other}"),
-                other.span()
-            )),
-            None => Err(stream.error(format!("Expected bracketed expression, got {}", stream.whats_eof()), start))
-        }
-    }
-}
-
-impl<'s> ASTNode<'s> for Bracketed<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
-}
-
-#[derive(Debug)]
-pub struct Braced<'s> {
-    substream: Vec<Token<'s>>,
-    span: Span<'s>,
-}
-
-impl<'s> Braced<'s> {
-    pub fn new(substream: Vec<Token<'s>>, span: Span<'s>) -> Self {
-        Self { substream, span }
-    }
-
-    pub fn into_stream(self) -> Vec<Token<'s>> {
-        self.substream
-    }
-}
-
-impl<'s> Parse<'s> for Braced<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
-        match stream.next() {
-            Some(Token::Braced(p)) => Ok(p),
-            Some(other) => Err(Message::from_span(
-                Level::Error,
-                format!("Expected braced expression, got {other}"),
-                other.span()
-            )),
-            None => Err(stream.error(format!("Expected braced expression, got {}", stream.whats_eof()), start))
-        }
-    }
-}
-
-impl<'s> ASTNode<'s> for Braced<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
-}
-
-// impl<'s> ParseValue<'s> for &'static str {
-//     fn parse_value_impl(self, stream: &mut TokenStream<'s>) -> Result<Self, Message<'s>> {
-//         let start = stream.pos();
-//         let Some(tk) = stream.next() else {
-//             return Err(stream.error(format!("Expected '{self}', got {}", stream.whats_eof()), start));
-//         };
-//         let value = match tk {
-//             Token::Punct(ref p, _) => p,
-//             _ => return Err(stream.error(format!("Expected '{self}', got {tk}"), start)),
-//         };
-//         if value == self {
-//             Ok(self)
-//         }
-//         else {
-//             Err(stream.error(format!("Expected '{self}', got {tk}"), start))
-//         }
-//     }
-// }
-
-#[derive(Debug)]
 pub struct Path<'s> {
     components: Vec<Ident<'s>>,
     absolute: bool,
@@ -423,3 +270,123 @@ impl<'s> ASTNode<'s> for Path<'s> {
         &self.span
     }
 }
+
+#[derive(Debug)]
+pub struct Lit<'s, T: Debug> {
+    value: T,
+    span: Span<'s>,
+}
+
+impl<'s, T: Debug> Lit<'s, T> {
+    pub fn new(value: T, span: Span<'s>) -> Self {
+        Self { value, span }
+    }
+}
+
+impl<'s, T: Debug> ASTNode<'s> for Lit<'s, T> {
+    fn span(&self) -> &Span<'s> {
+        &self.span
+    }
+}
+
+pub type VoidLit<'s> = Lit<'s, ()>;
+pub type BoolLit<'s> = Lit<'s, bool>;
+pub type IntLit<'s> = Lit<'s, i64>;
+pub type FloatLit<'s> = Lit<'s, f64>;
+pub type StringLit<'s> = Lit<'s, String>;
+
+pub trait SurroundFromToken<'s> {
+    type Result;
+    fn surround_from_token(tk: Token<'s>) -> Option<Self::Result>;
+    fn kind_name() -> &'static str;
+}
+
+/// A list of tokens surrounded by punctuation, such as parentheses or braces
+#[derive(Debug)]
+pub struct Surrounded<'s, T: SurroundFromToken<'s>> {
+    content: Vec<Token<'s>>,
+    span: Span<'s>,
+    _phantom: PhantomData<T>,
+}
+
+impl<'s, T: SurroundFromToken<'s>> Surrounded<'s, T> {
+    pub fn new(content: Vec<Token<'s>>, span: Span<'s>) -> Self {
+        Self { content, span, _phantom: PhantomData }
+    }
+
+    pub fn into_stream(self) -> Vec<Token<'s>> {
+        self.content
+    }
+}
+
+impl<'s, T: SurroundFromToken<'s>> Parse<'s> for Surrounded<'s, T> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+        let start = stream.skip_ws();
+        match stream.next() {
+            Some(tk) => {
+                if let Some(p) = T::surround_from_token(tk) {
+                    Ok(p)
+                }
+                else {
+                    Err(Message::from_span(
+                        Level::Error,
+                        format!("Expected {} expression, got {tk}", T::kind_name()),
+                        tk.span()
+                    ))
+                }
+            }
+            None => Err(stream.error(format!("Expected {} expression, got EOF", T::kind_name()), start))
+        }
+    }
+}
+
+impl<'s, T: SurroundFromToken<'s>> ASTNode<'s> for Surrounded<'s, T> {
+    fn span(&self) -> &Span<'s> {
+        &self.span
+    }
+}
+
+struct Paren;
+impl<'s> SurroundFromToken<'s> for Paren {
+    type Result = Parenthesized<'s>;
+    fn surround_from_token(tk: Token<'s>) -> Option<Self::Result> {
+        match tk {
+            Token::Parenthesized(p) => Some(p),
+            _ => None,
+        }
+    }
+    fn kind_name() -> &'static str {
+        "parenthesized"
+    }
+}
+pub type Parenthesized<'s> = Surrounded<'s, Paren>;
+
+struct Bracket;
+impl<'s> SurroundFromToken<'s> for Bracket {
+    type Result = Bracketed<'s>;
+    fn surround_from_token(tk: Token<'s>) -> Option<Self::Result> {
+        match tk {
+            Token::Bracketed(p) => Some(p),
+            _ => None,
+        }
+    }
+    fn kind_name() -> &'static str {
+        "bracketed"
+    }
+}
+pub type Bracketed<'s> = Surrounded<'s, Bracket>;
+
+struct Brace;
+impl<'s> SurroundFromToken<'s> for Brace {
+    type Result = Braced<'s>;
+    fn surround_from_token(tk: Token<'s>) -> Option<Self::Result> {
+        match tk {
+            Token::Braced(p) => Some(p),
+            _ => None,
+        }
+    }
+    fn kind_name() -> &'static str {
+        "braced"
+    }
+}
+pub type Braced<'s> = Surrounded<'s, Brace>;
