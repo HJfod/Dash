@@ -1,6 +1,6 @@
 
 use std::{fmt::{Display, Debug}, marker::PhantomData};
-use strum::{EnumString, Display, EnumIter};
+use strum::EnumIter;
 use gdml_macros::snake_case_ident;
 use crate::{
     parser::{
@@ -12,12 +12,6 @@ use crate::{
 
 pub trait Tokenize<'s>: ASTNode<'s> {
     fn name() -> &'static str;
-}
-
-impl<'s, T: Tokenize<'s>> Display for T {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(Self::name())
-    }
 }
 
 pub fn is_op_char(ch: char) -> bool {
@@ -69,6 +63,12 @@ macro_rules! declare_token {
                 }
             }
 
+            impl<'s> Display for $item<'s> {
+                fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    f.write_str(Self::name())
+                }
+            }
+
             impl<'s> ASTNode<'s> for $item<'s> {
                 fn span(&self) -> &Span<'s> {
                     &self.span
@@ -108,6 +108,29 @@ macro_rules! declare_token {
                     }
                 }
             )*
+
+            pub fn str_is(value: &str) -> bool {
+                match value {
+                    $(
+                        $(
+                            declare_token!(#get_name $($as_str)? $class_as_str $item) => true,
+                        )*
+                    )*
+                    _ => false,
+                }
+            }
+        }
+
+        impl<'s> Display for $class<'s> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                match self {
+                    $(
+                        $(
+                            Self::$item(t) => std::fmt::Display::fmt(t, f),
+                        )*
+                    )*
+                }
+            }
         }
     };
 
@@ -210,7 +233,7 @@ impl<'s> Ident<'s> {
     }
 
     pub fn is_keyword(&self) -> bool {
-        Kw::try_from(self.0.as_str()).is_ok()
+        Kw::str_is(self.0.as_str())
     }
 
     pub fn value(&self) -> &String {
@@ -252,8 +275,7 @@ impl<'s> Path<'s> {
 
 impl<'s> Parse<'s> for Path<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
-        let absolute = "::".parse_value(stream).is_ok();
+        let absolute = Dicolon::peek(stream);
         let mut components = vec![];
         loop {
             components.push(stream.parse()?);
@@ -295,21 +317,20 @@ pub type IntLit<'s> = Lit<'s, i64>;
 pub type FloatLit<'s> = Lit<'s, f64>;
 pub type StringLit<'s> = Lit<'s, String>;
 
-pub trait SurroundFromToken<'s> {
-    type Result;
-    fn surround_from_token(tk: Token<'s>) -> Option<Self::Result>;
+pub trait SurroundingToken<'s>: Debug + Sized {
+    fn surround_from_token(tk: Token<'s>) -> Option<Surrounded<'s, Self>>;
     fn kind_name() -> &'static str;
 }
 
 /// A list of tokens surrounded by punctuation, such as parentheses or braces
 #[derive(Debug)]
-pub struct Surrounded<'s, T: SurroundFromToken<'s>> {
+pub struct Surrounded<'s, T: SurroundingToken<'s>> {
     content: Vec<Token<'s>>,
     span: Span<'s>,
     _phantom: PhantomData<T>,
 }
 
-impl<'s, T: SurroundFromToken<'s>> Surrounded<'s, T> {
+impl<'s, T: SurroundingToken<'s>> Surrounded<'s, T> {
     pub fn new(content: Vec<Token<'s>>, span: Span<'s>) -> Self {
         Self { content, span, _phantom: PhantomData }
     }
@@ -319,9 +340,8 @@ impl<'s, T: SurroundFromToken<'s>> Surrounded<'s, T> {
     }
 }
 
-impl<'s, T: SurroundFromToken<'s>> Parse<'s> for Surrounded<'s, T> {
+impl<'s, T: SurroundingToken<'s>> Parse<'s> for Surrounded<'s, T> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
         match stream.next() {
             Some(tk) => {
                 if let Some(p) = T::surround_from_token(tk) {
@@ -335,21 +355,25 @@ impl<'s, T: SurroundFromToken<'s>> Parse<'s> for Surrounded<'s, T> {
                     ))
                 }
             }
-            None => Err(stream.error(format!("Expected {} expression, got EOF", T::kind_name()), start))
+            None => Err(Message::from_eof(
+                Level::Error,
+                format!("Expected {} expression, got EOF", T::kind_name()),
+                stream.src()
+            ))
         }
     }
 }
 
-impl<'s, T: SurroundFromToken<'s>> ASTNode<'s> for Surrounded<'s, T> {
+impl<'s, T: SurroundingToken<'s>> ASTNode<'s> for Surrounded<'s, T> {
     fn span(&self) -> &Span<'s> {
         &self.span
     }
 }
 
+#[derive(Debug)]
 struct Paren;
-impl<'s> SurroundFromToken<'s> for Paren {
-    type Result = Parenthesized<'s>;
-    fn surround_from_token(tk: Token<'s>) -> Option<Self::Result> {
+impl<'s> SurroundingToken<'s> for Paren {
+    fn surround_from_token(tk: Token<'s>) -> Option<Parenthesized<'s>> {
         match tk {
             Token::Parenthesized(p) => Some(p),
             _ => None,
@@ -361,10 +385,10 @@ impl<'s> SurroundFromToken<'s> for Paren {
 }
 pub type Parenthesized<'s> = Surrounded<'s, Paren>;
 
+#[derive(Debug)]
 struct Bracket;
-impl<'s> SurroundFromToken<'s> for Bracket {
-    type Result = Bracketed<'s>;
-    fn surround_from_token(tk: Token<'s>) -> Option<Self::Result> {
+impl<'s> SurroundingToken<'s> for Bracket {
+    fn surround_from_token(tk: Token<'s>) -> Option<Bracketed<'s>> {
         match tk {
             Token::Bracketed(p) => Some(p),
             _ => None,
@@ -376,10 +400,10 @@ impl<'s> SurroundFromToken<'s> for Bracket {
 }
 pub type Bracketed<'s> = Surrounded<'s, Bracket>;
 
+#[derive(Debug)]
 struct Brace;
-impl<'s> SurroundFromToken<'s> for Brace {
-    type Result = Braced<'s>;
-    fn surround_from_token(tk: Token<'s>) -> Option<Self::Result> {
+impl<'s> SurroundingToken<'s> for Brace {
+    fn surround_from_token(tk: Token<'s>) -> Option<Braced<'s>> {
         match tk {
             Token::Braced(p) => Some(p),
             _ => None,

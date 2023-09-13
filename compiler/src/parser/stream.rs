@@ -47,10 +47,10 @@ pub enum Token<'s> {
 impl<'s> Display for Token<'s> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Token::Kw(kw, _) => f.write_fmt(format_args!("keyword '{kw}'")),
-            Token::Op(op, _) => f.write_fmt(format_args!("operator '{op}'")),
+            Token::Kw(kw) => f.write_fmt(format_args!("{kw}")),
+            Token::Op(op) => f.write_fmt(format_args!("{op}")),
             Token::Ident(_) => f.write_str("identifier"),
-            Token::Punct(p, _) => f.write_fmt(format_args!("'{p}'")),
+            Token::Punct(p) => f.write_fmt(format_args!("{p}")),
             Token::Void(_) => f.write_str("void literal"),
             Token::Bool(_) => f.write_str("boolean literal"),
             Token::String(_) => f.write_str("string literal"),
