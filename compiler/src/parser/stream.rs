@@ -1,6 +1,6 @@
 
-use std::{fmt::{Debug, Display}, iter::Peekable};
-use crate::shared::{src::Src, logging::{Message, Level}};
+use std::fmt::{Debug, Display};
+use crate::shared::{src::Src, logging::Message};
 use unicode_xid::UnicodeXID;
 use super::{
     node::{Span, ASTNode, Parse},
@@ -158,6 +158,7 @@ impl<'s> Iterator for SrcReader<'s> {
             // EOF
             return None;
         };
+        let next_ch = self.src.get(self.pos);
 
         let first_pos = self.pos;
         self.pos += 1;
@@ -178,10 +179,10 @@ impl<'s> Iterator for SrcReader<'s> {
             get_while(self, UnicodeXID::is_xid_continue, &mut res);
             if let Some(kw) = Kw::try_new(res.as_str(), make_span(self.pos)) {
                 Some(match kw {
-                    Kw::Void => Token::Void(Lit::new((), make_span(self.pos))),
-                    Kw::True => Token::Bool(Lit::new(true, make_span(self.pos))),
-                    Kw::False => Token::Bool(Lit::new(false, make_span(self.pos))),
-                    kw => Token::Kw(kw, make_span(self.pos)),
+                    Kw::Void(v) => Token::Void(Lit::new((), v.span().to_owned())),
+                    Kw::True(t) => Token::Bool(Lit::new(true, t.span().to_owned())),
+                    Kw::False(f) => Token::Bool(Lit::new(false, f.span().to_owned())),
+                    kw => Token::Kw(kw),
                 })
             }
             else {
@@ -220,34 +221,24 @@ impl<'s> Iterator for SrcReader<'s> {
             }
         }
         // Single punctuation
-        else if matches!(ch, ',' | ';') {
-            Some(Token::Punct(ch.to_string(), make_span(self.pos)))
-        }
-        // Chained punctuation
-        else if matches!(ch, '.' | ':') {
+        else if matches!(ch, ',' | ';' | '.' | ':') || (matches!(ch, '-' | '=') && next_ch == Some('>')) {
+            // Chained punctuation
             let mut res = String::from(ch);
-            get_while(self, |c| c == ch, &mut res);
-            match Punct::try_new( , span)
-            Token::Punct()
-            match res.as_str() {
-                "." => Some(Token::Punct(Punct::Dot(make_span(self.pos))))
+            if matches!(ch, '.' | ':') {
+                get_while(self, |c| c == ch, &mut res);
             }
-            Some(Token::Punct(res, make_span(self.pos)))
-        }
-        // Arrows
-        else if matches!(ch, '-' | '=') && self.src.get(self.pos) == Some('>') {
-            self.pos += 1;
-            Some(Token::Punct(format!("{ch}>"), make_span(self.pos)))
+            match Punct::try_new(res.as_str(), make_span(self.pos)) {
+                Some(p) => Some(Token::Punct(p)),
+                None => make_error(format!("invalid punctuation '{res}'"), self.pos),
+            }
         }
         // Operator
         else if is_op_char(ch) {
             let mut res = String::from(ch);
-            self.get_while(is_op_char, &mut res);
-            if let Ok(op) = Op::try_from(res.as_str()) {
-                Some(Token::Op(op, make_span(self.pos)))
-            }
-            else {
-                make_error(format!("invalid operator '{res}'"), self.pos)
+            get_while(self, is_op_char, &mut res);
+            match Op::try_new(res.as_str(), make_span(self.pos)) {
+                Some(op) => Some(Token::Op(op)),
+                None => make_error(format!("invalid operator '{res}'"), self.pos),
             }
         }
         // Parenthesized subtrees
@@ -255,7 +246,7 @@ impl<'s> Iterator for SrcReader<'s> {
             let mut tree = vec![];
             'find_closing: loop {
                 // skip whitespace
-                self.skip_ws();
+                skip_ws(self);
                 match self.src.get(self.pos) {
                     Some(c) if c == closing_paren(ch) => {
                         // consume closing parenthesis
@@ -289,6 +280,7 @@ impl<'s> Iterator for SrcReader<'s> {
 }
 
 pub struct TokenStream<'s, I: Iterator<Item = Token<'s>>> {
+    src: &'s Src,
     iter: I,
     /// Stored for peeking
     next_token: Option<Token<'s>>,
@@ -296,22 +288,17 @@ pub struct TokenStream<'s, I: Iterator<Item = Token<'s>>> {
 }
 
 pub trait IntoTokenStream<'s>: IntoIterator<Item = Token<'s>> {
+    fn src(&self) -> &'s Src;
     fn eof(&self) -> Option<(char, Span<'s>)>;
 }
 
 impl<'s, I: IntoTokenStream<'s>> From<I> for TokenStream<'s, I::IntoIter> {
     fn from(value: I) -> Self {
+        let src = value.src();
         let eof = value.eof();
         let mut iter = value.into_iter();
         let next_token = iter.next();
-        Self { iter, next_token, eof }
-    }
-}
-
-impl<'s, I: Iterator<Item = Token<'s>>> Iterator for TokenStream<'s, I> {
-    type Item = Token<'s>;
-    fn next(&mut self) -> Option<Self::Item> {
-        std::mem::replace(&mut self.next_token, self.iter.next())
+        Self { src, iter, next_token, eof }
     }
 }
 
@@ -322,5 +309,26 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenStream<'s, I> {
 
     pub fn parse<P: Parse<'s>>(&mut self) -> Result<P, Message<'s>> {
         P::parse(self)
+    }
+
+    pub fn eof_name(&self) -> String {
+        match self.eof {
+            Some((ch, _)) => String::from(ch),
+            None => String::from("EOF"),
+        }
+    }
+
+    pub fn eof_span(&self) -> Span<'s> {
+        match self.eof {
+            Some((_, ref span)) => span.clone(),
+            None => self.src.range(start, end)
+        }
+    }
+}
+
+impl<'s, I: Iterator<Item = Token<'s>>> Iterator for TokenStream<'s, I> {
+    type Item = Token<'s>;
+    fn next(&mut self) -> Option<Self::Item> {
+        std::mem::replace(&mut self.next_token, self.iter.next())
     }
 }

@@ -55,6 +55,10 @@ macro_rules! declare_token {
                         }
                     )+
                 )?
+
+                pub fn new(span: Span<'s>) -> Self {
+                    Self { span }
+                }
             }
 
             impl<'s> Tokenize<'s> for $item<'s> {
@@ -114,7 +118,7 @@ macro_rules! declare_token {
                     $(
                         $(
                             declare_token!(#get_name $($as_str)? $class_as_str $item)
-                            => Some($class::$item($item { span })),
+                            => Some($class::$item($item::new(span))),
                         )*
                     )*
                     _ => None,
