@@ -84,10 +84,10 @@ macro_rules! declare_token {
                             format!("Expected {}, got {t}", Self::name()),
                             t.span()
                         )),
-                        None => Err(Message::from_eof(
+                        None => Err(Message::from_span(
                             Level::Error,
-                            format!("Expected {}, got EOF", Self::name()),
-                            stream.src()
+                            format!("Expected {}, got {}", Self::name(), stream.eof_name()),
+                            stream.eof_span()
                         ))
                     }
                 }
@@ -109,14 +109,27 @@ macro_rules! declare_token {
                 }
             )*
 
-            pub fn str_is(value: &str) -> bool {
+            pub fn try_new(value: &str, span: Span<'s>) -> Option<$class<'s>> {
                 match value {
                     $(
                         $(
-                            declare_token!(#get_name $($as_str)? $class_as_str $item) => true,
+                            declare_token!(#get_name $($as_str)? $class_as_str $item)
+                            => Some($class::$item($item { span })),
                         )*
                     )*
-                    _ => false,
+                    _ => None,
+                }
+            }
+        }
+
+        impl<'s> ASTNode<'s> for $class<'s> {
+            fn span(&self) -> &Span<'s> {
+                match self {
+                    $(
+                        $(
+                            Self::$item(t) => t.span(),
+                        )*
+                    )*
                 }
             }
         }
@@ -233,7 +246,7 @@ impl<'s> Ident<'s> {
     }
 
     pub fn is_keyword(&self) -> bool {
-        Kw::str_is(self.0.as_str())
+        Kw::try_new(self.0.as_str(), self.span().clone()).is_some()
     }
 
     pub fn value(&self) -> &String {

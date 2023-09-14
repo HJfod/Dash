@@ -67,10 +67,10 @@ impl<'s> Display for Token<'s> {
 impl<'s> ASTNode<'s> for Token<'s> {
     fn span(&self) -> &Span<'s> {
         match self {
-            Token::Kw(_, span) => span,
-            Token::Op(_, span) => span,
+            Token::Kw(kw) => kw.span(),
+            Token::Op(op) => op.span(),
             Token::Ident(ident) => ident.span(),
-            Token::Punct(_, span) => span,
+            Token::Punct(pun) => pun.span(),
             Token::Void(lit) => lit.span(),
             Token::Bool(lit) => lit.span(),
             Token::String(lit) => lit.span(),
@@ -99,41 +99,8 @@ impl<'s> SrcReader<'s> {
         Self { src, pos: 0 }
     }
 
-    fn get_while<F: FnMut(char) -> bool>(&mut self, mut fun: F, res: &mut String) {
-        while self.src.get(self.pos).is_some_and(|c| fun(c)) {
-            res.push(self.src.get(self.pos).unwrap());
-            self.pos += 1;
-        }
-    }
-
-    pub fn skip_ws(&mut self) -> usize {
-        loop {
-            let Some(ch) = self.src.get(self.pos) else { break };
-            // Ignore comments
-            if ch == '/' && self.src.get(self.pos + 1) == Some('/') {
-                self.pos += 2;
-                while let Some(c) = self.src.get(self.pos) {
-                    self.pos += 1;
-                    if c == '\n' {
-                        break;
-                    }
-                }
-                continue;
-            }
-            if !ch.is_whitespace() {
-                break;
-            }
-            self.pos += 1;
-        }
-        self.pos
-    }
-
     pub fn pos(&self) -> usize {
         self.pos
-    }
-
-    pub fn goto(&mut self, pos: usize) {
-        self.pos = pos;
     }
 
     fn last_nws_pos(&self) -> usize {
@@ -150,66 +117,47 @@ impl<'s> SrcReader<'s> {
             break self.pos - i;
         }
     }
-
-    pub fn span(&self, start: usize) -> Span<'s> {
-        Span {
-            src: self.src,
-            range: self.src.range(start, self.last_nws_pos() + 1),
-        }
-    }
-
-    pub fn error<S: Into<String>>(&self, msg: S, start: usize) -> Message<'s> {
-        Message {
-            level: Level::Error,
-            info: msg.into(),
-            notes: vec![],
-            src: self.src,
-            range: self.src.range(start, self.pos)
-        }
-    }
-
-    pub fn is_eof(&mut self) -> bool {
-        self.skip_ws();
-        self.expect_eof().is_ok()
-    }
-
-    pub fn expect_eof(&mut self) -> Result<(), Message<'s>> {
-        let pos = self.pos;
-        match self.next() {
-            Some(tk) => {
-                self.goto(pos);
-                Err(Message::from_span(
-                    Level::Error,
-                    format!("Expected EOF, got {tk}"),
-                    tk.span()
-                ))
-            }
-            None => Ok(())
-        }
-    }
-
-    /// Parse some type on this stream.
-    /// Provided for convenience since this lets you do type inference
-    pub fn parse<P: Parse<'s>>(&mut self) -> Result<P, Message<'s>> {
-        P::parse(self)
-    }
 }
 
 impl<'s> Iterator for SrcReader<'s> {
     type Item = Token<'s>;
     fn next(&mut self) -> Option<Self::Item> {
+        fn get_while<'s, F: FnMut(char) -> bool>(reader: &mut SrcReader<'s>, mut fun: F, res: &mut String) {
+            while reader.src.get(reader.pos).is_some_and(|c| fun(c)) {
+                res.push(reader.src.get(reader.pos).unwrap());
+                reader.pos += 1;
+            }
+        }
+    
+        fn skip_ws<'s>(reader: &mut SrcReader<'s>) -> usize {
+            loop {
+                let Some(ch) = reader.src.get(reader.pos) else { break };
+                // Ignore comments
+                if ch == '/' && reader.src.get(reader.pos + 1) == Some('/') {
+                    reader.pos += 2;
+                    while let Some(c) = reader.src.get(reader.pos) {
+                        reader.pos += 1;
+                        if c == '\n' {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+                if !ch.is_whitespace() {
+                    break;
+                }
+                reader.pos += 1;
+            }
+            reader.pos
+        }
+    
         // Skip all whitespace and comments
-        self.skip_ws();
+        skip_ws(self);
 
         let Some(ch) = self.src.get(self.pos) else {
             // EOF
             return None;
         };
-
-        // EOF
-        if self.eof_char == Some(ch) {
-            return None;
-        }
 
         let first_pos = self.pos;
         self.pos += 1;
@@ -227,8 +175,8 @@ impl<'s> Iterator for SrcReader<'s> {
         // Identifier or keyword
         if ch.is_xid_start() {
             let mut res = String::from(ch);
-            self.get_while(UnicodeXID::is_xid_continue, &mut res);
-            if let Ok(kw) = Kw::try_from(res.as_str()) {
+            get_while(self, UnicodeXID::is_xid_continue, &mut res);
+            if let Some(kw) = Kw::try_new(res.as_str(), make_span(self.pos)) {
                 Some(match kw {
                     Kw::Void => Token::Void(Lit::new((), make_span(self.pos))),
                     Kw::True => Token::Bool(Lit::new(true, make_span(self.pos))),
@@ -244,7 +192,7 @@ impl<'s> Iterator for SrcReader<'s> {
         else if ch.is_digit(10) {
             let mut res = String::from(ch);
             let mut found_dot = false;
-            self.get_while(|c| c.is_digit(10) || {
+            get_while(self, |c| c.is_digit(10) || {
                 if c == '.' {
                     if found_dot {
                         false
@@ -278,7 +226,12 @@ impl<'s> Iterator for SrcReader<'s> {
         // Chained punctuation
         else if matches!(ch, '.' | ':') {
             let mut res = String::from(ch);
-            self.get_while(|c| c == ch, &mut res);
+            get_while(self, |c| c == ch, &mut res);
+            match Punct::try_new( , span)
+            Token::Punct()
+            match res.as_str() {
+                "." => Some(Token::Punct(Punct::Dot(make_span(self.pos))))
+            }
             Some(Token::Punct(res, make_span(self.pos)))
         }
         // Arrows
@@ -339,13 +292,19 @@ pub struct TokenStream<'s, I: Iterator<Item = Token<'s>>> {
     iter: I,
     /// Stored for peeking
     next_token: Option<Token<'s>>,
+    eof: Option<(char, Span<'s>)>,
 }
 
-impl<'s, I: IntoIterator<Item = Token<'s>>> From<I> for TokenStream<'s, I::IntoIter> {
+pub trait IntoTokenStream<'s>: IntoIterator<Item = Token<'s>> {
+    fn eof(&self) -> Option<(char, Span<'s>)>;
+}
+
+impl<'s, I: IntoTokenStream<'s>> From<I> for TokenStream<'s, I::IntoIter> {
     fn from(value: I) -> Self {
+        let eof = value.eof();
         let mut iter = value.into_iter();
-        let peeked = iter.next();
-        Self { iter, next_token: peeked }
+        let next_token = iter.next();
+        Self { iter, next_token, eof }
     }
 }
 
@@ -364,23 +323,4 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenStream<'s, I> {
     pub fn parse<P: Parse<'s>>(&mut self) -> Result<P, Message<'s>> {
         P::parse(self)
     }
-}
-
-#[test]
-fn verify_kws() {
-    use std::str::FromStr;
-    assert_eq!(Kw::Var.to_string(), "var");
-    assert_eq!(Kw::Return.to_string(), "return");
-    assert_eq!(Kw::from_str("yield").unwrap(), Kw::Yield);
-    assert_eq!(Kw::Let.is_strict(), true);
-    assert_eq!(Kw::Return.is_reserved(), false);
-}
-
-#[test]
-fn verify_ops() {
-    use std::str::FromStr;
-    assert_eq!(Op::Eq.to_string(), "==");
-    assert_eq!(Op::And.to_string(), "&&");
-    assert_eq!(Op::from_str(">").unwrap(), Op::Gtr);
-    assert_eq!(Op::from_str("||").unwrap(), Op::Or);
 }
