@@ -1,9 +1,9 @@
 
 use std::{collections::HashMap, fmt::Display, marker::PhantomData, sync::Arc};
-use crate::parser::node::{ASTNode, ASTRef, Span};
+use crate::parser::node::{ASTNode, ASTRef};
 use crate::parser::ast::token::Op;
 use crate::shared::logging::{Logger, Message, Level, Note, ConsoleLogger};
-use crate::shared::src::Src;
+use crate::shared::src::{Src, Span};
 
 macro_rules! parse_op {
     (+)  => { Op::Add };

@@ -1,9 +1,9 @@
 
 use std::fmt::{Debug, Display};
-use crate::shared::{src::Src, logging::Message};
+use crate::shared::{src::{Src, Span, Loc}, logging::Message};
 use unicode_xid::UnicodeXID;
 use super::{
-    node::{Span, ASTNode, Parse},
+    node::{ASTNode, Parse},
     ast::token::{
         Kw, Op, Ident, VoidLit, BoolLit, StringLit, IntLit, FloatLit,
         Parenthesized, Braced, Bracketed, Lit,
@@ -42,6 +42,8 @@ pub enum Token<'s> {
     Bracketed(Bracketed<'s>),
     /// An invalid token
     Error(String, Span<'s>),
+    /// End-of-file
+    EOF(String, Span<'s>),
 }
 
 impl<'s> Display for Token<'s> {
@@ -60,6 +62,7 @@ impl<'s> Display for Token<'s> {
             Token::Braced(_) => f.write_str("braces"),
             Token::Bracketed(_) => f.write_str("brackets"),
             Token::Error(msg, _) => f.write_fmt(format_args!("invalid token: {msg}")),
+            Token::EOF(name, _) => f.write_str(&name)
         }
     }
 }
@@ -80,6 +83,7 @@ impl<'s> ASTNode<'s> for Token<'s> {
             Token::Braced(p) => p.span(),
             Token::Bracketed(p) => p.span(),
             Token::Error(_, span) => span,
+            Token::EOF(_, span) => span,
         }
     }
 }
@@ -151,27 +155,26 @@ impl<'s> Iterator for SrcReader<'s> {
             reader.pos
         }
     
+        // Stored for EOF
+        let pre_ws_pos = self.pos;
+
         // Skip all whitespace and comments
         skip_ws(self);
 
         let Some(ch) = self.src.get(self.pos) else {
             // EOF
-            return None;
+            return Some(Token::EOF(
+                "end-of-file".into(), 
+                self.src.span(pre_ws_pos, pre_ws_pos)
+            ));
         };
         let next_ch = self.src.get(self.pos);
 
         let first_pos = self.pos;
         self.pos += 1;
 
-        let make_span = |pos| {
-            Span {
-                src: self.src,
-                range: self.src.range(first_pos, pos)
-            }
-        };
-        let make_error = |msg, pos| {
-            Some(Token::Error(msg, make_span(pos)))
-        };
+        let make_span = |pos| self.src.span(first_pos, pos);
+        let make_error = |msg, pos| Some(Token::Error(msg, make_span(pos)));
 
         // Identifier or keyword
         if ch.is_xid_start() {
@@ -283,52 +286,35 @@ pub struct TokenStream<'s, I: Iterator<Item = Token<'s>>> {
     src: &'s Src,
     iter: I,
     /// Stored for peeking
-    next_token: Option<Token<'s>>,
-    eof: Option<(char, Span<'s>)>,
-}
-
-pub trait IntoTokenStream<'s>: IntoIterator<Item = Token<'s>> {
-    fn src(&self) -> &'s Src;
-    fn eof(&self) -> Option<(char, Span<'s>)>;
-}
-
-impl<'s, I: IntoTokenStream<'s>> From<I> for TokenStream<'s, I::IntoIter> {
-    fn from(value: I) -> Self {
-        let src = value.src();
-        let eof = value.eof();
-        let mut iter = value.into_iter();
-        let next_token = iter.next();
-        Self { src, iter, next_token, eof }
-    }
+    next_token: Token<'s>,
 }
 
 impl<'s, I: Iterator<Item = Token<'s>>> TokenStream<'s, I> {
-    pub fn peek(&self) -> Option<Token<'s>> {
+    pub fn new(src: &'s Src, mut iter: I) -> Self {
+        let next_token = iter.next().expect("IntoTokenStream::next() returned None");
+        Self { src, iter, next_token }
+    }
+
+    pub fn src(&self) -> &'s Src {
+        self.src
+    }
+
+    pub fn pos(&self) -> Loc {
+        self.next_token.span().start()
+    }
+
+    pub fn next(&mut self) -> Token<'s> {
+        std::mem::replace(
+            &mut self.next_token,
+            self.iter.next().expect("TokenStream::next() returned None")
+        )
+    }
+
+    pub fn peek(&self) -> Token<'s> {
         self.next_token
     }
 
     pub fn parse<P: Parse<'s>>(&mut self) -> Result<P, Message<'s>> {
         P::parse(self)
-    }
-
-    pub fn eof_name(&self) -> String {
-        match self.eof {
-            Some((ch, _)) => String::from(ch),
-            None => String::from("EOF"),
-        }
-    }
-
-    pub fn eof_span(&self) -> Span<'s> {
-        match self.eof {
-            Some((_, ref span)) => span.clone(),
-            None => self.src.range(start, end)
-        }
-    }
-}
-
-impl<'s, I: Iterator<Item = Token<'s>>> Iterator for TokenStream<'s, I> {
-    type Item = Token<'s>;
-    fn next(&mut self) -> Option<Self::Item> {
-        std::mem::replace(&mut self.next_token, self.iter.next())
     }
 }

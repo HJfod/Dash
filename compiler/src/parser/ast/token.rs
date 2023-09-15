@@ -4,14 +4,26 @@ use strum::EnumIter;
 use gdml_macros::snake_case_ident;
 use crate::{
     parser::{
-        node::{Parse, Span, ASTNode},
+        node::{Parse, ASTNode},
         stream::{TokenStream, Token}
     },
-    shared::logging::{Message, Level}, compiler::typecheck
+    shared::{logging::{Message, Level}, src::Span}, compiler::typecheck
 };
 
-pub trait Tokenize<'s>: ASTNode<'s> {
+pub trait Tokenize<'s>: ASTNode<'s> + TryFrom<Token<'s>, Error = Message<'s>> {
     fn name() -> &'static str;
+    fn peek<I: Iterator<Item = Token<'s>>>(stream: &TokenStream<'s, I>) -> bool {
+        Self::try_from(stream.peek()).is_ok()
+    }
+    fn peek_and_parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Option<Self> {
+        Self::peek(stream).then(|| Self::parse(stream).ok()).flatten()
+    }
+}
+
+impl<'s, T: Tokenize<'s>> Parse<'s> for T {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+        Self::try_from(stream.next())
+    }
 }
 
 pub fn is_op_char(ch: char) -> bool {
@@ -25,6 +37,52 @@ pub fn closing_paren(ch: char) -> char {
         '{' => '}',
         _   => unreachable!(),
     }
+}
+
+macro_rules! impl_tokenize {
+    ($class: ident::$item: ident -> $name: expr) => {
+        impl<'s> TryFrom<Token<'s>> for $item<'s> {
+            type Error = Message<'s>;
+            fn try_from(token: Token<'s>) -> Result<Self, Self::Error> {
+                match token {
+                    Token::$class($class::$item(v)) => Ok(v),
+                    t => Err(Message::from_span(
+                        Level::Error, 
+                        format!("Expected {}, got {t}", Self::name()),
+                        t.span()
+                    )),
+                }
+            }
+        }
+
+        impl<'s> Tokenize<'s> for $item<'s> {
+            fn name() -> &'static str {
+                $name
+            }
+        }
+    };
+
+    ($item: ident -> $name: expr) => {
+        impl<'s> TryFrom<Token<'s>> for $item<'s> {
+            type Error = Message<'s>;
+            fn try_from(token: Token<'s>) -> Result<Self, Self::Error> {
+                match token {
+                    Token::$item(v) => Ok(v),
+                    t => Err(Message::from_span(
+                        Level::Error, 
+                        format!("Expected {}, got {t}", Self::name()),
+                        t.span()
+                    )),
+                }
+            }
+        }
+
+        impl<'s> Tokenize<'s> for $item<'s> {
+            fn name() -> &'static str {
+                $name
+            }
+        }
+    };
 }
 
 macro_rules! declare_token {
@@ -61,11 +119,7 @@ macro_rules! declare_token {
                 }
             }
 
-            impl<'s> Tokenize<'s> for $item<'s> {
-                fn name() -> &'static str {
-                    declare_token!(#get_name $($as_str)? $class_as_str $item) 
-                }
-            }
+            impl_tokenize!($class::$item -> declare_token!(#get_name $($as_str)? $class_as_str $item));
 
             impl<'s> Display for $item<'s> {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -76,24 +130,6 @@ macro_rules! declare_token {
             impl<'s> ASTNode<'s> for $item<'s> {
                 fn span(&self) -> &Span<'s> {
                     &self.span
-                }
-            }
-
-            impl<'s> Parse<'s> for $item<'s> {
-                fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-                    match stream.next() {
-                        Some(Token::$class($class::$item(kw))) => Ok(kw),
-                        Some(t) => Err(Message::from_span(
-                            Level::Error, 
-                            format!("Expected {}, got {t}", Self::name()),
-                            t.span()
-                        )),
-                        None => Err(Message::from_span(
-                            Level::Error,
-                            format!("Expected {}, got {}", Self::name(), stream.eof_name()),
-                            stream.eof_span()
-                        ))
-                    }
                 }
             }
         )*)*
@@ -123,6 +159,26 @@ macro_rules! declare_token {
                     )*
                     _ => None,
                 }
+            }
+        }
+
+        impl<'s> TryFrom<Token<'s>> for $class<'s> {
+            type Error = Message<'s>;
+            fn try_from(token: Token<'s>) -> Result<Self, Self::Error> {
+                match token {
+                    Token::$class(v) => Ok(v),
+                    t => Err(Message::from_span(
+                        Level::Error, 
+                        format!("Expected {}, got {t}", Self::name()),
+                        t.span()
+                    )),
+                }
+            }
+        }
+
+        impl<'s> Tokenize<'s> for $class<'s> {
+            fn name() -> &'static str {
+                $class_as_str
             }
         }
 
@@ -242,35 +298,40 @@ declare_token! {
 }
 
 #[derive(PartialEq, Debug)]
-pub struct Ident<'s>(String, Span<'s>);
+pub struct Ident<'s> {
+    value: String,
+    span: Span<'s>,
+}
+
+impl_tokenize!(Ident -> "identifier");
 
 impl<'s> Ident<'s> {
     pub fn new(value: String, span: Span<'s>) -> Self {
-        Self(value, span)
+        Self { value, span }
     }
 
     pub fn is_keyword(&self) -> bool {
-        Kw::try_new(self.0.as_str(), self.span().clone()).is_some()
+        Kw::try_new(self.value.as_str(), self.span.clone()).is_some()
     }
 
     pub fn value(&self) -> &String {
-        &self.0
+        &self.value
     }
 
     pub fn path(&self) -> typecheck::Path {
-        typecheck::Path::new([self.0.clone()], false)
+        typecheck::Path::new([self.value.clone()], false)
     }
 }
 
 impl Display for Ident<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
+        f.write_str(&self.value)
     }
 }
 
 impl<'s> ASTNode<'s> for Ident<'s> {
     fn span(&self) -> &Span<'s> {
-        &self.1
+        &self.span
     }
 }
 
@@ -292,15 +353,18 @@ impl<'s> Path<'s> {
 
 impl<'s> Parse<'s> for Path<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let absolute = Dicolon::peek(stream);
+        let start = stream.pos();
+        let absolute = Dicolon::peek_and_parse(stream).is_some();
         let mut components = vec![];
         loop {
             components.push(stream.parse()?);
-            if "::".parse_value(stream).is_err() {
-                break;
+            if Dicolon::peek(stream) {
+                Dicolon::parse(stream);
+                continue;
             }
+            break;
         }
-        Ok(Self { components, absolute, span: stream.span(start) })
+        Ok(Self { components, absolute, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
 
@@ -359,23 +423,15 @@ impl<'s, T: SurroundingToken<'s>> Surrounded<'s, T> {
 
 impl<'s, T: SurroundingToken<'s>> Parse<'s> for Surrounded<'s, T> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        match stream.next() {
-            Some(tk) => {
-                if let Some(p) = T::surround_from_token(tk) {
-                    Ok(p)
-                }
-                else {
-                    Err(Message::from_span(
-                        Level::Error,
-                        format!("Expected {} expression, got {tk}", T::kind_name()),
-                        tk.span()
-                    ))
-                }
-            }
-            None => Err(Message::from_eof(
+        let tk = stream.next();
+        if let Some(p) = T::surround_from_token(tk) {
+            Ok(p)
+        }
+        else {
+            Err(Message::from_span(
                 Level::Error,
-                format!("Expected {} expression, got EOF", T::kind_name()),
-                stream.src()
+                format!("Expected {} expression, got {tk}", T::kind_name()),
+                tk.span()
             ))
         }
     }

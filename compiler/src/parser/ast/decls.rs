@@ -2,9 +2,9 @@
 use crate::{
     parser::{
         stream::{TokenStream, Token},
-        node::{Parse, Span, ASTNode, ASTRef}
+        node::{Parse, ASTNode, ASTRef}
     },
-    shared::{logging::Message, is_none_or::IsNoneOr},
+    shared::{logging::Message, is_none_or::IsNoneOr, src::Span},
     compiler::{typecheck::{TypeCheck, TypeChecker, Ty, Entity, ScopeLevel},
     typehelper::TypeCheckHelper}
 };

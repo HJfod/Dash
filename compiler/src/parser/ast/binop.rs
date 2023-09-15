@@ -2,9 +2,9 @@
 use crate::{
     parser::{
         stream::{TokenStream, Token},
-        node::{ASTNode, Span}
+        node::ASTNode
     },
-    shared::logging::Message,
+    shared::{logging::Message, src::Span},
     compiler::typecheck::{TypeCheck, TypeChecker, Ty}
 };
 use super::{expr::Expr, token::Op};
@@ -12,7 +12,7 @@ use super::{expr::Expr, token::Op};
 #[derive(Debug)]
 pub struct BinOp<'s> {
     lhs: Box<Expr<'s>>,
-    op: Op,
+    op: Op<'s>,
     rhs: Box<Expr<'s>>,
     span: Span<'s>,
 }
@@ -27,11 +27,12 @@ impl<'s> BinOp<'s> {
             I: Iterator<Item = Token<'s>>,
             F: FnMut(&mut TokenStream<'s, I>) -> Result<Expr<'s>, Message<'s>>
     {
+        let start = stream.pos();
         let lhs = lhs.into();
         let op = stream.parse()?;
         let rhs = rhs(stream)?.into();
         Ok(Self {
-            lhs, op, rhs, span: lhs.span().join(rhs.span()),
+            lhs, op, rhs, span: Span::new(stream.src(), start, stream.pos()),
         })
     }
 }

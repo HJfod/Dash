@@ -1,7 +1,6 @@
 
 use std::fmt::Display;
-use crate::parser::node::Span;
-use super::src::{Src, Range};
+use super::src::Span;
 
 #[allow(unused)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -24,7 +23,7 @@ impl Display for Level {
 #[derive(Debug)]
 pub struct Note<'s> {
     info: String,
-    at: Option<(&'s Src, Range)>,
+    at: Option<Span<'s>>,
 }
 
 impl<'s> Note<'s> {
@@ -35,30 +34,23 @@ impl<'s> Note<'s> {
         }
     }
 
-    pub fn new_at<S: Into<String>>(info: S, src: &'s Src, range: Range) -> Self {
-        Self {
-            info: info.into(),
-            at: Some((src, range)),
-        }
-    }
-
     pub fn from_span<S: Into<String>>(info: S, span: &Span<'s>) -> Self {
         Self {
             info: info.into(),
-            at: Some((span.src, span.range.clone())),
+            at: Some(span.clone()),
         }
     }
 }
 
 impl Display for Note<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some((ref src, ref range)) = self.at {
+        if let Some(ref span) = self.at {
             f.write_fmt(format_args!(
                 "Note: {}\n{}\n(In {} at {})",
                 self.info,
-                src.underlined(&range),
-                src.name(),
-                range
+                span.underlined(),
+                span.src().name(),
+                span
             ))
         } else {
             f.write_fmt(format_args!("Note: {}", self.info))
@@ -71,18 +63,16 @@ pub struct Message<'s> {
     pub level: Level,
     pub info: String,
     pub notes: Vec<Note<'s>>,
-    pub src: &'s Src,
-    pub range: Range,
+    pub span: Span<'s>,
 }
 
 impl<'s> Message<'s> {
-    pub fn from_span(level: Level, info: String, meta: &Span<'s>) -> Self {
+    pub fn from_span(level: Level, info: String, span: &Span<'s>) -> Self {
         Self {
             level,
             info,
             notes: vec![],
-            src: meta.src,
-            range: meta.range.clone(),
+            span: span.clone(),
         }
     }
 
@@ -109,9 +99,9 @@ impl Display for Message<'_> {
         f.write_fmt(format_args!(
             "{} in {} at {}:\n{}{}{}",
             self.level,
-            self.src.name(),
-            self.range,
-            self.src.underlined(&self.range),
+            self.span.src().name(),
+            self.span,
+            self.span.underlined(),
             self.info,
             self.notes
                 .iter()

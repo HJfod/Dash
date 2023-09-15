@@ -5,7 +5,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use crate::parser::{stream::{TokenStream, SrcReader}, ast::expr::ExprList};
+use crate::parser::{stream::{SrcReader, TokenStream}, ast::expr::ExprList};
 
 use super::logging::Message;
 
@@ -44,22 +44,78 @@ impl Display for Loc {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct Range {
-    pub start: Loc,
-    pub end: Loc,
+#[derive(Clone)]
+pub struct Span<'s> {
+    src: &'s Src,
+    start: Loc,
+    end: Loc,
 }
 
-impl Range {
-    pub const fn zero() -> Self {
-        Self {
-            start: Loc::zero(),
-            end: Loc::zero(),
+static BUILTIN_SPAN: Span<'static> = Span {
+    src: &Src::Builtin,
+    start: Loc::zero(),
+    end: Loc::zero(),
+};
+
+impl<'s> Span<'s> {
+    pub fn builtin() -> &'static Self {
+        &BUILTIN_SPAN
+    }
+
+    pub fn new(src: &'s Src, start: Loc, end: Loc) -> Self {
+        Self { src, start, end }
+    }
+
+    pub fn src(&self) -> &'s Src {
+        self.src
+    }
+
+    pub fn start(&self) -> Loc {
+        self.start
+    }
+
+    pub fn end(&self) -> Loc {
+        self.end
+    }
+
+    pub fn underlined(&self) -> String {
+        let lines = self.src
+            .lines()
+            .get(self.start.line..=self.end.line)
+            .and_then(|p| (!p.is_empty()).then_some(Vec::from(p)))
+            .unwrap_or(vec![String::from("/* Invalid source code range */")]);
+        if lines.len() == 1 {
+            format!(
+                "{}\n{}{}\n",
+                lines[0],
+                " ".repeat(self.start.column),
+                "~".repeat(max(1, self.end.column - self.start.column))
+            )
+        } else {
+            let mut res = String::new();
+            let mut i = 1;
+            let len = lines.len();
+            for line in lines {
+                res += &if i == len {
+                    format!("{}\n{}\n", line, "~".repeat(max(1, self.end.column)))
+                } else if i == 1 {
+                    format!(
+                        "{}\n{}{}\n",
+                        line,
+                        " ".repeat(self.start.column),
+                        "~".repeat(max(1, line.len() - self.start.column))
+                    )
+                } else {
+                    format!("{}\n{}\n", line, "~".repeat(max(1, line.len())))
+                };
+                i += 1;
+            }
+            res
         }
     }
 }
 
-impl PartialEq for Range {
+impl PartialEq for Span<'_> {
     fn eq(&self, other: &Self) -> bool {
         let (ss, se) = if self.start <= self.end {
             (&self.start, &self.end)
@@ -75,13 +131,19 @@ impl PartialEq for Range {
     }
 }
 
-impl Display for Range {
+impl Display for Span<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if self.start == self.end {
             f.write_fmt(format_args!("{}", self.start))
         } else {
             f.write_fmt(format_args!("{}-{}", self.start, self.end))
         }
+    }
+}
+
+impl Debug for Span<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
     }
 }
 
@@ -160,17 +222,18 @@ impl Src {
         }
     }
 
-    pub fn range(&self, mut start: usize, mut end: usize) -> Range {
+    pub fn span<'s>(&'s self, mut start: usize, mut end: usize) -> Span<'s> {
         if start > end {
             std::mem::swap(&mut start, &mut end);
         }
-        Range {
+        Span {
+            src: self,
             start: self.loc(start),
             end: self.loc(end),
         }
     }
 
-    fn lines(&self) -> Vec<String> {
+    pub fn lines(&self) -> Vec<String> {
         match self {
             Src::Builtin => Vec::new(),
             Src::File { path: _, chars } => chars
@@ -182,47 +245,7 @@ impl Src {
         }
     }
 
-    pub fn underlined(&self, range: &Range) -> String {
-        let lines = self
-            .lines()
-            .get(range.start.line..=range.end.line)
-            .and_then(|p| (!p.is_empty()).then_some(Vec::from(p)))
-            .unwrap_or(vec![String::from("/* Invalid source code range */")]);
-        if lines.len() == 1 {
-            format!(
-                "{}\n{}{}\n",
-                lines[0],
-                " ".repeat(range.start.column),
-                "~".repeat(max(1, range.end.column - range.start.column))
-            )
-        } else {
-            let mut res = String::new();
-            let mut i = 1;
-            let len = lines.len();
-            for line in lines {
-                res += &if i == len {
-                    format!("{}\n{}\n", line, "~".repeat(max(1, range.end.column)))
-                } else if i == 1 {
-                    format!(
-                        "{}\n{}{}\n",
-                        line,
-                        " ".repeat(range.start.column),
-                        "~".repeat(max(1, line.len() - range.start.column))
-                    )
-                } else {
-                    format!("{}\n{}\n", line, "~".repeat(max(1, line.len())))
-                };
-                i += 1;
-            }
-            res
-        }
-    }
-
-    pub fn read<'s>(&'s self) -> SrcReader<'s> {
-        SrcReader::new(self)
-    }
-
     pub fn parse<'s>(&'s self) -> Result<ExprList<'s>, Message<'s>> {
-        self.read().parse()
+        TokenStream::new(self, SrcReader::new(self)).parse()
     }
 }

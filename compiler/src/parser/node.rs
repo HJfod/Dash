@@ -1,6 +1,6 @@
 
 use std::fmt::Debug;
-use crate::shared::{src::{Src, Range}, logging::Message, wrappers::RefWrapper};
+use crate::shared::{src::Span, logging::Message, wrappers::RefWrapper};
 use super::{stream::{TokenStream, Token}, ast::{expr::Expr, ty::Type, decls::{VarDecl, FunDecl, FunParam}}};
 use std::hash::Hash;
 
@@ -39,33 +39,4 @@ impl<'s, 'n> ASTNode<'s> for ASTRef<'s, 'n> {
 
 pub trait Parse<'s>: Sized + ASTNode<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>>;
-}
-
-#[derive(PartialEq, Clone)]
-pub struct Span<'s> {
-    pub src: &'s Src,
-    pub range: Range,
-}
-
-static BUILTIN_SPAN: Span<'static> = Span {
-    src: &Src::Builtin,
-    range: Range::zero(),
-};
-
-impl<'s> Span<'s> {
-    pub fn builtin() -> &'static Self {
-        &BUILTIN_SPAN
-    }
-
-    pub fn join(&self, other: &Span<'s>) -> Span<'s> {
-        let mut new = self.clone();
-        new.range.end = other.range.end;
-        new
-    }
-}
-
-impl Debug for Span<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("({:?}:{})", self.src, self.range))
-    }
 }
