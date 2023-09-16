@@ -6,7 +6,7 @@ use super::{
     node::{ASTNode, Parse},
     ast::token::{
         Kw, Op, Ident, VoidLit, BoolLit, StringLit, IntLit, FloatLit,
-        Parenthesized, Braced, Bracketed, Lit,
+        Parenthesized, Braced, Bracketed,
         is_op_char, closing_paren, Punct
     }
 };
@@ -14,7 +14,7 @@ use super::{
 // todo: store doc comments for tokens maybe?
 // or maybe be evil and have doc comments be tokens that can only appear before items >:3
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum Token<'s> {
     /// Keyword e.g. `return`
     Kw(Kw<'s>),
@@ -25,15 +25,15 @@ pub enum Token<'s> {
     /// Punctuation e.g. `;`, `,`, `...`
     Punct(Punct<'s>),
     /// Void literal `void`
-    Void(VoidLit<'s>),
-    /// Void literal e.g. `true`, `false`
-    Bool(BoolLit<'s>),
+    VoidLit(VoidLit<'s>),
+    /// Bool literal e.g. `true`, `false`
+    BoolLit(BoolLit<'s>),
     /// String literal e.g. `"Example literal"`
-    String(StringLit<'s>),
+    StringLit(StringLit<'s>),
     /// Integer literal e.g. `18`
-    Int(IntLit<'s>),
+    IntLit(IntLit<'s>),
     /// Float literal e.g. `2.3`
-    Float(FloatLit<'s>),
+    FloatLit(FloatLit<'s>),
     /// Parenthesized list of tokens e.g. `(...)`
     Parenthesized(Parenthesized<'s>),
     /// Braced list of tokens e.g. `{...}`
@@ -51,16 +51,16 @@ impl<'s> Display for Token<'s> {
         match self {
             Token::Kw(kw) => f.write_fmt(format_args!("{kw}")),
             Token::Op(op) => f.write_fmt(format_args!("{op}")),
-            Token::Ident(_) => f.write_str("identifier"),
+            Token::Ident(i) => f.write_fmt(format_args!("{i}")),
             Token::Punct(p) => f.write_fmt(format_args!("{p}")),
-            Token::Void(_) => f.write_str("void literal"),
-            Token::Bool(_) => f.write_str("boolean literal"),
-            Token::String(_) => f.write_str("string literal"),
-            Token::Int(_) => f.write_str("integer literal"),
-            Token::Float(_) => f.write_str("float literal"),
-            Token::Parenthesized(_) => f.write_str("parentheses"),
-            Token::Braced(_) => f.write_str("braces"),
-            Token::Bracketed(_) => f.write_str("brackets"),
+            Token::VoidLit(l) => f.write_fmt(format_args!("{l}")),
+            Token::BoolLit(l) => f.write_fmt(format_args!("{l}")),
+            Token::StringLit(l) => f.write_fmt(format_args!("{l}")),
+            Token::IntLit(l) => f.write_fmt(format_args!("{l}")),
+            Token::FloatLit(l) => f.write_fmt(format_args!("{l}")),
+            Token::Parenthesized(p) => f.write_fmt(format_args!("{p}")),
+            Token::Braced(b) => f.write_fmt(format_args!("{b}")),
+            Token::Bracketed(b) => f.write_fmt(format_args!("{b}")),
             Token::Error(msg, _) => f.write_fmt(format_args!("invalid token: {msg}")),
             Token::EOF(name, _) => f.write_str(&name)
         }
@@ -74,11 +74,11 @@ impl<'s> ASTNode<'s> for Token<'s> {
             Token::Op(op) => op.span(),
             Token::Ident(ident) => ident.span(),
             Token::Punct(pun) => pun.span(),
-            Token::Void(lit) => lit.span(),
-            Token::Bool(lit) => lit.span(),
-            Token::String(lit) => lit.span(),
-            Token::Int(lit) => lit.span(),
-            Token::Float(lit) => lit.span(),
+            Token::VoidLit(lit) => lit.span(),
+            Token::BoolLit(lit) => lit.span(),
+            Token::StringLit(lit) => lit.span(),
+            Token::IntLit(lit) => lit.span(),
+            Token::FloatLit(lit) => lit.span(),
             Token::Parenthesized(p) => p.span(),
             Token::Braced(p) => p.span(),
             Token::Bracketed(p) => p.span(),
@@ -105,21 +105,6 @@ impl<'s> SrcReader<'s> {
 
     pub fn pos(&self) -> usize {
         self.pos
-    }
-
-    fn last_nws_pos(&self) -> usize {
-        let mut i = 1;
-        loop {
-            if self.pos < i {
-                return 0;
-            }
-            let ch = self.src.get(self.pos - i);
-            if ch.is_some_and(|c| c.is_whitespace()) {
-                i += 1;
-                continue;
-            }
-            break self.pos - i;
-        }
     }
 }
 
@@ -168,10 +153,11 @@ impl<'s> Iterator for SrcReader<'s> {
                 self.src.span(pre_ws_pos, pre_ws_pos)
             ));
         };
-        let next_ch = self.src.get(self.pos);
 
         let first_pos = self.pos;
         self.pos += 1;
+
+        let next_ch = self.src.get(self.pos);
 
         let make_span = |pos| self.src.span(first_pos, pos);
         let make_error = |msg, pos| Some(Token::Error(msg, make_span(pos)));
@@ -182,9 +168,9 @@ impl<'s> Iterator for SrcReader<'s> {
             get_while(self, UnicodeXID::is_xid_continue, &mut res);
             if let Some(kw) = Kw::try_new(res.as_str(), make_span(self.pos)) {
                 Some(match kw {
-                    Kw::Void(v) => Token::Void(Lit::new((), v.span().to_owned())),
-                    Kw::True(t) => Token::Bool(Lit::new(true, t.span().to_owned())),
-                    Kw::False(f) => Token::Bool(Lit::new(false, f.span().to_owned())),
+                    Kw::Void(v) => Token::VoidLit(VoidLit::new(v.span().to_owned())),
+                    Kw::True(t) => Token::BoolLit(BoolLit::new(true, t.span().to_owned())),
+                    Kw::False(f) => Token::BoolLit(BoolLit::new(false, f.span().to_owned())),
                     kw => Token::Kw(kw),
                 })
             }
@@ -212,23 +198,29 @@ impl<'s> Iterator for SrcReader<'s> {
             }, &mut res);
             if found_dot {
                 match res.parse::<f64>() {
-                    Ok(num) => Some(Token::Float(Lit::new(num, make_span(self.pos)))),
+                    Ok(num) => Some(Token::FloatLit(FloatLit::new(num, make_span(self.pos)))),
                     Err(e) => make_error(format!("invalid float ({e})"), self.pos),
                 }
             }
             else {
                 match res.parse::<i64>() {
-                    Ok(num) => Some(Token::Int(Lit::new(num, make_span(self.pos)))),
+                    Ok(num) => Some(Token::IntLit(IntLit::new(num, make_span(self.pos)))),
                     Err(e) => make_error(format!("invalid float ({e})"), self.pos),
                 }
             }
         }
         // Single punctuation
         else if matches!(ch, ',' | ';' | '.' | ':') || (matches!(ch, '-' | '=') && next_ch == Some('>')) {
-            // Chained punctuation
             let mut res = String::from(ch);
+            // Chained punctuation
             if matches!(ch, '.' | ':') {
                 get_while(self, |c| c == ch, &mut res);
+            }
+            // Arrows
+            if matches!(ch, '-' | '=') {
+                // Already checked this in the condition
+                res.push('>');
+                self.pos += 1;
             }
             match Punct::try_new(res.as_str(), make_span(self.pos)) {
                 Some(p) => Some(Token::Punct(p)),
@@ -267,8 +259,13 @@ impl<'s> Iterator for SrcReader<'s> {
                     }
                 }
                 // get next token
-                self.next();
+                tree.push(self.next().unwrap());
             }
+            // push eof at the end of the tree (important!)
+            tree.push(Token::EOF(
+                format!("'{}'", closing_paren(ch)),
+                Span::new(self.src, self.src.loc(self.pos), self.src.loc(self.pos))
+            ));
             match ch {
                 '(' => Some(Token::Parenthesized(Parenthesized::new(tree, make_span(self.pos)))),
                 '{' => Some(Token::Braced(Braced::new(tree, make_span(self.pos)))),
@@ -311,7 +308,11 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenStream<'s, I> {
     }
 
     pub fn peek(&self) -> Token<'s> {
-        self.next_token
+        self.next_token.clone()
+    }
+
+    pub fn eof(&self) -> bool {
+        matches!(self.next_token, Token::EOF(_, _))
     }
 
     pub fn parse<P: Parse<'s>>(&mut self) -> Result<P, Message<'s>> {

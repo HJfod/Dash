@@ -1,5 +1,6 @@
 
-use std::{fmt::{Display, Debug}, marker::PhantomData};
+use derive_new::new;
+use std::fmt::{Display, Debug};
 use strum::EnumIter;
 use gdml_macros::snake_case_ident;
 use crate::{
@@ -12,11 +13,11 @@ use crate::{
 
 pub trait Tokenize<'s>: ASTNode<'s> + TryFrom<Token<'s>, Error = Message<'s>> {
     fn name() -> &'static str;
-    fn peek<I: Iterator<Item = Token<'s>>>(stream: &TokenStream<'s, I>) -> bool {
-        Self::try_from(stream.peek()).is_ok()
+    fn peek<I: Iterator<Item = Token<'s>>>(stream: &TokenStream<'s, I>) -> Option<Self> {
+        Self::try_from(stream.peek()).ok()
     }
     fn peek_and_parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Option<Self> {
-        Self::peek(stream).then(|| Self::parse(stream).ok()).flatten()
+        Self::peek(stream).and_then(|_| Self::parse(stream).ok())
     }
 }
 
@@ -60,6 +61,12 @@ macro_rules! impl_tokenize {
                 $name
             }
         }
+
+        impl<'s> ASTNode<'s> for $item<'s> {
+            fn span(&self) -> &Span<'s> {
+                &self.span
+            }
+        }
     };
 
     ($item: ident -> $name: expr) => {
@@ -82,59 +89,63 @@ macro_rules! impl_tokenize {
                 $name
             }
         }
+
+        impl<'s> ASTNode<'s> for $item<'s> {
+            fn span(&self) -> &Span<'s> {
+                &self.span
+            }
+        }
     };
 }
 
 macro_rules! declare_token {
     (
-        [$class:ident $class_as_str:literal]
+        [enum $class:ident $class_as_str:literal]
         $(
             $kind:ident {
                 $(
-                    $item:ident $(= $as_str:literal)?
-                    $(($($trait:ident $(
-                        ($($arg:ident: $arg_type:ty),*)
-                    )? -> $type:ty = $value:expr),+))?,
+                    $item:ident $(= $as_str:literal)?,
+                )*
+            }
+        )*
+        $(
+            @trait $trait_fn:ident -> $trait_fn_ty:ty {
+                $(
+                    $($var:ident)|+ => $value:expr,
                 )*
             }
         )*
     ) => {
         $($(
-            #[derive(Debug)]
+            #[derive(new, Clone, Debug)]
             pub struct $item<'s> {
                 span: Span<'s>,
             }
 
-            impl<'s> $item<'s> {
-                $(
-                    $(
-                        fn $trait($($($arg: $arg_type),*)?) -> $type {
-                            $value
-                        }
-                    )+
-                )?
-
-                pub fn new(span: Span<'s>) -> Self {
-                    Self { span }
-                }
-            }
-
-            impl_tokenize!($class::$item -> declare_token!(#get_name $($as_str)? $class_as_str $item));
+            impl_tokenize!($class::$item -> declare_token!(#get_display_name $($as_str)? $class_as_str $item));
 
             impl<'s> Display for $item<'s> {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     f.write_str(Self::name())
                 }
             }
-
-            impl<'s> ASTNode<'s> for $item<'s> {
-                fn span(&self) -> &Span<'s> {
-                    &self.span
-                }
-            }
         )*)*
 
-        #[derive(Debug)]
+        $($($(
+            impl<'s> $var<'s> {
+                pub fn $trait_fn(&self) -> $trait_fn_ty {
+                    $value
+                }
+            }
+
+            impl<'s> std::convert::From<$var<'s>> for $class<'s> {
+                fn from(value: $var<'s>) -> Self {
+                    Self::$var(value)
+                }
+            }
+        )+)*)*
+
+        #[derive(Clone, Debug)]
         pub enum $class<'s> {
             $($($item($item<'s>),)*)*
         }
@@ -143,8 +154,16 @@ macro_rules! declare_token {
             $(
                 pub fn $kind(&self) -> bool {
                     match self {
-                        $(Self::$item(t) => true,)*
+                        $(Self::$item(_) => true,)*
                         _ => false
+                    }
+                }
+            )*
+
+            $(
+                pub fn $trait_fn(&self) -> $trait_fn_ty {
+                    match self {
+                        $($(Self::$var(t) => t.$trait_fn(),)+)*
                     }
                 }
             )*
@@ -153,7 +172,7 @@ macro_rules! declare_token {
                 match value {
                     $(
                         $(
-                            declare_token!(#get_name $($as_str)? $class_as_str $item)
+                            declare_token!(#get_bare_name $($as_str)? $class_as_str $item)
                             => Some($class::$item($item::new(span))),
                         )*
                     )*
@@ -207,17 +226,69 @@ macro_rules! declare_token {
         }
     };
 
-    (#get_name $as_str:literal $_0:literal $_1:ident) => {
+    (
+        [struct $item:ident $item_as_str:literal]
+        $(
+            +$field:ident: $field_ty:ty;
+        )*
+        $(
+            display {
+                $display:item
+            }
+        )?
+        ---
+        $(
+            $fun:item
+        )*
+    ) => {
+        #[derive(new, Clone, Debug)]
+        pub struct $item<'s> {
+            $($field: $field_ty,)*
+            span: Span<'s>,
+        }
+
+        impl<'s> $item<'s> {
+            $($fun)*
+        }
+
+        declare_token!(#impl_display $item $($display)?);
+
+        impl_tokenize!($item -> $item_as_str);
+    };
+
+    (#impl_display $item:ident $display:item) => {
+        impl<'s> Display for $item<'s> {
+            $display
+        }
+    };
+
+    (#impl_display $item:ident) => {
+        impl<'s> Display for $item<'s> {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str(Self::name())
+            }
+        }
+    };
+
+    (#get_display_name $as_str:literal $class_as_str:literal $_1:ident) => {
+        concat!($class_as_str, " '", $as_str, "'")
+    };
+
+    (#get_display_name $class_as_str:literal $name:ident) => {
+        concat!($class_as_str, " '", snake_case_ident!($name), "'")
+    };
+
+    (#get_bare_name $as_str:literal $_0:literal $_1:ident) => {
         $as_str
     };
 
-    (#get_name $class_as_str:literal $name:ident) => {
-        concat!($class_as_str, " '", snake_case_ident!($name), "'")
+    (#get_bare_name $class_as_str:literal $name:ident) => {
+        snake_case_ident!($name)
     };
 }
 
 declare_token! {
-    [Kw "keyword"]
+    [enum Kw "keyword"]
     is_strict {
         Void, True, False,
         Var, Let, Fun, Decl, Struct, Const,
@@ -244,42 +315,59 @@ pub enum Prec {
     Seq,
 }
 
-declare_token! {
-    [Op "operator"]
-    is_unary {
-        Not = "!" (prec -> Prec = Prec::Unary),
-    }
-    is_binary {
-        Mul = "*" (prec -> Prec = Prec::Mul),
-        Div = "/" (prec -> Prec = Prec::Mul),
-        Mod = "%" (prec -> Prec = Prec::Mul),
-
-        Add = "+" (prec -> Prec = Prec::Add),
-        Sub = "-" (prec -> Prec = Prec::Add),
-
-        Lss = "<"  (prec -> Prec = Prec::Ord),
-        Gtr = ">"  (prec -> Prec = Prec::Ord),
-        Leq = "<=" (prec -> Prec = Prec::Ord),
-        Geq = ">=" (prec -> Prec = Prec::Ord),
-
-        Eq  = "==" (prec -> Prec = Prec::Eq),
-        Neq = "!=" (prec -> Prec = Prec::Eq),
-
-        And = "&&" (prec -> Prec = Prec::And),
-
-        Or  = "||" (prec -> Prec = Prec::Or),
-
-        Seq    = "="  (prec -> Prec = Prec::Seq),
-        AddSeq = "+=" (prec -> Prec = Prec::Seq),
-        SubSeq = "-=" (prec -> Prec = Prec::Seq),
-        MulSeq = "*=" (prec -> Prec = Prec::Seq),
-        DivSeq = "/=" (prec -> Prec = Prec::Seq),
-        ModSeq = "%=" (prec -> Prec = Prec::Seq),
+impl Prec {
+    pub fn peek_op_of_this_prec<'s, I>(&self, stream: &TokenStream<'s, I>) -> bool
+        where I: Iterator<Item = Token<'s>>
+    {
+        if let Some(op) = Op::peek(stream) {
+            op.prec() == *self
+        }
+        else {
+            false
+        }
     }
 }
 
 declare_token! {
-    [Punct "punctuation"]
+    [enum Op "operator"]
+    is_unary {
+        Not = "!",
+    }
+    is_binary {
+        Mul    = "*",
+        Div    = "/",
+        Mod    = "%",
+        Add    = "+",
+        Sub    = "-",
+        Lss    = "<" ,
+        Gtr    = ">" ,
+        Leq    = "<=",
+        Geq    = ">=",
+        Eq     = "==",
+        Neq    = "!=",
+        And    = "&&",
+        Or     = "||",
+        Seq    = "=",
+        AddSeq = "+=",
+        SubSeq = "-=",
+        MulSeq = "*=",
+        DivSeq = "/=",
+        ModSeq = "%=",
+    }
+    @trait prec -> Prec {
+        Not => Prec::Unary,
+        Mul | Div | Mod => Prec::Mul,
+        Add | Sub => Prec::Add,
+        Lss | Gtr | Leq | Geq => Prec::Ord,
+        Eq | Neq => Prec::Eq,
+        And => Prec::And,
+        Or => Prec::Or,
+        Seq | AddSeq | SubSeq | MulSeq | DivSeq | ModSeq => Prec::Seq,
+    }
+}
+
+declare_token! {
+    [enum Punct "punctuation"]
     is_chained {
         Dot     = ".",
         Didot   = "..",
@@ -297,18 +385,17 @@ declare_token! {
     }
 }
 
-#[derive(PartialEq, Debug)]
-pub struct Ident<'s> {
-    value: String,
-    span: Span<'s>,
-}
+declare_token! {
+    [struct Ident "identifier"]
+    +value: String;
 
-impl_tokenize!(Ident -> "identifier");
-
-impl<'s> Ident<'s> {
-    pub fn new(value: String, span: Span<'s>) -> Self {
-        Self { value, span }
+    display {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(&self.value)
+        }
     }
+
+    ---
 
     pub fn is_keyword(&self) -> bool {
         Kw::try_new(self.value.as_str(), self.span.clone()).is_some()
@@ -323,167 +410,58 @@ impl<'s> Ident<'s> {
     }
 }
 
-impl Display for Ident<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.value)
+declare_token! {
+    [struct Parenthesized "parenthesized expression"]
+    +content: Vec<Token<'s>>;
+    ---
+    pub fn into_stream(self) -> TokenStream<'s, std::vec::IntoIter<Token<'s>>> {
+        TokenStream::new(self.span.src(), self.content.into_iter())
     }
 }
 
-impl<'s> ASTNode<'s> for Ident<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
+declare_token! {
+    [struct Bracketed "bracketed expression"]
+    +content: Vec<Token<'s>>;
+    ---
+    pub fn into_stream(self) -> TokenStream<'s, std::vec::IntoIter<Token<'s>>> {
+        TokenStream::new(self.span.src(), self.content.into_iter())
     }
 }
 
-#[derive(Debug)]
-pub struct Path<'s> {
-    components: Vec<Ident<'s>>,
-    absolute: bool,
-    span: Span<'s>,
-}
-
-impl<'s> Path<'s> {
-    pub fn path(&self) -> typecheck::Path {
-        typecheck::Path::new(
-            self.components.iter().map(|i| i.value().clone()).collect::<Vec<_>>(),
-            self.absolute
-        )
+declare_token! {
+    [struct Braced "braced expression"]
+    +content: Vec<Token<'s>>;
+    ---
+    pub fn into_stream(self) -> TokenStream<'s, std::vec::IntoIter<Token<'s>>> {
+        TokenStream::new(self.span.src(), self.content.into_iter())
     }
 }
 
-impl<'s> Parse<'s> for Path<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.pos();
-        let absolute = Dicolon::peek_and_parse(stream).is_some();
-        let mut components = vec![];
-        loop {
-            components.push(stream.parse()?);
-            if Dicolon::peek(stream) {
-                Dicolon::parse(stream);
-                continue;
-            }
-            break;
-        }
-        Ok(Self { components, absolute, span: Span::new(stream.src(), start, stream.pos()) })
-    }
+declare_token! {
+    [struct VoidLit "void"]
+    ---
 }
 
-impl<'s> ASTNode<'s> for Path<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
+declare_token! {
+    [struct BoolLit "boolean"]
+    +value: bool;
+    ---
 }
 
-#[derive(Debug)]
-pub struct Lit<'s, T: Debug> {
-    value: T,
-    span: Span<'s>,
+declare_token! {
+    [struct IntLit "integer"]
+    +value: i64;
+    ---
 }
 
-impl<'s, T: Debug> Lit<'s, T> {
-    pub fn new(value: T, span: Span<'s>) -> Self {
-        Self { value, span }
-    }
+declare_token! {
+    [struct FloatLit "float"]
+    +value: f64;
+    ---
 }
 
-impl<'s, T: Debug> ASTNode<'s> for Lit<'s, T> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
+declare_token! {
+    [struct StringLit "string"]
+    +value: String;
+    ---
 }
-
-pub type VoidLit<'s> = Lit<'s, ()>;
-pub type BoolLit<'s> = Lit<'s, bool>;
-pub type IntLit<'s> = Lit<'s, i64>;
-pub type FloatLit<'s> = Lit<'s, f64>;
-pub type StringLit<'s> = Lit<'s, String>;
-
-pub trait SurroundingToken<'s>: Debug + Sized {
-    fn surround_from_token(tk: Token<'s>) -> Option<Surrounded<'s, Self>>;
-    fn kind_name() -> &'static str;
-}
-
-/// A list of tokens surrounded by punctuation, such as parentheses or braces
-#[derive(Debug)]
-pub struct Surrounded<'s, T: SurroundingToken<'s>> {
-    content: Vec<Token<'s>>,
-    span: Span<'s>,
-    _phantom: PhantomData<T>,
-}
-
-impl<'s, T: SurroundingToken<'s>> Surrounded<'s, T> {
-    pub fn new(content: Vec<Token<'s>>, span: Span<'s>) -> Self {
-        Self { content, span, _phantom: PhantomData }
-    }
-
-    pub fn into_stream(self) -> Vec<Token<'s>> {
-        self.content
-    }
-}
-
-impl<'s, T: SurroundingToken<'s>> Parse<'s> for Surrounded<'s, T> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let tk = stream.next();
-        if let Some(p) = T::surround_from_token(tk) {
-            Ok(p)
-        }
-        else {
-            Err(Message::from_span(
-                Level::Error,
-                format!("Expected {} expression, got {tk}", T::kind_name()),
-                tk.span()
-            ))
-        }
-    }
-}
-
-impl<'s, T: SurroundingToken<'s>> ASTNode<'s> for Surrounded<'s, T> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
-}
-
-#[derive(Debug)]
-struct Paren;
-impl<'s> SurroundingToken<'s> for Paren {
-    fn surround_from_token(tk: Token<'s>) -> Option<Parenthesized<'s>> {
-        match tk {
-            Token::Parenthesized(p) => Some(p),
-            _ => None,
-        }
-    }
-    fn kind_name() -> &'static str {
-        "parenthesized"
-    }
-}
-pub type Parenthesized<'s> = Surrounded<'s, Paren>;
-
-#[derive(Debug)]
-struct Bracket;
-impl<'s> SurroundingToken<'s> for Bracket {
-    fn surround_from_token(tk: Token<'s>) -> Option<Bracketed<'s>> {
-        match tk {
-            Token::Bracketed(p) => Some(p),
-            _ => None,
-        }
-    }
-    fn kind_name() -> &'static str {
-        "bracketed"
-    }
-}
-pub type Bracketed<'s> = Surrounded<'s, Bracket>;
-
-#[derive(Debug)]
-struct Brace;
-impl<'s> SurroundingToken<'s> for Brace {
-    fn surround_from_token(tk: Token<'s>) -> Option<Braced<'s>> {
-        match tk {
-            Token::Braced(p) => Some(p),
-            _ => None,
-        }
-    }
-    fn kind_name() -> &'static str {
-        "braced"
-    }
-}
-pub type Braced<'s> = Surrounded<'s, Brace>;

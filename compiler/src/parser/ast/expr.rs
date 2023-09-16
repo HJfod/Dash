@@ -4,19 +4,19 @@ use strum::IntoEnumIterator;
 
 use crate::{
     parser::{
-        node::{Parse, ASTNode, Span},
+        node::{Parse, ASTNode},
         stream::{TokenStream, Token},
-        ast::token::{Kw, StringLit, IntLit, FloatLit, VoidLit, BoolLit, Ident, Op}
+        ast::token::{StringLit, IntLit, FloatLit, VoidLit, BoolLit, Ident, Op}
     },
-    shared::logging::{Message, Level, Note},
+    shared::{logging::{Message, Level, Note}, src::Span},
     compiler::{typecheck::{TypeCheck, TypeChecker, Ty, Entity, FindItem}, typehelper::TypeCheckHelper}
 };
 use super::{
     decls::{VarDecl, FunDecl},
-    token::{Path, Parenthesized, Prec, Braced},
+    token::{Parenthesized, Prec, Braced, self, Tokenize},
     binop::BinOp,
     unop::{UnOp, Call},
-    flow::{If, Return}
+    flow::{If, Return}, Path
 };
 
 #[derive(Debug)]
@@ -42,33 +42,33 @@ pub enum Expr<'s> {
 
 impl<'s> Expr<'s> {
     fn parse_single<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
-        if Kw::Var.peek_value(stream) {
+        if token::Var::peek(stream).is_some() {
             Ok(Self::VarDecl(stream.parse()?))
         }
-        else if Kw::Fun.peek_value(stream) {
+        else if token::Fun::peek(stream).is_some() {
             Ok(Self::FunDecl(stream.parse()?))
         }
-        else if Kw::If.peek_value(stream) {
+        else if token::If::peek(stream).is_some() {
             Ok(Self::If(stream.parse()?))
         }
-        else if Kw::Return.peek_value(stream) {
+        else if token::Return::peek(stream).is_some() {
             Ok(Self::Return(stream.parse()?))
         }
-        else if "::".peek_value(stream) || Ident::peek(stream) {
+        else if token::Dicolon::peek(stream).is_some() || Ident::peek(stream).is_some() {
             Ok(Self::Entity(stream.parse()?))
         }
         else {
-            let Some(tk) = stream.next() else {
-                return Err(stream.error(format!("Expected expression, got {}", stream.whats_eof()), start));
-            };
-            match tk {
-                Token::Void(lit) => Ok(Self::Void(lit)),
-                Token::Bool(lit) => Ok(Self::Bool(lit)),
-                Token::Int(lit) => Ok(Self::Int(lit)),
-                Token::Float(lit) => Ok(Self::Float(lit)),
-                Token::String(lit) => Ok(Self::String(lit)),
-                tk => Err(stream.error(format!("Expected expression, got {tk}"), start)),
+            match stream.next() {
+                Token::VoidLit(lit) => Ok(Self::Void(lit)),
+                Token::BoolLit(lit) => Ok(Self::Bool(lit)),
+                Token::IntLit(lit) => Ok(Self::Int(lit)),
+                Token::FloatLit(lit) => Ok(Self::Float(lit)),
+                Token::StringLit(lit) => Ok(Self::String(lit)),
+                tk => Err(Message::from_span(
+                    Level::Error,
+                    format!("Expected expression, got {tk}"),
+                    tk.span()
+                )),
             }
         }
     }
@@ -76,7 +76,7 @@ impl<'s> Expr<'s> {
     fn parse_postfix<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let mut expr = Self::parse_single(stream)?;
         loop {
-            if Parenthesized::peek(stream) {
+            if Parenthesized::peek(stream).is_some() {
                 expr = Expr::Call(Call::parse_with(expr, stream)?);
             }
             else {
@@ -87,7 +87,7 @@ impl<'s> Expr<'s> {
     }
 
     pub fn parse_unop<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        if Op::peek(stream) {
+        if Op::peek(stream).is_some() {
             Ok(Self::UnOp(stream.parse()?))
         }
         else {
@@ -101,17 +101,18 @@ impl<'s> Expr<'s> {
             F: FnMut(&mut TokenStream<'s, I>) -> Result<Expr<'s>, Message<'s>>
     {
         let mut lhs = sides(stream)?;
-        while prec.peek(stream) {
+        while prec.peek_op_of_this_prec(stream) {
             lhs = Expr::BinOp(BinOp::parse_with(lhs, |s| sides(s), stream)?);
         }
         Ok(lhs)
     }
 
     fn parse_binop<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let mut sides: Box<dyn FnMut(&mut TokenStream<'s>) -> _> = Box::from(Self::parse_unop);
+        let mut sides: Box<dyn FnMut(&mut TokenStream<'s, I>) -> _> = Box::from(Self::parse_unop);
         for prec in Prec::iter().skip(1) {
             sides = Box::from(
-                move |stream: &mut TokenStream<'s>| Self::parse_binop_prec(prec, &mut sides, stream)
+                move |stream: &mut TokenStream<'s, I>|
+                    Self::parse_binop_prec(prec, &mut sides, stream)
             );
         }
         sides(stream)
@@ -206,27 +207,27 @@ pub struct ExprList<'s> {
 
 impl<'s> Parse<'s> for ExprList<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
+        let start = stream.pos();
         // just parse until the stream is over
         // since braces are treated as a single token that result in a substream 
         // which is parsed until the closing brace is found and then returns eof 
         // this works perfectly for all cases
         let mut list = vec![];
-        while !stream.is_eof() {
+        while !stream.eof() {
             let expr = Expr::parse(stream)?;
             if expr.requires_semicolon() {
-                ";".parse_value(stream)?;
+                token::Semicolon::parse(stream)?;
             }
             list.push(expr);
             // parse any amount of extra semicolons and then warn about them
-            let semi_start = stream.skip_ws();
-            while ";".parse_value(stream).is_ok() {}
+            let semi_start = stream.pos();
+            while token::Semicolon::peek_and_parse(stream).is_some() {}
             let semi_end = stream.pos();
             if semi_start != semi_end {
                 // todo: emit warning
             }
         }
-        Ok(Self { list, span: stream.span(start) })
+        Ok(Self { list, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
 
@@ -251,9 +252,9 @@ pub struct Block<'s> {
 
 impl<'s> Parse<'s> for Block<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
+        let start = stream.pos();
         let mut braced = Braced::parse(stream)?.into_stream();
-        Ok(Self { list: braced.parse()?, span: stream.span(start) })
+        Ok(Self { list: braced.parse()?, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
 

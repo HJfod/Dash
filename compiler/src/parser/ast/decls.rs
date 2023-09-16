@@ -8,7 +8,7 @@ use crate::{
     compiler::{typecheck::{TypeCheck, TypeChecker, Ty, Entity, ScopeLevel},
     typehelper::TypeCheckHelper}
 };
-use super::{ty::Type, expr::Expr, token::{Ident, Kw, Op, Parenthesized, Braced}};
+use super::{ty::Type, expr::Expr, token::{Ident, Parenthesized, Braced, self, Colon, Tokenize}, if_then_some};
 
 #[derive(Debug)]
 pub struct VarDecl<'s> {
@@ -20,15 +20,22 @@ pub struct VarDecl<'s> {
 
 impl<'s> Parse<'s> for VarDecl<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let var = Kw::Var.parse_value(stream)?;
+        let start = stream.pos();
+        token::Var::parse(stream)?;
         let ident = Ident::parse(stream)?;
-        let ty = if_then_some!(
-            ":".parse_value(stream).is_ok() => Type::parse(stream)?
-        );
-        let value = if_then_some!(
-            Op::Seq.parse_value(stream).is_ok() => Expr::parse(stream)?.into()
-        );
-        Ok(VarDecl { ident, ty, value, span: var.span() })
+        let ty = if Colon::peek_and_parse(stream).is_some() {
+            Some(Type::parse(stream)?)
+        }
+        else {
+            None
+        };
+        let value = if token::Seq::peek_and_parse(stream).is_some() {
+            Some(Expr::parse(stream)?.into())
+        }
+        else {
+            None
+        };
+        Ok(VarDecl { ident, ty, value, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
 
@@ -64,14 +71,17 @@ pub struct FunParam<'s> {
 
 impl<'s> Parse<'s> for FunParam<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
+        let start = stream.pos();
         let ident = Ident::parse(stream)?;
-        ":".parse_value(stream)?;
+        token::Colon::parse(stream)?;
         let ty = Type::parse(stream)?;
-        let default_value = if_then_some!(
-            Op::Seq.parse_value(stream).is_ok() => Expr::parse(stream)?.into()
-        );
-        Ok(FunParam { ident, ty, default_value, span: stream.span(start) })
+        let default_value = if token::Seq::peek_and_parse(stream).is_some() {
+            Some(Expr::parse(stream)?.into())
+        }
+        else {
+            None
+        };
+        Ok(FunParam { ident, ty, default_value, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
 
@@ -112,31 +122,32 @@ impl<'s> FunDecl<'s> {
 
 impl<'s> Parse<'s> for FunDecl<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
-        Kw::Fun.parse_value(stream)?;
+        let start = stream.pos();
+        token::Fun::parse(stream)?;
         let ident = Ident::parse(stream).ok();
         let mut params_stream = Parenthesized::parse(stream)?.into_stream();
         let mut params = Vec::new();
-        while !params_stream.is_eof() {
+        while params_stream.eof() {
             params.push(params_stream.parse()?);
-            if params_stream.is_eof() {
+            if params_stream.eof() {
                 break;
             }
-            ",".parse_value(&mut params_stream)?;
+            token::Comma::parse(&mut params_stream)?;
         }
-        let ret_ty = if_then_some!(
-            "->".parse_value(stream).is_ok() => Type::parse(stream)?
-        );
-        let body = if "=>".parse_value(stream).is_ok() {
+        let ret_ty = if_then_some(
+            token::Arrow::peek_and_parse(stream).is_some(),
+            || Ok(Type::parse(stream)?)
+        )?;
+        let body = if token::FatArrow::peek_and_parse(stream).is_some() {
             Some(Box::from(stream.parse::<Expr<'s>>()?))
         }
-        else if Braced::peek(stream) {
+        else if Braced::peek(stream).is_some() {
             Some(Box::from(Expr::Block(stream.parse()?)))
         }
         else {
             None
         };
-        Ok(FunDecl { ident, params, ret_ty, body, span: stream.span(start) })
+        Ok(FunDecl { ident, params, ret_ty, body, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
 

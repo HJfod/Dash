@@ -1,24 +1,24 @@
 
 use std::{collections::HashMap, fmt::Display, marker::PhantomData, sync::Arc};
 use crate::parser::node::{ASTNode, ASTRef};
-use crate::parser::ast::token::Op;
+use crate::parser::ast::token::{Op, self};
 use crate::shared::logging::{Logger, Message, Level, Note, ConsoleLogger};
 use crate::shared::src::{Src, Span};
 
 macro_rules! parse_op {
-    (+)  => { Op::Add };
-    (-)  => { Op::Sub };
-    (*)  => { Op::Mul };
-    (/)  => { Op::Div };
-    (%)  => { Op::Mod };
-    (==) => { Op::Eq };
-    (!=) => { Op::Neq };
-    (<)  => { Op::Lss };
-    (<=) => { Op::Leq };
-    (>)  => { Op::Gtr };
-    (>=) => { Op::Geq };
-    (&&) => { Op::And };
-    (||) => { Op::Or };
+    (+)  => { token::Add };
+    (-)  => { token::Sub };
+    (*)  => { token::Mul };
+    (/)  => { token::Div };
+    (%)  => { token::Mod };
+    (==) => { token::Eq };
+    (!=) => { token::Neq };
+    (<)  => { token::Lss };
+    (<=) => { token::Leq };
+    (>)  => { token::Gtr };
+    (>=) => { token::Geq };
+    (&&) => { token::And };
+    (||) => { token::Or };
 }
 
 macro_rules! define_ops {
@@ -28,7 +28,12 @@ macro_rules! define_ops {
     };
 
     ($res:ident; $a:ident $op:tt $b:ident -> $r:ident;) => {
-        $res.entities.push(Entity::new_builtin_binop(Ty::$a, parse_op!($op), Ty::$b, Ty::$r));
+        $res.entities.push(Entity::new_builtin_binop(
+            Ty::$a,
+            <parse_op!($op)>::new(Span::builtin().clone()).into(),
+            Ty::$b,
+            Ty::$r
+        ));
     };
 }
 
@@ -461,12 +466,12 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
         if let Some(ty) = self.try_find(a, op, b) {
             return Some(ty);
         }
-        if op == Op::Neq {
-            return self.try_find(a, Op::Eq, b);
-        }
-        if op == Op::Eq {
-            return self.try_find(a, Op::Neq, b);
-        }
+        // if op == Op::Neq {
+        //     return self.try_find(a, Op::Eq, b);
+        // }
+        // if op == Op::Eq {
+        //     return self.try_find(a, Op::Neq, b);
+        // }
         None
     }
 
@@ -528,9 +533,9 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
                             format!("Expected return type to be '{old}', got '{ty}'"),
                             node.span(),
                         ).note_if(scope.return_type_inferred_from.map(|infer|
-                            Note::new_at(
+                            Note::from_span(
                                 "Return type inferred from here",
-                                infer.span().src, infer.span().range.clone()
+                                infer.span()
                             )
                         )));
                     }
@@ -596,20 +601,6 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
 
     fn encountered_never(&mut self) {
         self.scopes.last_mut().unwrap().has_encountered_never = true;
-    }
-
-    fn any_upper_scope_returns(&self) -> bool {
-        for scope in self.scopes.iter().rev() {
-            if scope.is_returned_to {
-                return true;
-            }
-            // if this scope is a function boundary then any returns outside that 
-            // can't affect this scope
-            if scope.level >= ScopeLevel::Function {
-                break;
-            }
-        }
-        false
     }
 
     fn check_if_current_expression_is_unreachable<E: ASTNode<'s> + ?Sized>(&mut self, expr: &E) {

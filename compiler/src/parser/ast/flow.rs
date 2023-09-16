@@ -1,12 +1,12 @@
 
 use crate::{
     parser::{
-        node::{Span, Parse, ASTNode},
+        node::{Parse, ASTNode},
         stream::{TokenStream, Token}
     },
-    shared::logging::Message, compiler::typecheck::{TypeCheck, TypeChecker, Ty}
+    shared::{logging::Message, src::Span}, compiler::typecheck::{TypeCheck, TypeChecker, Ty}
 };
-use super::{expr::Expr, token::Kw};
+use super::{expr::Expr, token::{self, Tokenize}};
 
 #[derive(Debug)]
 pub struct If<'s> {
@@ -18,12 +18,12 @@ pub struct If<'s> {
 
 impl<'s> Parse<'s> for If<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
-        Kw::If.parse_value(stream)?;
+        let start = stream.pos();
+        token::If::parse(stream)?;
         let cond = Box::from(stream.parse::<Expr<'s>>()?);
         let truthy = Box::from(Expr::Block(stream.parse()?));
-        let falsy = if Kw::Else.parse_value(stream).is_ok() {
-            Some(Box::from(if Kw::If.peek_value(stream) {
+        let falsy = if token::Else::parse(stream).is_ok() {
+            Some(Box::from(if token::If::peek(stream).is_some() {
                 Expr::If(stream.parse()?)
             }
             else {
@@ -33,7 +33,7 @@ impl<'s> Parse<'s> for If<'s> {
         else {
             None
         };
-        Ok(Self { cond, truthy, falsy, span: stream.span(start) })
+        Ok(Self { cond, truthy, falsy, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
 
@@ -57,10 +57,10 @@ pub struct Return<'s> {
 
 impl<'s> Parse<'s> for Return<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
-        Kw::Return.parse_value(stream)?;
+        let start = stream.pos();
+        token::Return::parse(stream)?;
         let expr = Expr::parse(stream).ok().map(|e| e.into());
-        Ok(Self { expr, span: stream.span(start) })
+        Ok(Self { expr, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
 

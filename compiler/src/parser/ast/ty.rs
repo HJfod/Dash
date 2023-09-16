@@ -2,9 +2,9 @@
 use crate::{
     parser::{
         stream::{TokenStream, Token},
-        node::{Parse, ASTNode, Span}
+        node::{Parse, ASTNode}
     },
-    shared::logging::Message,
+    shared::{logging::Message, src::Span},
     compiler::typecheck::{TypeCheck, TypeChecker, Ty}
 };
 
@@ -45,9 +45,9 @@ pub struct TypeName<'s> {
 
 impl<'s> Parse<'s> for TypeName<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
+        let start = stream.pos();
         let ident = Ident::parse(stream)?;
-        Ok(TypeName { ident, span: stream.span(start) })
+        Ok(TypeName { ident, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
 

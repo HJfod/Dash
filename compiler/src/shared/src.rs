@@ -71,11 +71,11 @@ impl<'s> Span<'s> {
     }
 
     pub fn start(&self) -> Loc {
-        self.start
+        self.start.clone()
     }
 
     pub fn end(&self) -> Loc {
-        self.end
+        self.end.clone()
     }
 
     pub fn underlined(&self) -> String {

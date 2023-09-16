@@ -3,26 +3,26 @@ use crate::{
     parser::{
         stream::{TokenStream, Token},
         ast::token::Op,
-        node::{Parse, ASTNode, Span}
+        node::{Parse, ASTNode}
     },
-    shared::logging::Message,
+    shared::{logging::Message, src::Span},
     compiler::typecheck::{TypeCheck, TypeChecker, Ty}
 };
-use super::{expr::Expr, token::{Parenthesized, Bracketed}};
+use super::{expr::Expr, token::{Parenthesized, Bracketed, self}};
 
 #[derive(Debug)]
 pub struct UnOp<'s> {
-    op: Op,
+    op: Op<'s>,
     target: Box<Expr<'s>>,
     span: Span<'s>,
 }
 
 impl<'s> Parse<'s> for UnOp<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.skip_ws();
+        let start = stream.pos();
         let op = Op::parse(stream)?;
         let target = Expr::parse_unop(stream)?.into();
-        Ok(Self { op, target, span: stream.span(start) })
+        Ok(Self { op, target, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
 
@@ -49,17 +49,17 @@ impl<'s> Call<'s> {
     pub fn parse_with<I: Iterator<Item = Token<'s>>>(
         target: Expr<'s>, stream: &mut TokenStream<'s, I>
     ) -> Result<Self, Message<'s>> {
-        let start = target.span().range.start.offset;
+        let start = stream.pos();
         let mut args_stream = Parenthesized::parse(stream)?.into_stream();
         let mut args = Vec::new();
-        while !args_stream.is_eof() {
+        while !args_stream.eof() {
             args.push(args_stream.parse()?);
-            if args_stream.is_eof() {
+            if args_stream.eof() {
                 break;
             }
-            ",".parse_value(&mut args_stream)?;
+            token::Comma::parse(&mut args_stream)?;
         }
-        Ok(Self { target: target.into(), args, span: stream.span(start) })
+        Ok(Self { target: target.into(), args, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
 
@@ -90,11 +90,11 @@ pub struct Index<'s> {
 
 impl<'s> Index<'s> {
     pub fn parse_with<I: Iterator<Item = Token<'s>>>(target: Expr<'s>, stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = target.span().range.start.offset;
+        let start = stream.pos();
         let mut args_stream = Bracketed::parse(stream)?.into_stream();
         let index = args_stream.parse::<Expr<'s>>()?.into();
-        args_stream.expect_eof()?;
-        Ok(Self { target: target.into(), index, span: stream.span(start) })
+        todo!("expect eof");
+        Ok(Self { target: target.into(), index, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
 
