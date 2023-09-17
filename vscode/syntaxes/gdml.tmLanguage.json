@@ -42,11 +42,15 @@
 					"name": "variable.other.constant.gdml"
 				},
 				{
-					"match": "(?<=(new|as|struct|extends|is|namespace|operator|using|->|decl(\\s+[a-zA-Z0-9]+\\s*=)?|[^:]:)\\s*)[a-zA-Z0-9_]+",
+					"match": "(?<=\\b(new|as|macro|struct|extends|is|module|operator|using|->|decl(\\s+[a-zA-Z0-9]+\\s*=)?|[^:]:)\\b\\s*)[a-zA-Z0-9_]+",
 					"name": "entity.name.type.gdml"
 				},
 				{
 					"match": "[a-zA-Z0-9_]+(?=\\s*\\{)",
+					"name": "entity.name.type.gdml"
+				},
+				{
+					"match": "[A-Z][a-zA-Z0-9_]*",
 					"name": "entity.name.type.gdml"
 				},
 				{
@@ -83,11 +87,11 @@
 				},
 				{
 					"name": "keyword.other.gdml",
-					"match": "\\b(in|is|as|extern|import|export|get|set|depends|required|default|assert)\\b"
+					"match": "\\b(in|is|as|extern|export|import|get|set|depends|required|default|assert)\\b"
 				},
 				{
 					"name": "storage.type.gdml",
-					"match": "\\b(let|var|const|fun|mut|decl|struct|namespace|enum|extends|using|scope)\\b"
+					"match": "\\b(let|var|const|fun|mut|decl|struct|macro|module|enum|extends|using|scope|public|private)\\b"
 				},
 				{
 					"name": "punctuation.gdml",
@@ -152,7 +156,7 @@
 				},
 				{
 					"name": "constant.language.gdml",
-					"match": "\\b(true|false|null)\\b"
+					"match": "\\b(true|false|null|none)\\b"
 				}
 			]
 		},
