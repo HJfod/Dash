@@ -1,7 +1,7 @@
 
 use std::fmt::Debug;
 use crate::shared::{src::Span, logging::Message, wrappers::RefWrapper};
-use super::{stream::{TokenStream, Token}, ast::{expr::Expr, ty::Type, decls::{VarDecl, FunDecl, FunParam}}};
+use super::{stream::{TokenStream, Token}, ast::{expr::Expr, ty::Type, decls::{VarDecl, FunDecl, FunParam}, flow::Return}};
 use std::hash::Hash;
 
 pub trait ASTNode<'s>: Debug {
@@ -22,6 +22,7 @@ pub enum ASTRef<'s, 'n> {
     FunParam(RefWrapper<'n, FunParam<'s>>),
     Expr(RefWrapper<'n, Expr<'s>>),
     Type(RefWrapper<'n, Type<'s>>),
+    Return(RefWrapper<'n, Return<'s>>),
 }
 
 impl<'s, 'n> ASTNode<'s> for ASTRef<'s, 'n> {
@@ -33,6 +34,7 @@ impl<'s, 'n> ASTNode<'s> for ASTRef<'s, 'n> {
             Self::FunParam(e) => e.span(),
             Self::Expr(e) => e.span(),
             Self::Type(e) => e.span(),
+            Self::Return(e) => e.span(),
         }
     }
 }

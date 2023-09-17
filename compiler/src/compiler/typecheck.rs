@@ -1,8 +1,8 @@
 
-use std::{collections::HashMap, fmt::Display, marker::PhantomData, sync::Arc};
+use std::{collections::HashMap, fmt::Display, marker::PhantomData};
 use crate::parser::node::{ASTNode, ASTRef};
 use crate::parser::ast::token::{Op, self};
-use crate::shared::logging::{Logger, Message, Level, Note, ConsoleLogger};
+use crate::shared::logging::{Message, Level, Note, LoggerRef};
 use crate::shared::src::{Src, Span};
 
 macro_rules! parse_op {
@@ -250,7 +250,7 @@ impl<'s, 'n> Entity<'s, 'n> {
 
     pub fn new_builtin_binop(a: Ty<'s, 'n>, op: Op, b: Ty<'s, 'n>, ret: Ty<'s, 'n>) -> Self {
         Self {
-            name: get_binop_fun_name(&a, op, &b),
+            name: get_binop_fun_name(&a, &op, &b),
             decl: ASTRef::Builtin,
             ty: Ty::Function {
                 params: vec![
@@ -444,25 +444,25 @@ impl<'s, 'n> FindScope<'s, 'n> {
 }
 
 pub struct TypeChecker<'s, 'n> {
-    logger: Arc<dyn Logger<'s>>,
+    logger: LoggerRef<'s>,
     scopes: Vec<Scope<'s, 'n>>,
 }
 
 impl<'s, 'n> TypeChecker<'s, 'n> {
-    pub fn new() -> Self {
+    pub fn new(logger: LoggerRef<'s>) -> Self {
         Self {
-            logger: Arc::from(ConsoleLogger),
+            logger,
             scopes: vec![Scope::new_top()],
         }
     }
 
-    fn try_find(&self, a: &Ty<'s, 'n>, op: Op, b: &Ty<'s, 'n>) -> Option<Ty<'s, 'n>> {
+    fn try_find(&self, a: &Ty<'s, 'n>, op: &Op, b: &Ty<'s, 'n>) -> Option<Ty<'s, 'n>> {
         self.find::<Entity<'s, 'n>, _>(&get_binop_fun_name(a, op, b))
             .option()
             .map(move |e| e.ty.return_ty())
     }
 
-    pub fn binop_ty(&self, a: &Ty<'s, 'n>, op: Op, b: &Ty<'s, 'n>) -> Option<Ty<'s, 'n>> {
+    pub fn binop_ty(&self, a: &Ty<'s, 'n>, op: &Op, b: &Ty<'s, 'n>) -> Option<Ty<'s, 'n>> {
         if let Some(ty) = self.try_find(a, op, b) {
             return Some(ty);
         }
@@ -528,7 +528,7 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
             Some(scope) => {
                 if let Some(ref old) = scope.return_type {
                     if !ty.convertible_to(&old) {
-                        self.logger.log_msg(Message::from_span(
+                        self.logger.lock().unwrap().log_msg(Message::from_span(
                             Level::Error,
                             format!("Expected return type to be '{old}', got '{ty}'"),
                             node.span(),
@@ -575,7 +575,7 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
         else {
             if let Some(ref old) = scope.return_type {
                 if !ty.convertible_to(&old) {
-                    self.logger.log_msg(Message::from_span(
+                    self.logger.lock().unwrap().log_msg(Message::from_span(
                         Level::Error,
                         format!("Expected return type to be '{old}', got '{ty}'"),
                         yielding_expr.span(),
@@ -610,7 +610,7 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
         let scope = self.scopes.last_mut().unwrap();
         if scope.has_encountered_never && !scope.unreachable_expression_logged {
             scope.unreachable_expression_logged = true;
-            self.logger.log_msg(Message::from_span(
+            self.logger.lock().unwrap().log_msg(Message::from_span(
                 Level::Error,
                 format!("Unreachable expression"),
                 expr.span(),
@@ -619,10 +619,10 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
     }
 
     pub fn emit_msg(&self, msg: Message<'s>) {
-        self.logger.log_msg(msg);
+        self.logger.lock().unwrap().log_msg(msg);
     }
 
-    pub fn set_logger(&mut self, logger: Arc<dyn Logger<'s>>) {
+    pub fn set_logger(&mut self, logger: LoggerRef<'s>) {
         self.logger = logger;
     }
 
@@ -630,7 +630,7 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
         if !a.convertible_to(&b) {
             self.emit_msg(Message::from_span(
                 Level::Error,
-                format!("Type '{a}' is not convertible to '{b}'"),
+                format!("Expected type {b}, got type {a}"),
                 span,
             ));
         }
@@ -657,10 +657,10 @@ impl<'s, 'n, T: TypeCheck<'s, 'n>> TypeCheck<'s, 'n> for Box<T> {
     }
 }
 
-fn get_unop_fun_name<'s, 'n>(a: &Ty<'s, 'n>, op: Op) -> FullPath {
+fn get_unop_fun_name<'s, 'n>(a: &Ty<'s, 'n>, op: &Op) -> FullPath {
     FullPath::new([format!("@unop`{a}{op}`")])
 }
 
-fn get_binop_fun_name<'s, 'n>(a: &Ty<'s, 'n>, op: Op, b: &Ty<'s, 'n>) -> FullPath {
+fn get_binop_fun_name<'s, 'n>(a: &Ty<'s, 'n>, op: &Op, b: &Ty<'s, 'n>) -> FullPath {
     FullPath::new([format!("@binop`{a}{op}{b}`")])
 }

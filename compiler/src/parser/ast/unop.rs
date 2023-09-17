@@ -1,20 +1,22 @@
 
+use gdml_macros::gdml_ast_node;
+
 use crate::{
     parser::{
         stream::{TokenStream, Token},
         ast::token::Op,
         node::{Parse, ASTNode}
     },
-    shared::{logging::Message, src::Span},
-    compiler::typecheck::{TypeCheck, TypeChecker, Ty}
+    shared::{logging::{Message, Level}, src::Span},
+    compiler::{typecheck::{TypeCheck, TypeChecker, Ty}, typehelper::TypeCheckHelper}
 };
 use super::{expr::Expr, token::{Parenthesized, Bracketed, self}};
 
 #[derive(Debug)]
+#[gdml_ast_node]
 pub struct UnOp<'s> {
     op: Op<'s>,
     target: Box<Expr<'s>>,
-    span: Span<'s>,
 }
 
 impl<'s> Parse<'s> for UnOp<'s> {
@@ -26,12 +28,6 @@ impl<'s> Parse<'s> for UnOp<'s> {
     }
 }
 
-impl<'s> ASTNode<'s> for UnOp<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
-}
-
 impl<'s, 'n> TypeCheck<'s, 'n> for UnOp<'s> {
     fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
         todo!()
@@ -39,10 +35,10 @@ impl<'s, 'n> TypeCheck<'s, 'n> for UnOp<'s> {
 }
 
 #[derive(Debug)]
+#[gdml_ast_node]
 pub struct Call<'s> {
     target: Box<Expr<'s>>,
     args: Vec<Expr<'s>>,
-    span: Span<'s>,
 }
 
 impl<'s> Call<'s> {
@@ -69,23 +65,43 @@ impl<'s> Parse<'s> for Call<'s> {
     }
 }
 
-impl<'s> ASTNode<'s> for Call<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
-}
-
 impl<'s, 'n> TypeCheck<'s, 'n> for Call<'s> {
     fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
-        todo!()
+        let target_ty = self.target.typecheck_helper(checker);
+        let args_ty = self.args.typecheck_helper(checker);
+        match target_ty {
+            Ty::Function { params, ret_ty, decl: _ } => {
+                let mut params_iter = params.into_iter();
+                for ((arg, arg_ty), (_, param_ty)) in self.args.iter().zip(args_ty).zip(&mut params_iter) {
+                    checker.expect_eq(arg_ty, param_ty, arg.span());
+                }
+                for rest in params_iter {
+                    checker.emit_msg(Message::from_span(
+                        Level::Error,
+                        format!("Argument '{}' not passed", rest.0),
+                        &self.span
+                    ));
+                }
+                ret_ty.as_ref().clone()
+            }
+            Ty::Invalid => Ty::Invalid,
+            other => {
+                checker.emit_msg(Message::from_span(
+                    Level::Error,
+                    format!("Attempted to call an expression of type {other}"),
+                    &self.span
+                ));
+                Ty::Invalid
+            }
+        }
     }
 }
 
 #[derive(Debug)]
+#[gdml_ast_node]
 pub struct Index<'s> {
     target: Box<Expr<'s>>,
     index: Box<Expr<'s>>,
-    span: Span<'s>,
 }
 
 impl<'s> Index<'s> {
@@ -93,7 +109,14 @@ impl<'s> Index<'s> {
         let start = stream.pos();
         let mut args_stream = Bracketed::parse(stream)?.into_stream();
         let index = args_stream.parse::<Expr<'s>>()?.into();
-        todo!("expect eof");
+        match args_stream.next() {
+            Token::EOF(_, _) => {},
+            other => Err(Message::from_span(
+                Level::Error, 
+                format!("Did not expect {other} at this position"),
+                other.span()
+            ))?,
+        }
         Ok(Self { target: target.into(), index, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
@@ -101,12 +124,6 @@ impl<'s> Index<'s> {
 impl<'s> Parse<'s> for Index<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         Self::parse_with(stream.parse()?, stream)
-    }
-}
-
-impl<'s> ASTNode<'s> for Index<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
     }
 }
 

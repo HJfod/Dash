@@ -7,7 +7,7 @@ use std::{
 };
 use crate::parser::{stream::{SrcReader, TokenStream}, ast::expr::ExprList};
 
-use super::logging::Message;
+use super::logging::{Message, LoggerRef};
 
 #[derive(Debug, Clone)]
 pub struct Loc {
@@ -245,7 +245,7 @@ impl Src {
         }
     }
 
-    pub fn parse<'s>(&'s self) -> Result<ExprList<'s>, Message<'s>> {
-        TokenStream::new(self, SrcReader::new(self)).parse()
+    pub fn parse<'s>(&'s self, logger: LoggerRef<'s>) -> Result<ExprList<'s>, Message<'s>> {
+        TokenStream::new(self, SrcReader::new(self, logger)).parse()
     }
 }

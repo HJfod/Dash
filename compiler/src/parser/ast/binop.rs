@@ -1,20 +1,22 @@
 
+use gdml_macros::gdml_ast_node;
+
 use crate::{
     parser::{
         stream::{TokenStream, Token},
         node::ASTNode
     },
-    shared::{logging::Message, src::Span},
-    compiler::typecheck::{TypeCheck, TypeChecker, Ty}
+    shared::{logging::{Message, Level}, src::Span},
+    compiler::{typecheck::{TypeCheck, TypeChecker, Ty}, typehelper::TypeCheckHelper}
 };
 use super::{expr::Expr, token::Op};
 
 #[derive(Debug)]
+#[gdml_ast_node]
 pub struct BinOp<'s> {
     lhs: Box<Expr<'s>>,
     op: Op<'s>,
     rhs: Box<Expr<'s>>,
-    span: Span<'s>,
 }
 
 impl<'s> BinOp<'s> {
@@ -37,14 +39,20 @@ impl<'s> BinOp<'s> {
     }
 }
 
-impl<'s> ASTNode<'s> for BinOp<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
-}
-
 impl<'s, 'n> TypeCheck<'s, 'n> for BinOp<'s> {
     fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
-        todo!()
+        let lhs_ty = self.lhs.typecheck_helper(checker);
+        let rhs_ty = self.rhs.typecheck_helper(checker);
+        match checker.binop_ty(&lhs_ty, &self.op, &rhs_ty) {
+            Some(ty) => ty,
+            None => {
+                checker.emit_msg(Message::from_span(
+                    Level::Error,
+                    format!("Cannot apply '{}' to '{lhs_ty}' and '{rhs_ty}'", self.op),
+                    self.span()
+                ));
+                Ty::Invalid
+            }
+        }
     }
 }

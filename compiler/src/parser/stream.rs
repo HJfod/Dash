@@ -1,6 +1,6 @@
 
 use std::fmt::{Debug, Display};
-use crate::shared::{src::{Src, Span, Loc}, logging::Message};
+use crate::shared::{src::{Src, Span, Loc}, logging::{Message, LoggerRef, Level}};
 use unicode_xid::UnicodeXID;
 use super::{
     node::{ASTNode, Parse},
@@ -96,11 +96,12 @@ impl<'s> ASTNode<'s> for Token<'s> {
 pub struct SrcReader<'s> {
     src: &'s Src,
     pos: usize,
+    logger: LoggerRef<'s>,
 }
 
 impl<'s> SrcReader<'s> {
-    pub fn new(src: &'s Src) -> Self {
-        Self { src, pos: 0 }
+    pub fn new(src: &'s Src, logger: LoggerRef<'s>) -> Self {
+        Self { src, pos: 0, logger }
     }
 
     pub fn pos(&self) -> usize {
@@ -209,6 +210,53 @@ impl<'s> Iterator for SrcReader<'s> {
                 }
             }
         }
+        // String literal
+        else if ch == '"' {
+            let mut res = String::new();
+            while match self.src.get(self.pos) {
+                Some('"') => {
+                    self.pos += 1;
+                    false
+                }
+                Some(c) => {
+                    res.push(match c {
+                        '\\' => {
+                            self.pos += 1;
+                            match self.src.get(self.pos) {
+                                Some('n')  => '\n',
+                                Some('t')  => '\t',
+                                Some('0')  => '\0',
+                                Some('r')  => '\r',
+                                Some('\\') => '\\',
+                                Some('\"') => '\"',
+                                Some('\'') => '\'',
+                                Some(c) => {
+                                    self.logger.lock().unwrap().log_msg(Message::from_span(
+                                        Level::Warning,
+                                        format!("Invalid escape sequence '\\{c}'"),
+                                        &self.src.span(self.pos - 1, self.pos + 1)
+                                    ));
+                                    c
+                                }
+                                None => {
+                                    self.logger.lock().unwrap().log_msg(Message::from_span(
+                                        Level::Warning,
+                                        format!("Expected escape sequence"),
+                                        &self.src.span(self.pos - 1, self.pos)
+                                    ));
+                                    '\\'
+                                }
+                            }
+                        }
+                        o => o
+                    });
+                    self.pos += 1;
+                    true
+                }
+                None => false
+            } {}
+            Some(Token::StringLit(StringLit::new(res, make_span(self.pos))))
+        }
         // Single punctuation
         else if matches!(ch, ',' | ';' | '.' | ':') || (matches!(ch, '-' | '=') && next_ch == Some('>')) {
             let mut res = String::from(ch);
@@ -258,7 +306,7 @@ impl<'s> Iterator for SrcReader<'s> {
                         }.into(), first_pos);
                     }
                 }
-                // get next token
+                // push next token to subtree
                 tree.push(self.next().unwrap());
             }
             // push eof at the end of the tree (important!)

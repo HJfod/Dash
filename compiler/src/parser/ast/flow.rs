@@ -1,19 +1,21 @@
 
+use gdml_macros::gdml_ast_node;
+
 use crate::{
     parser::{
-        node::{Parse, ASTNode},
+        node::{Parse, ASTNode, ASTRef},
         stream::{TokenStream, Token}
     },
-    shared::{logging::Message, src::Span}, compiler::typecheck::{TypeCheck, TypeChecker, Ty}
+    shared::{logging::Message, src::Span}, compiler::{typecheck::{TypeCheck, TypeChecker, Ty, ScopeLevel, FindScope}, typehelper::TypeCheckHelper}
 };
 use super::{expr::Expr, token::{self, Tokenize}};
 
 #[derive(Debug)]
+#[gdml_ast_node]
 pub struct If<'s> {
     cond: Box<Expr<'s>>,
     truthy: Box<Expr<'s>>,
     falsy: Option<Box<Expr<'s>>>,
-    span: Span<'s>,
 }
 
 impl<'s> Parse<'s> for If<'s> {
@@ -37,22 +39,23 @@ impl<'s> Parse<'s> for If<'s> {
     }
 }
 
-impl<'s> ASTNode<'s> for If<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
-}
-
 impl<'s, 'n> TypeCheck<'s, 'n> for If<'s> {
     fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
-        todo!()
+        checker.push_scope(ScopeLevel::Opaque, ASTRef::Expr(self.cond.as_ref().into()), None);
+        let cond_ty = self.cond.typecheck_helper(checker);
+        let truthy_ty = self.truthy.typecheck_helper(checker);
+        checker.pop_scope(truthy_ty.clone(), ASTRef::Expr(self.truthy.as_ref().into()));
+        let falsy_ty = self.falsy.typecheck_helper(checker);
+        checker.expect_eq(cond_ty, Ty::Bool, self.cond.span());
+        checker.expect_eq(falsy_ty.unwrap_or(Ty::Inferred), truthy_ty.clone(), &self.span);
+        truthy_ty
     }
 }
 
 #[derive(Debug)]
+#[gdml_ast_node]
 pub struct Return<'s> {
     expr: Option<Box<Expr<'s>>>,
-    span: Span<'s>,
 }
 
 impl<'s> Parse<'s> for Return<'s> {
@@ -64,14 +67,14 @@ impl<'s> Parse<'s> for Return<'s> {
     }
 }
 
-impl<'s> ASTNode<'s> for Return<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
-}
-
 impl<'s, 'n> TypeCheck<'s, 'n> for Return<'s> {
     fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
-        todo!()
+        let expr_ty = self.expr.typecheck_helper(checker);
+        checker.infer_return_type(
+            FindScope::ByLevel(ScopeLevel::Function),
+            expr_ty.unwrap_or(Ty::Void),
+            ASTRef::Return(self.into())
+        );
+        Ty::Never
     }
 }

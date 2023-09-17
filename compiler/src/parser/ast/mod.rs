@@ -1,8 +1,9 @@
 
+use gdml_macros::gdml_ast_node;
+
 use crate::{shared::{logging::Message, src::Span}, compiler::typecheck};
 use self::token::{Ident, Dicolon, Tokenize};
-
-use super::{node::{Parse, ASTNode}, stream::{Token, TokenStream}};
+use super::{node::Parse, stream::{Token, TokenStream}};
 
 fn if_then_some<'s, R, F>(t: bool, then: F) -> Result<Option<R>, Message<'s>>
     where
@@ -18,10 +19,10 @@ fn if_then_some<'s, R, F>(t: bool, then: F) -> Result<Option<R>, Message<'s>>
 }
 
 #[derive(Debug)]
+#[gdml_ast_node]
 pub struct Path<'s> {
     components: Vec<Ident<'s>>,
     absolute: bool,
-    span: Span<'s>,
 }
 
 impl<'s> Path<'s> {
@@ -45,12 +46,6 @@ impl<'s> Parse<'s> for Path<'s> {
             }
         }
         Ok(Self { components, absolute, span: Span::new(stream.src(), start, stream.pos()) })
-    }
-}
-
-impl<'s> ASTNode<'s> for Path<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
     }
 }
 

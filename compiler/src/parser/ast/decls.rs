@@ -1,4 +1,6 @@
 
+use gdml_macros::gdml_ast_node;
+
 use crate::{
     parser::{
         stream::{TokenStream, Token},
@@ -11,11 +13,11 @@ use crate::{
 use super::{ty::Type, expr::Expr, token::{Ident, Parenthesized, Braced, self, Colon, Tokenize}, if_then_some};
 
 #[derive(Debug)]
+#[gdml_ast_node]
 pub struct VarDecl<'s> {
     ident: Ident<'s>,
     ty: Option<Type<'s>>,
     value: Option<Box<Expr<'s>>>,
-    span: Span<'s>,
 }
 
 impl<'s> Parse<'s> for VarDecl<'s> {
@@ -39,12 +41,6 @@ impl<'s> Parse<'s> for VarDecl<'s> {
     }
 }
 
-impl<'s> ASTNode<'s> for VarDecl<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
-}
-
 impl<'s, 'n> TypeCheck<'s, 'n> for VarDecl<'s> {
     fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
         let ty = self.ty.typecheck_helper(checker);
@@ -62,11 +58,11 @@ impl<'s, 'n> TypeCheck<'s, 'n> for VarDecl<'s> {
 }
 
 #[derive(Debug)]
+#[gdml_ast_node]
 pub struct FunParam<'s> {
     ident: Ident<'s>,
     ty: Type<'s>,
     default_value: Option<Expr<'s>>,
-    span: Span<'s>,
 }
 
 impl<'s> Parse<'s> for FunParam<'s> {
@@ -85,12 +81,6 @@ impl<'s> Parse<'s> for FunParam<'s> {
     }
 }
 
-impl<'s> ASTNode<'s> for FunParam<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
-}
-
 impl<'s, 'n> TypeCheck<'s, 'n> for FunParam<'s> {
     fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
         let ty = self.ty.typecheck_helper(checker);
@@ -100,18 +90,19 @@ impl<'s, 'n> TypeCheck<'s, 'n> for FunParam<'s> {
             (a, None)    => a,
         };
         let name = checker.resolve_new(self.ident.path());
-        checker.try_push(Entity::new(name, ASTRef::FunParam(self.into()), eval_ty, true), &self.span);
-        Ty::Void
+        checker.try_push(Entity::new(name, ASTRef::FunParam(self.into()), eval_ty, true), &self.span)
+            .map(|t| t.ty())
+            .unwrap_or(Ty::Invalid)
     }
 }
 
 #[derive(Debug)]
+#[gdml_ast_node]
 pub struct FunDecl<'s> {
     ident: Option<Ident<'s>>,
     params: Vec<FunParam<'s>>,
     ret_ty: Option<Type<'s>>,
     body: Option<Box<Expr<'s>>>,
-    span: Span<'s>,
 }
 
 impl<'s> FunDecl<'s> {
@@ -127,7 +118,7 @@ impl<'s> Parse<'s> for FunDecl<'s> {
         let ident = Ident::parse(stream).ok();
         let mut params_stream = Parenthesized::parse(stream)?.into_stream();
         let mut params = Vec::new();
-        while params_stream.eof() {
+        while !params_stream.eof() {
             params.push(params_stream.parse()?);
             if params_stream.eof() {
                 break;
@@ -148,12 +139,6 @@ impl<'s> Parse<'s> for FunDecl<'s> {
             None
         };
         Ok(FunDecl { ident, params, ret_ty, body, span: Span::new(stream.src(), start, stream.pos()) })
-    }
-}
-
-impl<'s> ASTNode<'s> for FunDecl<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
     }
 }
 

@@ -1,5 +1,5 @@
 
-use std::fmt::Display;
+use std::{fmt::{Display, Debug}, sync::{Arc, Mutex}};
 use super::src::Span;
 
 #[allow(unused)]
@@ -111,14 +111,42 @@ impl Display for Message<'_> {
     }
 }
 
-pub trait Logger<'s> {
-    fn log_msg(&self, msg: Message<'s>);
+pub trait Logger<'s>: Debug {
+    /// Log a message in this logger
+    fn log_msg(&mut self, msg: Message<'s>);
+    /// Number of warnings sent to this logger
+    fn warn_count(&self) -> usize;
+    /// Number of errors sent to this logger
+    fn error_count(&self) -> usize;
 }
 
-pub struct ConsoleLogger;
+pub type LoggerRef<'s> = Arc<Mutex<dyn Logger<'s>>>;
+
+#[derive(Debug)]
+pub struct ConsoleLogger {
+    warn_count: usize,
+    error_count: usize,
+}
+
+impl ConsoleLogger {
+    pub fn new<'s>() -> LoggerRef<'s> {
+        Arc::from(Mutex::new(Self {
+            warn_count: 0,
+            error_count: 0,
+        }))
+    }
+}
 
 impl<'s> Logger<'s> for ConsoleLogger {
-    fn log_msg(&self, msg: Message<'s>) {
+    fn log_msg(&mut self, msg: Message<'s>) {
         println!("{msg}");
+    }
+
+    fn warn_count(&self) -> usize {
+        self.warn_count
+    }
+
+    fn error_count(&self) -> usize {
+        self.error_count
     }
 }

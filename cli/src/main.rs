@@ -1,5 +1,5 @@
 use clap::Parser;
-use gdml_compiler::{shared::src::Src, compiler::typecheck::{TypeChecker, TypeCheck}, parser::stream::{TokenStream, SrcReader, Token}};
+use gdml_compiler::{shared::{src::Src, logging::ConsoleLogger}, compiler::typecheck::{TypeChecker, TypeCheck}, parser::stream::{TokenStream, SrcReader, Token}};
 use std::path::PathBuf;
 
 /// Simple program to greet a person
@@ -24,8 +24,9 @@ fn main() {
     for file in args.files {
         match Src::from_file(&file) {
             Ok(src) => {
+                let logger = ConsoleLogger::new();
                 if args.debug_tokens {
-                    let mut stream = TokenStream::new(&src, SrcReader::new(&src));
+                    let mut stream = TokenStream::new(&src, SrcReader::new(&src, logger.clone()));
                     while match stream.next() {
                         Token::EOF(_, _) => false,
                         token => {
@@ -34,13 +35,19 @@ fn main() {
                         }
                     } {}
                 }
-                match src.parse() {
+                match src.parse(logger.clone()) {
                     Ok(ast) => {
                         if args.debug_ast {
                             println!("AST for {}: {ast:#?}", src.name());
                         }
-                        let mut checker = TypeChecker::new();
+                        let mut checker = TypeChecker::new(logger.clone());
                         ast.typecheck(&mut checker);
+                        let ref_logger = logger.lock().unwrap();
+                        println!(
+                            "Finished with {} errors and {} warnings",
+                            ref_logger.error_count(),
+                            ref_logger.warn_count()
+                        );
                     }
                     Err(e) => {
                         println!("Unable to parse src {}: {e}", src.name());

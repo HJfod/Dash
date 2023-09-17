@@ -1,5 +1,6 @@
 
 use std::fmt::Debug;
+use gdml_macros::gdml_ast_node;
 use strum::IntoEnumIterator;
 
 use crate::{
@@ -200,9 +201,9 @@ impl<'s, 'n> TypeCheck<'s, 'n> for Expr<'s> {
 }
 
 #[derive(Debug)]
+#[gdml_ast_node]
 pub struct ExprList<'s> {
     list: Vec<Expr<'s>>,
-    span: Span<'s>,
 }
 
 impl<'s> Parse<'s> for ExprList<'s> {
@@ -231,12 +232,6 @@ impl<'s> Parse<'s> for ExprList<'s> {
     }
 }
 
-impl<'s> ASTNode<'s> for ExprList<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
-    }
-}
-
 impl<'s, 'n> TypeCheck<'s, 'n> for ExprList<'s> {
     fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
         self.list.typecheck_helper(checker);
@@ -245,9 +240,9 @@ impl<'s, 'n> TypeCheck<'s, 'n> for ExprList<'s> {
 }
 
 #[derive(Debug)]
+#[gdml_ast_node]
 pub struct Block<'s> {
     list: ExprList<'s>,
-    span: Span<'s>,
 }
 
 impl<'s> Parse<'s> for Block<'s> {
@@ -255,12 +250,6 @@ impl<'s> Parse<'s> for Block<'s> {
         let start = stream.pos();
         let mut braced = Braced::parse(stream)?.into_stream();
         Ok(Self { list: braced.parse()?, span: Span::new(stream.src(), start, stream.pos()) })
-    }
-}
-
-impl<'s> ASTNode<'s> for Block<'s> {
-    fn span(&self) -> &Span<'s> {
-        &self.span
     }
 }
 
