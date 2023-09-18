@@ -46,11 +46,7 @@
 					"name": "entity.name.type.geo"
 				},
 				{
-					"match": "[a-zA-Z0-9_]+(?=\\s*\\{)",
-					"name": "entity.name.type.geo"
-				},
-				{
-					"match": "[A-Z][a-zA-Z0-9_]*",
+					"match": "\\b([A-Z][a-zA-Z0-9_]*)\\b",
 					"name": "entity.name.type.geo"
 				},
 				{

@@ -1,4 +1,6 @@
 
+using React::@reactive;
+
 public struct CCPoint {
     x: float;
     y: float;
@@ -6,6 +8,7 @@ public struct CCPoint {
 
 public extern struct NodeRef {}
 
+@React::reactive
 public extern struct CCNode {
     private handle: NodeRef;
     pos: CCPoint;
