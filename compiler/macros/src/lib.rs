@@ -19,7 +19,7 @@ pub fn snake_case_ident(stream: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn gdml_ast_node(args: TokenStream, stream: TokenStream) -> TokenStream {
+pub fn ast_node(args: TokenStream, stream: TokenStream) -> TokenStream {
     let mut target = parse_macro_input!(stream as ItemStruct);
     match &mut target.fields {
         Fields::Named(named) => {
@@ -52,7 +52,7 @@ pub fn gdml_ast_node(args: TokenStream, stream: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn gdml_log(_: TokenStream, stream: TokenStream) -> TokenStream {
+pub fn log_fun_io(_: TokenStream, stream: TokenStream) -> TokenStream {
     let mut fun = parse_macro_input!(stream as ItemFn);
     let name = fun.sig.ident.to_string();
     let oblock = &fun.block;

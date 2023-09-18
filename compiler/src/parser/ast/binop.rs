@@ -1,5 +1,5 @@
 
-use gdml_macros::gdml_ast_node;
+use geo_macros::ast_node;
 
 use crate::{
     parser::{
@@ -12,7 +12,7 @@ use crate::{
 use super::{expr::Expr, token::Op};
 
 #[derive(Debug)]
-#[gdml_ast_node]
+#[ast_node]
 pub struct BinOp<'s> {
     lhs: Box<Expr<'s>>,
     op: Op<'s>,

@@ -1,5 +1,5 @@
 
-use gdml_macros::gdml_ast_node;
+use geo_macros::ast_node;
 
 use crate::{
     parser::{
@@ -13,7 +13,7 @@ use crate::{
 use super::{expr::Expr, token::{Parenthesized, Bracketed, self}};
 
 #[derive(Debug)]
-#[gdml_ast_node]
+#[ast_node]
 pub struct UnOp<'s> {
     op: Op<'s>,
     target: Box<Expr<'s>>,
@@ -35,7 +35,7 @@ impl<'s, 'n> TypeCheck<'s, 'n> for UnOp<'s> {
 }
 
 #[derive(Debug)]
-#[gdml_ast_node]
+#[ast_node]
 pub struct Call<'s> {
     target: Box<Expr<'s>>,
     args: Vec<Expr<'s>>,
@@ -98,7 +98,7 @@ impl<'s, 'n> TypeCheck<'s, 'n> for Call<'s> {
 }
 
 #[derive(Debug)]
-#[gdml_ast_node]
+#[ast_node]
 pub struct Index<'s> {
     target: Box<Expr<'s>>,
     index: Box<Expr<'s>>,

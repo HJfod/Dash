@@ -1,8 +1,8 @@
 [package]
-name = "gdml-cli"
+name = "geo-cli"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 clap = { version = "4.3.23", features = ["derive"] }
-gdml-compiler = { path = "../compiler" }
+geo-compiler = { path = "../compiler" }

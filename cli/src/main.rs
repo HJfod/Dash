@@ -1,5 +1,9 @@
 use clap::Parser;
-use gdml_compiler::{shared::{src::Src, logging::ConsoleLogger}, compiler::typecheck::{TypeChecker, TypeCheck}, parser::stream::{TokenStream, SrcReader, Token}};
+use geo_compiler::{
+    shared::{src::Src, logging::ConsoleLogger},
+    compiler::typecheck::{TypeChecker, TypeCheck},
+    parser::stream::{TokenStream, SrcReader, Token}
+};
 use std::path::PathBuf;
 
 /// Simple program to greet a person

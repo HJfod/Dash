@@ -1,6 +1,6 @@
 {
 	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-	"name": "gdml",
+	"name": "geo",
 	"patterns": [
 		{
 			"include": "#language"
@@ -39,29 +39,29 @@
 			"patterns": [
 				{
 					"match": "(?<=const\\s+)[a-zA-Z]+",
-					"name": "variable.other.constant.gdml"
+					"name": "variable.other.constant.geo"
 				},
 				{
 					"match": "(?<=\\b(new|as|macro|struct|extends|is|module|operator|using|->|decl(\\s+[a-zA-Z0-9]+\\s*=)?|[^:]:)\\b\\s*)[a-zA-Z0-9_]+",
-					"name": "entity.name.type.gdml"
+					"name": "entity.name.type.geo"
 				},
 				{
 					"match": "[a-zA-Z0-9_]+(?=\\s*\\{)",
-					"name": "entity.name.type.gdml"
+					"name": "entity.name.type.geo"
 				},
 				{
 					"match": "[A-Z][a-zA-Z0-9_]*",
-					"name": "entity.name.type.gdml"
+					"name": "entity.name.type.geo"
 				},
 				{
 					"match": "[a-zA-Z0-9_]+(?=\\s*::)",
-					"name": "entity.name.type.gdml"
+					"name": "entity.name.type.geo"
 				},
 				{
 					"match": "\\b(\\w+\\!?)(?=\\s*\\()",
 					"captures": {
 						"1": {
-							"name": "entity.name.function.gdml"
+							"name": "entity.name.function.geo"
 						}
 					}
 				}
@@ -70,62 +70,62 @@
 		"keywords": {
 			"patterns": [
 				{
-					"name": "keyword.control.gdml",
+					"name": "keyword.control.geo",
 					"match": "\\b(for|while|if|else|try|return|yield|break|from|continue|new|match|switch)\\b"
 				},
 				{
-					"name": "keyword.control.meta.gdml",
+					"name": "keyword.control.meta.geo",
 					"match": "@(::)?([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+\\b"
 				},
 				{
-					"name": "keyword.control.less.gdml",
+					"name": "keyword.control.less.geo",
 					"match": "@!(::)?([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+\\b"
 				},
 				{
-					"name": "storage.type.gdml",
+					"name": "storage.type.geo",
 					"match": "\\b(void|bool|int|float|string)\\b"
 				},
 				{
-					"name": "keyword.other.gdml",
+					"name": "keyword.other.geo",
 					"match": "\\b(in|is|as|extern|export|import|get|set|depends|required|default|assert)\\b"
 				},
 				{
-					"name": "storage.type.gdml",
+					"name": "storage.type.geo",
 					"match": "\\b(let|var|const|fun|mut|decl|struct|macro|module|enum|extends|using|scope|public|private)\\b"
 				},
 				{
-					"name": "punctuation.gdml",
+					"name": "punctuation.geo",
 					"match": "(->)|\\.|;|,|:|\\?|#"
 				}
 			]
 		},
 		"operators": {
-			"name": "keyword.operator.gdml",
+			"name": "keyword.operator.geo",
 			"match": "[\\+\\-\\*\\/=<>\\^\\|\\&\\!%~@]"
 		},
 		"strings": {
 			"patterns": [
 				{
-					"name": "string.quoted.double.gdml",
+					"name": "string.quoted.double.geo",
 					"begin": "\"",
 					"end": "\"",
 					"beginCaptures": {
 						"0": {
-							"name": "punctuation.definition.string.begin.gdml"
+							"name": "punctuation.definition.string.begin.geo"
 						}
 					},
 					"endCaptures": {
 						"0": {
-							"name": "punctuation.definition.string.begin.gdml"
+							"name": "punctuation.definition.string.begin.geo"
 						}
 					},
 					"patterns": [
 						{
-							"name": "constant.character.escape.gdml",
+							"name": "constant.character.escape.geo",
 							"match": "\\\\."
 						},
 						{
-							"name": "variable.gdml",
+							"name": "variable.geo",
 							"begin": "\\{",
 							"end": "\\}",
 							"beginCaptures": {
@@ -143,19 +143,19 @@
 		"constants": {
 			"patterns": [
 				{
-					"name": "constant.numeric.gdml",
+					"name": "constant.numeric.geo",
 					"match": "\\b(([0-9]*\\.[0-9]+)|([0-9]+))\\b"
 				},
 				{
-					"name": "constant.numeric.gdml",
+					"name": "constant.numeric.geo",
 					"match": "0x[0-9A-Fa-f]+"
 				},
 				{
-					"name": "constant.language.gdml",
+					"name": "constant.language.geo",
 					"match": "\\b(this|super|root)\\b"
 				},
 				{
-					"name": "constant.language.gdml",
+					"name": "constant.language.geo",
 					"match": "\\b(true|false|null|none)\\b"
 				}
 			]
@@ -215,5 +215,5 @@
 			]
 		}
 	},
-	"scopeName": "source.gdml"
+	"scopeName": "source.geo"
 }

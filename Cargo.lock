@@ -155,25 +155,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "gdml-cli"
+name = "geo-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "gdml-compiler",
+ "geo-compiler",
 ]
 
 [[package]]
-name = "gdml-compiler"
+name = "geo-compiler"
 version = "0.1.0"
 dependencies = [
  "derive-new",
- "gdml-macros",
+ "geo-macros",
  "strum",
  "unicode-xid",
 ]
 
 [[package]]
-name = "gdml-macros"
+name = "geo-macros"
 version = "0.1.0"
 dependencies = [
  "convert_case",

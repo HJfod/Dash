@@ -1,5 +1,5 @@
 
-use gdml_macros::gdml_ast_node;
+use geo_macros::ast_node;
 
 use crate::{
     parser::{
@@ -40,7 +40,7 @@ impl<'s, 'n> TypeCheck<'s, 'n> for Type<'s> {
 }
 
 #[derive(Debug)]
-#[gdml_ast_node]
+#[ast_node]
 pub struct TypeName<'s> {
     ident: Ident<'s>,
 }

@@ -2,7 +2,7 @@
 use derive_new::new;
 use std::fmt::{Display, Debug};
 use strum::EnumIter;
-use gdml_macros::snake_case_ident;
+use geo_macros::snake_case_ident;
 use crate::{
     parser::{
         node::{Parse, ASTNode},

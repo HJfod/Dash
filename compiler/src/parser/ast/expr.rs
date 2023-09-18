@@ -1,6 +1,6 @@
 
 use std::fmt::Debug;
-use gdml_macros::gdml_ast_node;
+use geo_macros::ast_node;
 use strum::IntoEnumIterator;
 
 use crate::{
@@ -201,7 +201,7 @@ impl<'s, 'n> TypeCheck<'s, 'n> for Expr<'s> {
 }
 
 #[derive(Debug)]
-#[gdml_ast_node]
+#[ast_node]
 pub struct ExprList<'s> {
     list: Vec<Expr<'s>>,
 }
@@ -240,7 +240,7 @@ impl<'s, 'n> TypeCheck<'s, 'n> for ExprList<'s> {
 }
 
 #[derive(Debug)]
-#[gdml_ast_node]
+#[ast_node]
 pub struct Block<'s> {
     list: ExprList<'s>,
 }

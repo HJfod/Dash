@@ -1,8 +1,4 @@
 
-import "Std.gdml";
-
-@!debug("entities");
-
 CCLabelBMFont {
     text: "Omg god";
     pos: winSize / 2;

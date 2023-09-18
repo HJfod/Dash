@@ -1,5 +1,5 @@
 
-use gdml_macros::gdml_ast_node;
+use geo_macros::ast_node;
 
 use crate::{shared::{logging::Message, src::Span}, compiler::typecheck};
 use self::token::{Ident, Dicolon, Tokenize};
@@ -19,7 +19,7 @@ fn if_then_some<'s, R, F>(t: bool, then: F) -> Result<Option<R>, Message<'s>>
 }
 
 #[derive(Debug)]
-#[gdml_ast_node]
+#[ast_node]
 pub struct Path<'s> {
     components: Vec<Ident<'s>>,
     absolute: bool,

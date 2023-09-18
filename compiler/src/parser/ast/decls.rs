@@ -1,5 +1,5 @@
 
-use gdml_macros::gdml_ast_node;
+use geo_macros::ast_node;
 
 use crate::{
     parser::{
@@ -13,7 +13,7 @@ use crate::{
 use super::{ty::Type, expr::Expr, token::{Ident, Parenthesized, Braced, self, Colon, Tokenize}, if_then_some};
 
 #[derive(Debug)]
-#[gdml_ast_node]
+#[ast_node]
 pub struct VarDecl<'s> {
     ident: Ident<'s>,
     ty: Option<Type<'s>>,
@@ -58,7 +58,7 @@ impl<'s, 'n> TypeCheck<'s, 'n> for VarDecl<'s> {
 }
 
 #[derive(Debug)]
-#[gdml_ast_node]
+#[ast_node]
 pub struct FunParam<'s> {
     ident: Ident<'s>,
     ty: Type<'s>,
@@ -97,7 +97,7 @@ impl<'s, 'n> TypeCheck<'s, 'n> for FunParam<'s> {
 }
 
 #[derive(Debug)]
-#[gdml_ast_node]
+#[ast_node]
 pub struct FunDecl<'s> {
     ident: Option<Ident<'s>>,
     params: Vec<FunParam<'s>>,

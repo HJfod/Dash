@@ -1,5 +1,5 @@
 
-use gdml_macros::gdml_ast_node;
+use geo_macros::ast_node;
 
 use crate::{
     parser::{
@@ -11,7 +11,7 @@ use crate::{
 use super::{expr::Expr, token::{self, Tokenize}};
 
 #[derive(Debug)]
-#[gdml_ast_node]
+#[ast_node]
 pub struct If<'s> {
     cond: Box<Expr<'s>>,
     truthy: Box<Expr<'s>>,
@@ -53,7 +53,7 @@ impl<'s, 'n> TypeCheck<'s, 'n> for If<'s> {
 }
 
 #[derive(Debug)]
-#[gdml_ast_node]
+#[ast_node]
 pub struct Return<'s> {
     expr: Option<Box<Expr<'s>>>,
 }
