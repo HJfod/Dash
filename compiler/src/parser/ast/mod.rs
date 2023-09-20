@@ -1,5 +1,5 @@
 
-use geo_macros::ast_node;
+use gs_macros::ast_node;
 
 use crate::{shared::{logging::Message, src::Span}, compiler::typecheck};
 use self::token::{Ident, Dicolon, Tokenize};

@@ -1,6 +1,6 @@
 
 use std::fmt::Debug;
-use geo_macros::ast_node;
+use gs_macros::ast_node;
 use strum::IntoEnumIterator;
 
 use crate::{

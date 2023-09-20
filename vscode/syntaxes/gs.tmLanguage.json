@@ -1,6 +1,6 @@
 {
 	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-	"name": "geo",
+	"name": "gemscript",
 	"patterns": [
 		{
 			"include": "#language"
@@ -39,89 +39,89 @@
 			"patterns": [
 				{
 					"match": "(?<=const\\s+)[a-zA-Z]+",
-					"name": "variable.other.constant.geo"
+					"name": "variable.other.constant.gs"
 				},
 				{
 					"match": "(?<=\\b(new|as|macro|struct|extends|is|module|operator|using|->|decl(\\s+[a-zA-Z0-9]+\\s*=)?|[^:]:)\\b\\s*)[a-zA-Z0-9_]+",
-					"name": "entity.name.type.geo"
+					"name": "entity.name.type.gs"
 				},
 				{
 					"match": "\\b([A-Z][a-zA-Z0-9_]*)\\b",
-					"name": "entity.name.type.geo"
+					"name": "entity.name.type.gs"
+				},
+				{
+					"match": "\\b(\\w+\\!?)(?=(\\s*(::\\s*)?<[^>]*>)?\\s*\\()",
+					"captures": {
+						"1": {
+							"name": "entity.name.function.gs"
+						}
+					}
 				},
 				{
 					"match": "[a-zA-Z0-9_]+(?=\\s*::)",
-					"name": "entity.name.type.geo"
-				},
-				{
-					"match": "\\b(\\w+\\!?)(?=\\s*\\()",
-					"captures": {
-						"1": {
-							"name": "entity.name.function.geo"
-						}
-					}
+					"name": "entity.name.type.gs"
 				}
 			]
 		},
 		"keywords": {
 			"patterns": [
 				{
-					"name": "keyword.control.geo",
-					"match": "\\b(for|while|if|else|try|return|yield|break|from|continue|new|match|switch)\\b"
+					"name": "keyword.control.gs",
+					"match": "\\b(for|while|if|else|unwrap|try|return|yield|break|from|continue|new|match|switch)\\b"
 				},
 				{
-					"name": "keyword.control.meta.geo",
+					"name": "keyword.control.meta.gs",
 					"match": "@(::)?([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+\\b"
 				},
 				{
-					"name": "keyword.control.less.geo",
+					"name": "keyword.control.less.gs",
 					"match": "@!(::)?([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+\\b"
 				},
 				{
-					"name": "storage.type.geo",
+					"name": "storage.type.gs",
 					"match": "\\b(void|bool|int|float|string)\\b"
 				},
 				{
-					"name": "keyword.other.geo",
-					"match": "\\b(in|is|as|extern|export|import|get|set|depends|required|default|assert)\\b"
+					"name": "keyword.other.gs",
+					"match": "\\b(in|is|as|where|extern|export|import|get|set|depends|required|default|assert)\\b"
 				},
 				{
-					"name": "storage.type.geo",
-					"match": "\\b(let|var|const|fun|mut|decl|struct|macro|module|enum|extends|using|scope|public|private)\\b"
+					"name": "storage.type.gs",
+					"match": "\\b(let|var|const|fun|mut|decl|struct|macro|codegen|compiler_intrinsic|module|enum|extends|using|scope|public|private)\\b"
 				},
 				{
-					"name": "punctuation.geo",
+					"name": "punctuation.gs",
 					"match": "(->)|\\.|;|,|:|\\?|#"
 				}
 			]
 		},
 		"operators": {
-			"name": "keyword.operator.geo",
+			"name": "keyword.operator.gs",
 			"match": "[\\+\\-\\*\\/=<>\\^\\|\\&\\!%~@]"
 		},
 		"strings": {
 			"patterns": [
 				{
-					"name": "string.quoted.double.geo",
+					"name": "string.quoted.double.gs",
 					"begin": "\"",
 					"end": "\"",
 					"beginCaptures": {
 						"0": {
-							"name": "punctuation.definition.string.begin.geo"
+							"name": "punctuation.definition.string.begin.gs"
 						}
 					},
 					"endCaptures": {
 						"0": {
-							"name": "punctuation.definition.string.begin.geo"
+							"name": "punctuation.definition.string.begin.gs"
 						}
 					},
 					"patterns": [
 						{
-							"name": "constant.character.escape.geo",
+							"name": "constant.character.escape.gs",
 							"match": "\\\\."
 						},
 						{
-							"name": "variable.geo",
+							"name": "variable.gs",
 							"begin": "\\{",
 							"end": "\\}",
 							"beginCaptures": {
@@ -139,19 +139,19 @@
 		"constants": {
 			"patterns": [
 				{
-					"name": "constant.numeric.geo",
+					"name": "constant.numeric.gs",
 					"match": "\\b(([0-9]*\\.[0-9]+)|([0-9]+))\\b"
 				},
 				{
-					"name": "constant.numeric.geo",
+					"name": "constant.numeric.gs",
 					"match": "0x[0-9A-Fa-f]+"
 				},
 				{
-					"name": "constant.language.geo",
+					"name": "constant.language.gs",
 					"match": "\\b(this|super|root)\\b"
 				},
 				{
-					"name": "constant.language.geo",
+					"name": "constant.language.gs",
 					"match": "\\b(true|false|null|none)\\b"
 				}
 			]
@@ -211,5 +211,5 @@
 			]
 		}
 	},
-	"scopeName": "source.geo"
+	"scopeName": "source.gs"
 }

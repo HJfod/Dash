@@ -155,25 +155,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "geo-cli"
+name = "gs-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "geo-compiler",
+ "gs-compiler",
 ]
 
 [[package]]
-name = "geo-compiler"
+name = "gs-compiler"
 version = "0.1.0"
 dependencies = [
  "derive-new",
- "geo-macros",
+ "gs-macros",
  "strum",
  "unicode-xid",
 ]
 
 [[package]]
-name = "geo-macros"
+name = "gs-macros"
 version = "0.1.0"
 dependencies = [
  "convert_case",

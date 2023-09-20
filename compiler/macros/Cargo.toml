@@ -1,5 +1,5 @@
 [package]
-name = "geo-macros"
+name = "gs-macros"
 version = "0.1.0"
 
 [lib]

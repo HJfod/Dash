@@ -1,13 +1,13 @@
 {
-    "name": "geo-lang-support",
-    "displayName": "Geo Language Support",
-    "description": "Support for the Geo language for Geometry Dash mods",
+    "name": "gs-lang-support",
+    "displayName": "GemScript Language Support",
+    "description": "Support for the GemScript language for Geometry Dash mods",
     "author": {
         "name": "HJfod",
         "url": "https://github.com/hjfod"
     },
     "repository": {
-        "url": "https://github.com/hjfod/geo"
+        "url": "https://github.com/hjfod/gemscript"
     },
     "publisher": "HJfod",
     "version": "0.0.1",
@@ -19,15 +19,15 @@
     ],
     "contributes": {
         "languages": [{
-            "id": "geo",
-            "aliases": ["Geo"],
-            "extensions": [".geo"],
+            "id": "gemscript",
+            "aliases": ["GemScript", "GS"],
+            "extensions": [".gs"],
             "configuration": "./language-configuration.json"
         }],
         "grammars": [{
-            "language": "geo",
-            "scopeName": "source.geo",
-            "path": "./syntaxes/geo.tmLanguage.json"
+            "language": "gemscript",
+            "scopeName": "source.gs",
+            "path": "./syntaxes/gs.tmLanguage.json"
         }]
     }
 }

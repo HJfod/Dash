@@ -1,5 +1,5 @@
 use clap::Parser;
-use geo_compiler::{
+use gs_compiler::{
     shared::{src::Src, logging::ConsoleLogger},
     compiler::typecheck::{TypeChecker, TypeCheck},
     parser::stream::{TokenStream, SrcReader, Token}
