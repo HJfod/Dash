@@ -22,7 +22,11 @@
             "id": "gemscript",
             "aliases": ["GemScript", "GS"],
             "extensions": [".gs"],
-            "configuration": "./language-configuration.json"
+            "configuration": "./language-configuration.json",
+            "icon": {
+                "dark": "./logo.png",
+                "light": "./logo.png"
+            }
         }],
         "grammars": [{
             "language": "gemscript",

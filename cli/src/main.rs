@@ -1,17 +1,17 @@
-use clap::Parser;
+use clap::{Parser, builder::OsStr};
 use gs_compiler::{
     shared::{src::Src, logging::ConsoleLogger},
     compiler::typecheck::{TypeChecker, TypeCheck},
     parser::stream::{TokenStream, SrcReader, Token}
 };
-use std::path::PathBuf;
+use std::{path::PathBuf, fs::FileType, process::exit};
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// Files to compile
-    files: Vec<PathBuf>,
+    /// Project directory. Uses current working directory if not provided
+    dir: Option<PathBuf>,
 
     #[clap(long)]
     debug_tokens: bool,
@@ -20,12 +20,32 @@ struct Args {
     debug_ast: bool,
 }
 
+fn find_src_files(dir: PathBuf) -> Vec<PathBuf> {
+    let mut res = vec![];
+    if let Ok(entries) = std::fs::read_dir(dir) { 
+        for entry in entries {
+            let file = entry.unwrap();
+            if let Ok(ty) = file.file_type() {
+                if ty.is_dir() {
+                    res.extend(find_src_files(file.path()));
+                }
+                else if file.path().extension() == Some(&OsStr::from("gs")) {
+                    res.push(file.path());
+                }
+            }
+        }
+    }
+    res
+}
+
 fn main() {
     let args = Args::parse();
-    if args.files.is_empty() {
-        println!("No files provided");
+    let files = find_src_files(args.dir.unwrap_or(std::env::current_dir().unwrap()));
+    if files.is_empty() {
+        println!("Error: No source files found");
+        exit(1);
     }
-    for file in args.files {
+    for file in files {
         match Src::from_file(&file) {
             Ok(src) => {
                 let logger = ConsoleLogger::new();
