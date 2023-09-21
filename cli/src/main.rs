@@ -1,7 +1,7 @@
 use clap::Parser;
 use gs_compiler::{
     shared::{src::SrcPool, logging::ConsoleLogger},
-    compiler::{typecheck::{TypeVisitor, TypeCheck}, compiler::ASTPool},
+    compiler::{typecheck::TypeVisitor, compiler::ASTPool, visitor::Visitors},
     parser::{stream::Token, node::ASTNode}
 };
 use std::path::PathBuf;
@@ -20,7 +20,8 @@ struct Args {
     debug_ast: bool,
 }
 
-fn main() -> Result<(), String> {
+// wrapped so the error can be formatted correctly
+fn run() -> Result<(), String> {
     let args = Args::parse();
     let src_pool = SrcPool::new_from_dir(
         args.dir.unwrap_or(std::env::current_dir().unwrap())
@@ -51,7 +52,7 @@ fn main() -> Result<(), String> {
 
     let mut visitor = TypeVisitor::new(logger.clone());
     for ast in &ast_pool {
-        ast.typecheck(&mut visitor);
+        ast.visit_type_full(&mut visitor);
     }
 
     let ref_logger = logger.lock().unwrap();
@@ -62,4 +63,14 @@ fn main() -> Result<(), String> {
     );
     
     Ok(())
+}
+
+fn main() {
+    match run() {
+        Ok(_) => (),
+        Err(e) => {
+            println!("{e}");
+            std::process::exit(1);
+        }
+    }
 }

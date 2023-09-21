@@ -4,7 +4,6 @@ use crate::parser::node::{ASTNode, ASTRef};
 use crate::parser::ast::token::{Op, self};
 use crate::shared::logging::{Message, Level, Note, LoggerRef};
 use crate::shared::src::{Src, Span};
-use super::visitor::Visitor;
 
 macro_rules! parse_op {
     (+)  => { token::Add };
@@ -638,8 +637,6 @@ impl<'s, 'n> TypeVisitor<'s, 'n> {
         b.or(a)
     }
 }
-
-impl<'s, 'n> Visitor for TypeVisitor<'s, 'n> {}
 
 fn get_unop_fun_name<'s, 'n>(a: &Ty<'s, 'n>, op: &Op) -> FullPath {
     FullPath::new([format!("@unop`{a}{op}`")])

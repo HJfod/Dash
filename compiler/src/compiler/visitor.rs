@@ -1,34 +1,30 @@
 
-pub trait Visitor {
-    type Result;
+use super::typecheck::{TypeVisitor, Ty};
+
+pub trait Visitors<'s, 'n> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n>;
 }
 
-pub trait Visit<V: Visitor> {
-    fn visit(&self, visitor: &mut V) -> <V as Visitor>::Result;
-}
+// pub trait ProxyVisitors<'s, 'n> {
+//     type TypeFullResult;
+//     fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Self::TypeFullResult;
+// }
 
-pub trait VisitProxy<V: Visitor> {
-    type Result;
-    fn visit_proxy(&self, visitor: &mut V) -> Self::Result;
-}
+// impl<'s, 'n, T: Visitors<'s, 'n>> ProxyVisitors<'s, 'n> for T {
+//     type TypeFullResult = Ty<'s, 'n>;
+//     fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Self::TypeFullResult {
+//         self.visit_type_full(visitor)
+//     }
+// }
 
-impl<V: Visitor, P: Visit<V>> VisitProxy<V> for P {
-    type Result = <V as Visitor>::Result;
-    fn visit_proxy(&self, visitor: &mut V) -> Self::Result {
-        self.visit(visitor)
-    }
-}
+// impl<'s, 'n, T: ProxyVisitors<'s, 'n>> ProxyVisitors<'s, 'n> for Option<T> {
+//     fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Self::TypeFullResult {
+//         self.map(|v| v.visit_type_full(visitor))
+//     }
+// }
 
-impl<V: Visitor, T: VisitProxy<V>> VisitProxy<V> for Vec<T> {
-    type Result = Vec<T::Result>;
-    fn visit_proxy(&self, visitor: &mut V) -> Self::Result {
-        self.iter().map(|t| t.visit(visitor)).collect()
-    }
-}
-
-impl<V: Visitor, T: VisitProxy<V>> VisitProxy<V> for Option<T> {
-    type Result = Option<T::Result>;
-    fn visit_proxy(&self, visitor: &mut V) -> Self::Result {
-        self.map(|c| c.visit(visitor))
-    }
-}
+// impl<'s, 'n, T: ProxyVisitors<'s, 'n>> ProxyVisitors<'s, 'n> for Vec<T> {
+//     fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Self::TypeFullResult {
+//         self.iter().map(|v| v.visit_type_full(visitor)).collect()
+//     }
+// }

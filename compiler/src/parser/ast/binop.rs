@@ -7,7 +7,7 @@ use crate::{
         node::ASTNode
     },
     shared::{logging::{Message, Level}, src::Span},
-    compiler::{typecheck::{TypeVisitor, Ty}, visitor::Visit}
+    compiler::{typecheck::{TypeVisitor, Ty}, visitor::Visitors}
 };
 use super::{expr::Expr, token::Op};
 
@@ -39,10 +39,10 @@ impl<'s> BinOp<'s> {
     }
 }
 
-impl<'s, 'n> Visit<TypeVisitor<'s, 'n>> for BinOp<'s> {
-    fn visit(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        let lhs_ty = self.lhs.typecheck_helper(visitor);
-        let rhs_ty = self.rhs.typecheck_helper(visitor);
+impl<'s, 'n> Visitors<'s, 'n> for BinOp<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let lhs_ty = self.lhs.visit_type_full(visitor);
+        let rhs_ty = self.rhs.visit_type_full(visitor);
         match visitor.binop_ty(&lhs_ty, &self.op, &rhs_ty) {
             Some(ty) => ty,
             None => {

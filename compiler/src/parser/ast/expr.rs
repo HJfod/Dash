@@ -10,7 +10,7 @@ use crate::{
         ast::token::{StringLit, IntLit, FloatLit, VoidLit, BoolLit, Ident, Op}
     },
     shared::{logging::{Message, Level, Note}, src::Span},
-    compiler::{typecheck::{TypeCheck, TypeVisitor, Ty, Entity, FindItem}, typehelper::TypeCheckHelper}
+    compiler::{typecheck::{TypeVisitor, Ty, Entity, FindItem}, visitor::Visitors}
 };
 use super::{
     decls::{VarDecl, FunDecl},
@@ -155,8 +155,8 @@ impl<'s> ASTNode<'s> for Expr<'s> {
     }
 }
 
-impl<'s, 'n> TypeCheck<'s, 'n> for Expr<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s, 'n> Visitors<'s, 'n> for Expr<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         match self {
             Self::Void(_) => Ty::Void,
             Self::Bool(_) => Ty::Bool,
@@ -165,10 +165,10 @@ impl<'s, 'n> TypeCheck<'s, 'n> for Expr<'s> {
             Self::String(_) => Ty::String,
             Self::Entity(name) => {
                 let path = name.path();
-                match checker.find::<Entity, _>(&path) {
+                match visitor.find::<Entity, _>(&path) {
                     FindItem::Some(e) => e.ty(),
                     FindItem::NotAvailable(e) => {
-                        checker.emit_msg(Message::from_span(
+                        visitor.emit_msg(Message::from_span(
                             Level::Error,
                             format!("Entity '{path}' can not be used here"),
                             name.span(),
@@ -179,7 +179,7 @@ impl<'s, 'n> TypeCheck<'s, 'n> for Expr<'s> {
                         Ty::Invalid
                     }
                     FindItem::None => {
-                        checker.emit_msg(Message::from_span(
+                        visitor.emit_msg(Message::from_span(
                             Level::Error,
                             format!("Unknown entity '{path}'"),
                             name.span(),
@@ -188,14 +188,14 @@ impl<'s, 'n> TypeCheck<'s, 'n> for Expr<'s> {
                     }
                 }
             }
-            Self::UnOp(unop) => unop.typecheck_impl(checker),
-            Self::BinOp(binop) => binop.typecheck_impl(checker),
-            Self::Call(call) => call.typecheck_impl(checker),
-            Self::VarDecl(t) => t.typecheck_impl(checker),
-            Self::FunDecl(t) => t.typecheck_impl(checker),
-            Self::Block(t) => t.typecheck_impl(checker),
-            Self::If(t) => t.typecheck_impl(checker),
-            Self::Return(t) => t.typecheck_impl(checker),
+            Self::UnOp(unop) => unop.visit_type_full(visitor),
+            Self::BinOp(binop) => binop.visit_type_full(visitor),
+            Self::Call(call) => call.visit_type_full(visitor),
+            Self::VarDecl(t) => t.visit_type_full(visitor),
+            Self::FunDecl(t) => t.visit_type_full(visitor),
+            Self::Block(t) => t.visit_type_full(visitor),
+            Self::If(t) => t.visit_type_full(visitor),
+            Self::Return(t) => t.visit_type_full(visitor),
         }
     }
 }
@@ -232,9 +232,9 @@ impl<'s> Parse<'s> for ExprList<'s> {
     }
 }
 
-impl<'s, 'n> TypeCheck<'s, 'n> for ExprList<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        self.list.typecheck_helper(checker);
+impl<'s, 'n> Visitors<'s, 'n> for ExprList<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        self.list.iter().for_each(|v| drop(v.visit_type_full(visitor)));
         Ty::Void
     }
 }
@@ -253,9 +253,9 @@ impl<'s> Parse<'s> for Block<'s> {
     }
 }
 
-impl<'s, 'n> TypeCheck<'s, 'n> for Block<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        self.list.typecheck_helper(checker);
+impl<'s, 'n> Visitors<'s, 'n> for Block<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        self.list.visit_type_full(visitor);
         Ty::Void
     }
 }

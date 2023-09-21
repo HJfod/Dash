@@ -7,8 +7,7 @@ use crate::{
         node::{Parse, ASTNode, ASTRef}
     },
     shared::{logging::Message, is_none_or::IsNoneOr, src::Span},
-    compiler::{typecheck::{TypeCheck, TypeVisitor, Ty, Entity, ScopeLevel},
-    typehelper::TypeCheckHelper}
+    compiler::{typecheck::{TypeVisitor, Ty, Entity, ScopeLevel}, visitor::Visitors}
 };
 use super::{ty::Type, expr::Expr, token::{Ident, Parenthesized, Braced, self, Colon, Tokenize}, if_then_some};
 
@@ -41,18 +40,18 @@ impl<'s> Parse<'s> for VarDecl<'s> {
     }
 }
 
-impl<'s, 'n> TypeCheck<'s, 'n> for VarDecl<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        let ty = self.ty.typecheck_helper(checker);
-        let value = self.value.typecheck_helper(checker);
+impl<'s, 'n> Visitors<'s, 'n> for VarDecl<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let ty = self.ty.as_ref().map(|ty| ty.visit_type_full(visitor));
+        let value = self.value.as_ref().map(|value| value.visit_type_full(visitor));
         let eval_ty = match (ty, value) {
-            (Some(a), Some(b)) => checker.expect_eq(a, b, self.span()),
+            (Some(a), Some(b)) => visitor.expect_eq(a, b, self.span()),
             (Some(a), None)    => a,
             (None,    Some(b)) => b,
             (None,    None)    => Ty::Inferred,
         };
-        let name = checker.resolve_new(self.ident.path());
-        checker.try_push(Entity::new(name, ASTRef::VarDecl(self.into()), eval_ty, true), &self.span);
+        let name = visitor.resolve_new(self.ident.path());
+        visitor.try_push(Entity::new(name, ASTRef::VarDecl(self.into()), eval_ty, true), &self.span);
         Ty::Void
     }
 }
@@ -81,16 +80,16 @@ impl<'s> Parse<'s> for FunParam<'s> {
     }
 }
 
-impl<'s, 'n> TypeCheck<'s, 'n> for FunParam<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        let ty = self.ty.typecheck_helper(checker);
-        let value = self.default_value.typecheck_helper(checker);
+impl<'s, 'n> Visitors<'s, 'n> for FunParam<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let ty = self.ty.visit_type_full(visitor);
+        let value = self.default_value.as_ref().map(|v| v.visit_type_full(visitor));
         let eval_ty = match (ty, value) {
-            (a, Some(b)) => checker.expect_eq(a, b, self.span()),
+            (a, Some(b)) => visitor.expect_eq(a, b, self.span()),
             (a, None)    => a,
         };
-        let name = checker.resolve_new(self.ident.path());
-        checker.try_push(Entity::new(name, ASTRef::FunParam(self.into()), eval_ty, true), &self.span)
+        let name = visitor.resolve_new(self.ident.path());
+        visitor.try_push(Entity::new(name, ASTRef::FunParam(self.into()), eval_ty, true), &self.span)
             .map(|t| t.ty())
             .unwrap_or(Ty::Invalid)
     }
@@ -142,16 +141,16 @@ impl<'s> Parse<'s> for FunDecl<'s> {
     }
 }
 
-impl<'s, 'n> TypeCheck<'s, 'n> for FunDecl<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        let ret_ty = self.ret_ty.typecheck_helper(checker);
-        checker.push_scope(ScopeLevel::Function, ASTRef::FunDecl(self.into()), ret_ty.clone());
-        let param_tys = self.params.typecheck_helper(checker);
-        let body_ty = self.body.typecheck_helper(checker);
-        checker.pop_scope(body_ty.unwrap_or(Ty::Inferred), ASTRef::FunDecl(self.into()));
+impl<'s, 'n> Visitors<'s, 'n> for FunDecl<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let ret_ty = self.ret_ty.as_ref().map(|v| v.visit_type_full(visitor));
+        visitor.push_scope(ScopeLevel::Function, ASTRef::FunDecl(self.into()), ret_ty.clone());
+        let param_tys = self.params.iter().map(|v| v.visit_type_full(visitor)).collect::<Vec<_>>();
+        let body_ty = self.body.as_ref().map(|v| v.visit_type_full(visitor));
+        visitor.pop_scope(body_ty.unwrap_or(Ty::Inferred), ASTRef::FunDecl(self.into()));
         if let Some(ref ident) = self.ident {
-            let name = checker.resolve_new(ident.path());
-            checker.try_push(
+            let name = visitor.resolve_new(ident.path());
+            visitor.try_push(
                 Entity::new(
                     name, ASTRef::FunDecl(self.into()), Ty::Function {
                         params: self.params.iter()

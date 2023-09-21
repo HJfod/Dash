@@ -8,7 +8,7 @@ use crate::{
         node::{Parse, ASTNode}
     },
     shared::{logging::{Message, Level}, src::Span},
-    compiler::{typecheck::{TypeCheck, TypeVisitor, Ty}, typehelper::TypeCheckHelper}
+    compiler::{typecheck::{TypeVisitor, Ty}, visitor::Visitors}
 };
 use super::{expr::Expr, token::{Parenthesized, Bracketed, self}};
 
@@ -28,8 +28,8 @@ impl<'s> Parse<'s> for UnOp<'s> {
     }
 }
 
-impl<'s, 'n> TypeCheck<'s, 'n> for UnOp<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s, 'n> Visitors<'s, 'n> for UnOp<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         todo!()
     }
 }
@@ -65,18 +65,18 @@ impl<'s> Parse<'s> for Call<'s> {
     }
 }
 
-impl<'s, 'n> TypeCheck<'s, 'n> for Call<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        let target_ty = self.target.typecheck_helper(checker);
-        let args_ty = self.args.typecheck_helper(checker);
+impl<'s, 'n> Visitors<'s, 'n> for Call<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let target_ty = self.target.visit_type_full(visitor);
+        let args_ty = self.args.iter().map(|v| v.visit_type_full(visitor)).collect::<Vec<_>>();
         match target_ty {
             Ty::Function { params, ret_ty, decl: _ } => {
                 let mut params_iter = params.into_iter();
                 for ((arg, arg_ty), (_, param_ty)) in self.args.iter().zip(args_ty).zip(&mut params_iter) {
-                    checker.expect_eq(arg_ty, param_ty, arg.span());
+                    visitor.expect_eq(arg_ty, param_ty, arg.span());
                 }
                 for rest in params_iter {
-                    checker.emit_msg(Message::from_span(
+                    visitor.emit_msg(Message::from_span(
                         Level::Error,
                         format!("Argument '{}' not passed", rest.0),
                         &self.span
@@ -86,7 +86,7 @@ impl<'s, 'n> TypeCheck<'s, 'n> for Call<'s> {
             }
             Ty::Invalid => Ty::Invalid,
             other => {
-                checker.emit_msg(Message::from_span(
+                visitor.emit_msg(Message::from_span(
                     Level::Error,
                     format!("Attempted to call an expression of type {other}"),
                     &self.span
@@ -127,8 +127,8 @@ impl<'s> Parse<'s> for Index<'s> {
     }
 }
 
-impl<'s, 'n> TypeCheck<'s, 'n> for Index<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s, 'n> Visitors<'s, 'n> for Index<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         todo!()
     }
 }

@@ -7,7 +7,7 @@ use crate::{
         node::{Parse, ASTNode}
     },
     shared::{logging::{Message, Level, Note}, src::Span},
-    compiler::typecheck::{TypeCheck, TypeVisitor, Ty, FindItem}
+    compiler::{typecheck::{TypeVisitor, Ty, FindItem}, visitor::Visitors}
 };
 
 use super::token::Ident;
@@ -31,10 +31,10 @@ impl<'s> ASTNode<'s> for Type<'s> {
     }
 }
 
-impl<'s, 'n> TypeCheck<'s, 'n> for Type<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s, 'n> Visitors<'s, 'n> for Type<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         match self {
-            Self::TypeName(t) => t.typecheck(checker),
+            Self::TypeName(t) => t.visit_type_full(visitor),
         }
     }
 }
@@ -53,13 +53,13 @@ impl<'s> Parse<'s> for TypeName<'s> {
     }
 }
 
-impl<'s, 'n> TypeCheck<'s, 'n> for TypeName<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s, 'n> Visitors<'s, 'n> for TypeName<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         let path = self.ident.path();
-        match checker.find::<Ty, _>(&path) {
+        match visitor.find::<Ty, _>(&path) {
             FindItem::Some(e) => e.clone(),
             FindItem::NotAvailable(e) => {
-                checker.emit_msg(Message::from_span(
+                visitor.emit_msg(Message::from_span(
                     Level::Error,
                     format!("Type '{path}' can not be used here"),
                     self.ident.span(),
@@ -70,7 +70,7 @@ impl<'s, 'n> TypeCheck<'s, 'n> for TypeName<'s> {
                 Ty::Invalid
             }
             FindItem::None => {
-                checker.emit_msg(Message::from_span(
+                visitor.emit_msg(Message::from_span(
                     Level::Error,
                     format!("Unknown type '{path}'"),
                     self.ident.span(),
