@@ -10,7 +10,7 @@ use crate::{
         ast::token::{StringLit, IntLit, FloatLit, VoidLit, BoolLit, Ident, Op}
     },
     shared::{logging::{Message, Level, Note}, src::Span},
-    compiler::{typecheck::{TypeCheck, TypeChecker, Ty, Entity, FindItem}, typehelper::TypeCheckHelper}
+    compiler::{typecheck::{TypeCheck, TypeVisitor, Ty, Entity, FindItem}, typehelper::TypeCheckHelper}
 };
 use super::{
     decls::{VarDecl, FunDecl},
@@ -156,7 +156,7 @@ impl<'s> ASTNode<'s> for Expr<'s> {
 }
 
 impl<'s, 'n> TypeCheck<'s, 'n> for Expr<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         match self {
             Self::Void(_) => Ty::Void,
             Self::Bool(_) => Ty::Bool,
@@ -233,7 +233,7 @@ impl<'s> Parse<'s> for ExprList<'s> {
 }
 
 impl<'s, 'n> TypeCheck<'s, 'n> for ExprList<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         self.list.typecheck_helper(checker);
         Ty::Void
     }
@@ -254,8 +254,10 @@ impl<'s> Parse<'s> for Block<'s> {
 }
 
 impl<'s, 'n> TypeCheck<'s, 'n> for Block<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         self.list.typecheck_helper(checker);
         Ty::Void
     }
 }
+
+pub type AST<'s> = ExprList<'s>;

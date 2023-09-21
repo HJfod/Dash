@@ -7,7 +7,7 @@ use crate::{
         node::ASTNode
     },
     shared::{logging::{Message, Level}, src::Span},
-    compiler::{typecheck::{TypeCheck, TypeChecker, Ty}, typehelper::TypeCheckHelper}
+    compiler::{typecheck::{TypeVisitor, Ty}, visitor::Visit}
 };
 use super::{expr::Expr, token::Op};
 
@@ -39,14 +39,14 @@ impl<'s> BinOp<'s> {
     }
 }
 
-impl<'s, 'n> TypeCheck<'s, 'n> for BinOp<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
-        let lhs_ty = self.lhs.typecheck_helper(checker);
-        let rhs_ty = self.rhs.typecheck_helper(checker);
-        match checker.binop_ty(&lhs_ty, &self.op, &rhs_ty) {
+impl<'s, 'n> Visit<TypeVisitor<'s, 'n>> for BinOp<'s> {
+    fn visit(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let lhs_ty = self.lhs.typecheck_helper(visitor);
+        let rhs_ty = self.rhs.typecheck_helper(visitor);
+        match visitor.binop_ty(&lhs_ty, &self.op, &rhs_ty) {
             Some(ty) => ty,
             None => {
-                checker.emit_msg(Message::from_span(
+                visitor.emit_msg(Message::from_span(
                     Level::Error,
                     format!("Cannot apply '{}' to '{lhs_ty}' and '{rhs_ty}'", self.op),
                     self.span()

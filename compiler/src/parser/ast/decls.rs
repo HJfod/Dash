@@ -7,7 +7,7 @@ use crate::{
         node::{Parse, ASTNode, ASTRef}
     },
     shared::{logging::Message, is_none_or::IsNoneOr, src::Span},
-    compiler::{typecheck::{TypeCheck, TypeChecker, Ty, Entity, ScopeLevel},
+    compiler::{typecheck::{TypeCheck, TypeVisitor, Ty, Entity, ScopeLevel},
     typehelper::TypeCheckHelper}
 };
 use super::{ty::Type, expr::Expr, token::{Ident, Parenthesized, Braced, self, Colon, Tokenize}, if_then_some};
@@ -42,7 +42,7 @@ impl<'s> Parse<'s> for VarDecl<'s> {
 }
 
 impl<'s, 'n> TypeCheck<'s, 'n> for VarDecl<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         let ty = self.ty.typecheck_helper(checker);
         let value = self.value.typecheck_helper(checker);
         let eval_ty = match (ty, value) {
@@ -82,7 +82,7 @@ impl<'s> Parse<'s> for FunParam<'s> {
 }
 
 impl<'s, 'n> TypeCheck<'s, 'n> for FunParam<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         let ty = self.ty.typecheck_helper(checker);
         let value = self.default_value.typecheck_helper(checker);
         let eval_ty = match (ty, value) {
@@ -143,7 +143,7 @@ impl<'s> Parse<'s> for FunDecl<'s> {
 }
 
 impl<'s, 'n> TypeCheck<'s, 'n> for FunDecl<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         let ret_ty = self.ret_ty.typecheck_helper(checker);
         checker.push_scope(ScopeLevel::Function, ASTRef::FunDecl(self.into()), ret_ty.clone());
         let param_tys = self.params.typecheck_helper(checker);

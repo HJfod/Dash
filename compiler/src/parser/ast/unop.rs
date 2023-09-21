@@ -8,7 +8,7 @@ use crate::{
         node::{Parse, ASTNode}
     },
     shared::{logging::{Message, Level}, src::Span},
-    compiler::{typecheck::{TypeCheck, TypeChecker, Ty}, typehelper::TypeCheckHelper}
+    compiler::{typecheck::{TypeCheck, TypeVisitor, Ty}, typehelper::TypeCheckHelper}
 };
 use super::{expr::Expr, token::{Parenthesized, Bracketed, self}};
 
@@ -29,7 +29,7 @@ impl<'s> Parse<'s> for UnOp<'s> {
 }
 
 impl<'s, 'n> TypeCheck<'s, 'n> for UnOp<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         todo!()
     }
 }
@@ -66,7 +66,7 @@ impl<'s> Parse<'s> for Call<'s> {
 }
 
 impl<'s, 'n> TypeCheck<'s, 'n> for Call<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         let target_ty = self.target.typecheck_helper(checker);
         let args_ty = self.args.typecheck_helper(checker);
         match target_ty {
@@ -128,7 +128,7 @@ impl<'s> Parse<'s> for Index<'s> {
 }
 
 impl<'s, 'n> TypeCheck<'s, 'n> for Index<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         todo!()
     }
 }

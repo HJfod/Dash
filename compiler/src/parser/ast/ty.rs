@@ -7,7 +7,7 @@ use crate::{
         node::{Parse, ASTNode}
     },
     shared::{logging::{Message, Level, Note}, src::Span},
-    compiler::typecheck::{TypeCheck, TypeChecker, Ty, FindItem}
+    compiler::typecheck::{TypeCheck, TypeVisitor, Ty, FindItem}
 };
 
 use super::token::Ident;
@@ -32,7 +32,7 @@ impl<'s> ASTNode<'s> for Type<'s> {
 }
 
 impl<'s, 'n> TypeCheck<'s, 'n> for Type<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         match self {
             Self::TypeName(t) => t.typecheck(checker),
         }
@@ -54,7 +54,7 @@ impl<'s> Parse<'s> for TypeName<'s> {
 }
 
 impl<'s, 'n> TypeCheck<'s, 'n> for TypeName<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         let path = self.ident.path();
         match checker.find::<Ty, _>(&path) {
             FindItem::Some(e) => e.clone(),

@@ -1,11 +1,14 @@
 
 use std::fmt::Debug;
-use crate::shared::{src::Span, logging::Message, wrappers::RefWrapper};
+use crate::shared::{src::{Span, Src}, logging::Message, wrappers::RefWrapper};
 use super::{stream::{TokenStream, Token}, ast::{expr::Expr, ty::Type, decls::{VarDecl, FunDecl, FunParam}, flow::Return}};
 use std::hash::Hash;
 
 pub trait ASTNode<'s>: Debug {
     fn span(&self) -> &Span<'s>;
+    fn src(&self) -> &'s Src {
+        self.span().src()
+    }
 }
 
 impl<'s, T: ASTNode<'s>> ASTNode<'s> for Box<T> {

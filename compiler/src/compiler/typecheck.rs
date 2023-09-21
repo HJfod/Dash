@@ -4,6 +4,7 @@ use crate::parser::node::{ASTNode, ASTRef};
 use crate::parser::ast::token::{Op, self};
 use crate::shared::logging::{Message, Level, Note, LoggerRef};
 use crate::shared::src::{Src, Span};
+use super::visitor::Visitor;
 
 macro_rules! parse_op {
     (+)  => { token::Add };
@@ -443,12 +444,12 @@ impl<'s, 'n> FindScope<'s, 'n> {
     }
 }
 
-pub struct TypeChecker<'s, 'n> {
+pub struct TypeVisitor<'s, 'n> {
     logger: LoggerRef<'s>,
     scopes: Vec<Scope<'s, 'n>>,
 }
 
-impl<'s, 'n> TypeChecker<'s, 'n> {
+impl<'s, 'n> TypeVisitor<'s, 'n> {
     pub fn new(logger: LoggerRef<'s>) -> Self {
         Self {
             logger,
@@ -638,24 +639,7 @@ impl<'s, 'n> TypeChecker<'s, 'n> {
     }
 }
 
-pub trait TypeCheck<'s, 'n>: ASTNode<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n>;
-
-    fn typecheck(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
-        checker.check_if_current_expression_is_unreachable(self);
-        let ret = self.typecheck_impl(checker);
-        if ret.is_never() {
-            checker.encountered_never();
-        }
-        ret
-    }
-}
-
-impl<'s, 'n, T: TypeCheck<'s, 'n>> TypeCheck<'s, 'n> for Box<T> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
-        self.as_ref().typecheck_impl(checker)
-    }
-}
+impl<'s, 'n> Visitor for TypeVisitor<'s, 'n> {}
 
 fn get_unop_fun_name<'s, 'n>(a: &Ty<'s, 'n>, op: &Op) -> FullPath {
     FullPath::new([format!("@unop`{a}{op}`")])

@@ -1,10 +1,10 @@
-use clap::{Parser, builder::OsStr};
+use clap::Parser;
 use gs_compiler::{
-    shared::{src::Src, logging::ConsoleLogger},
-    compiler::typecheck::{TypeChecker, TypeCheck},
-    parser::stream::{TokenStream, SrcReader, Token}
+    shared::{src::SrcPool, logging::ConsoleLogger},
+    compiler::{typecheck::{TypeVisitor, TypeCheck}, compiler::ASTPool},
+    parser::{stream::Token, node::ASTNode}
 };
-use std::{path::PathBuf, fs::FileType, process::exit};
+use std::path::PathBuf;
 
 /// Simple program to greet a person
 #[derive(Parser, Debug)]
@@ -20,67 +20,46 @@ struct Args {
     debug_ast: bool,
 }
 
-fn find_src_files(dir: PathBuf) -> Vec<PathBuf> {
-    let mut res = vec![];
-    if let Ok(entries) = std::fs::read_dir(dir) { 
-        for entry in entries {
-            let file = entry.unwrap();
-            if let Ok(ty) = file.file_type() {
-                if ty.is_dir() {
-                    res.extend(find_src_files(file.path()));
-                }
-                else if file.path().extension() == Some(&OsStr::from("gs")) {
-                    res.push(file.path());
-                }
-            }
-        }
-    }
-    res
-}
-
-fn main() {
+fn main() -> Result<(), String> {
     let args = Args::parse();
-    let files = find_src_files(args.dir.unwrap_or(std::env::current_dir().unwrap()));
-    if files.is_empty() {
-        println!("Error: No source files found");
-        exit(1);
-    }
-    for file in files {
-        match Src::from_file(&file) {
-            Ok(src) => {
-                let logger = ConsoleLogger::new();
-                if args.debug_tokens {
-                    let mut stream = TokenStream::new(&src, SrcReader::new(&src, logger.clone()));
-                    while match stream.next() {
-                        Token::EOF(_, _) => false,
-                        token => {
-                            println!("Token: {token}");
-                            true
-                        }
-                    } {}
+    let src_pool = SrcPool::new_from_dir(
+        args.dir.unwrap_or(std::env::current_dir().unwrap())
+    )?;
+    let logger = ConsoleLogger::new();
+    if args.debug_tokens {
+        for src in &src_pool {
+            println!("Tokens for {src}");
+            let mut stream = src.tokenize(logger.clone());
+            while match stream.next() {
+                Token::EOF(_, _) => false,
+                token => {
+                    println!(" + {token}");
+                    true
                 }
-                match src.parse(logger.clone()) {
-                    Ok(ast) => {
-                        if args.debug_ast {
-                            println!("AST for {}: {ast:#?}", src.name());
-                        }
-                        let mut checker = TypeChecker::new(logger.clone());
-                        ast.typecheck(&mut checker);
-                        let ref_logger = logger.lock().unwrap();
-                        println!(
-                            "Finished with {} errors and {} warnings",
-                            ref_logger.error_count(),
-                            ref_logger.warn_count()
-                        );
-                    }
-                    Err(e) => {
-                        println!("Unable to parse src {}: {e}", src.name());
-                    }
-                }
-            }
-            Err(e) => {
-                println!("Unable to parse src {}: {e}", file.display());
-            }
+            } {}
         }
     }
+    let ast_pool = ASTPool::parse_src_pool(&src_pool, logger.clone())
+        .map_err(|e| e.to_string())?;
+
+    if args.debug_ast {
+        for ast in &ast_pool {
+            println!("AST for {}", ast.src());
+            println!("{ast:#?}");
+        }
+    }
+
+    let mut visitor = TypeVisitor::new(logger.clone());
+    for ast in &ast_pool {
+        ast.typecheck(&mut visitor);
+    }
+
+    let ref_logger = logger.lock().unwrap();
+    println!(
+        "Finished with {} errors and {} warnings",
+        ref_logger.error_count(),
+        ref_logger.warn_count()
+    );
+    
+    Ok(())
 }

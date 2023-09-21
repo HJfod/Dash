@@ -6,7 +6,7 @@ use crate::{
         node::{Parse, ASTNode, ASTRef},
         stream::{TokenStream, Token}
     },
-    shared::{logging::Message, src::Span}, compiler::{typecheck::{TypeCheck, TypeChecker, Ty, ScopeLevel, FindScope}, typehelper::TypeCheckHelper}
+    shared::{logging::Message, src::Span}, compiler::{typecheck::{TypeCheck, TypeVisitor, Ty, ScopeLevel, FindScope}, typehelper::TypeCheckHelper}
 };
 use super::{expr::Expr, token::{self, Tokenize}};
 
@@ -40,7 +40,7 @@ impl<'s> Parse<'s> for If<'s> {
 }
 
 impl<'s, 'n> TypeCheck<'s, 'n> for If<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         checker.push_scope(ScopeLevel::Opaque, ASTRef::Expr(self.cond.as_ref().into()), None);
         let cond_ty = self.cond.typecheck_helper(checker);
         let truthy_ty = self.truthy.typecheck_helper(checker);
@@ -68,7 +68,7 @@ impl<'s> Parse<'s> for Return<'s> {
 }
 
 impl<'s, 'n> TypeCheck<'s, 'n> for Return<'s> {
-    fn typecheck_impl(&'n self, checker: &mut TypeChecker<'s, 'n>) -> Ty<'s, 'n> {
+    fn typecheck_impl(&'n self, checker: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         let expr_ty = self.expr.typecheck_helper(checker);
         checker.infer_return_type(
             FindScope::ByLevel(ScopeLevel::Function),

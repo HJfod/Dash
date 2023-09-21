@@ -3,11 +3,11 @@ use std::{
     cmp::max,
     fmt::{Debug, Display},
     fs,
-    path::{Path, PathBuf},
+    path::{Path, PathBuf}, ffi::OsStr, hash::Hash,
 };
-use crate::parser::{stream::{SrcReader, TokenStream}, ast::expr::ExprList};
+use crate::parser::stream::{SrcReader, TokenStream};
 
-use super::logging::{Message, LoggerRef};
+use super::logging::LoggerRef;
 
 #[derive(Debug, Clone)]
 pub struct Loc {
@@ -147,19 +147,10 @@ impl Debug for Span<'_> {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(Eq)]
 pub enum Src {
     Builtin,
     File { path: PathBuf, chars: Vec<char> },
-}
-
-impl Debug for Src {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Builtin => f.write_str("Builtin"),
-            Self::File { path, chars: _ } => f.write_fmt(format_args!("File({path:?})")),
-        }
-    }
 }
 
 impl Src {
@@ -245,7 +236,98 @@ impl Src {
         }
     }
 
-    pub fn parse<'s>(&'s self, logger: LoggerRef<'s>) -> Result<ExprList<'s>, Message<'s>> {
-        TokenStream::new(self, SrcReader::new(self, logger)).parse()
+    pub fn tokenize<'s>(&'s self, logger: LoggerRef<'s>) -> TokenStream<'s, SrcReader<'s>> {
+        TokenStream::new(self, SrcReader::new(self, logger))
+    }
+}
+
+impl Hash for Src {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Builtin => 0.hash(state),
+            Self::File { path, chars: _ } => path.hash(state),
+        }
+    }
+}
+
+impl PartialEq for Src {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Src::Builtin, Src::Builtin) => true,
+            (Src::File { path: a, chars: _ }, Src::File { path: b, chars: _ }) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Debug for Src {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Builtin => f.write_str("Builtin"),
+            Self::File { path, chars: _ } => f.write_fmt(format_args!("File({path:?})")),
+        }
+    }
+}
+
+impl Display for Src {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.name())
+    }
+}
+
+#[derive(Debug)]
+pub struct SrcPool {
+    srcs: Vec<Src>,
+}
+
+impl SrcPool {
+    pub fn new(files: Vec<PathBuf>) -> Result<Self, String> {
+        Ok(Self {
+            srcs: files
+                .into_iter()
+                .map(|f| Src::from_file(&f))
+                .collect::<Result<_, _>>()?
+        })
+    }
+
+    pub fn new_from_dir(dir: PathBuf) -> Result<Self, String> {
+        let srcs = Self::find_src_files(dir);
+        if srcs.is_empty() {
+            Err(format!("directory is empty"))
+        }
+        else {
+            Self::new(srcs)
+        }
+    }
+    
+    fn find_src_files(dir: PathBuf) -> Vec<PathBuf> {
+        let mut res = vec![];
+        if let Ok(entries) = std::fs::read_dir(dir) { 
+            for entry in entries {
+                let file = entry.unwrap();
+                if let Ok(ty) = file.file_type() {
+                    if ty.is_dir() {
+                        res.extend(Self::find_src_files(file.path()));
+                    }
+                    else if file.path().extension() == Some(&OsStr::new("gs")) {
+                        res.push(file.path());
+                    }
+                }
+            }
+        }
+        res
+    }
+
+    pub fn iter<'s>(&'s self) -> <&'s Vec<Src> as IntoIterator>::IntoIter {
+        self.into_iter()
+    }
+}
+
+impl<'s> IntoIterator for &'s SrcPool {
+    type Item = &'s Src;
+    type IntoIter = <&'s Vec<Src> as IntoIterator>::IntoIter;
+    
+    fn into_iter(self) -> Self::IntoIter {
+        self.srcs.iter()
     }
 }
