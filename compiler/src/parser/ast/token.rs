@@ -290,16 +290,36 @@ macro_rules! declare_token {
 declare_token! {
     [enum Kw "keyword"]
     is_strict {
+        // Literals
         Void, True, False,
-        Var, Let, Fun, Decl, Struct, Const,
-        Is, As, From,
+        // Declarations
+        Var, Let, Fun, Struct, Enum, Using,
+        Macro, Extends, Module,
+        // Prepositions
+        In, Is, As, Where, From,
+        // Loops & conditional
         If, Else, For, While,
-        Return, Break,
-        Extern, Export, Import,
+        // Control flow
+        Unwrap, Try, Return, Break, Continue,
+        // Visibility
+        Extern, Public, Private,
+        // Types
+        Typeof, Const,
+        // Other
+        Codegen, CompilerIntrinsic,
     }
-    is_contextual {}
+    is_contextual {
+        Get, Set, Assert, Default,
+    }
     is_reserved {
-        Yield, Match, Switch, Mut,
+        // Control flow
+        Yield, Match, Switch,
+        // Visibility
+        Export, Import,
+        // Reactivity
+        Depends, Required,
+        // Other
+        Mut, New,
     }
 }
 
