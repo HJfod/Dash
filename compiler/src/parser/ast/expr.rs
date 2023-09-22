@@ -21,6 +21,35 @@ use super::{
 };
 
 #[derive(Debug)]
+pub enum Visibility<'s> {
+    Default(Span<'s>),
+    Public(Span<'s>),
+    Private(Span<'s>),
+}
+
+impl<'s> ASTNode<'s> for Visibility<'s> {
+    fn span(&self) -> &Span<'s> {
+        match self {
+            Self::Default(span) | Self::Public(span) | Self::Private(span) => span,
+        }
+    }
+}
+
+impl<'s> Parse<'s> for Visibility<'s> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+        if let Some(kw) = token::Public::peek_and_parse(stream) {
+            Ok(Self::Public(kw.span().clone()))
+        }
+        else if let Some(kw) = token::Private::peek_and_parse(stream) {
+            Ok(Self::Private(kw.span().clone()))
+        }
+        else {
+            Ok(Self::Default(Span::new(stream.src(), stream.pos(), stream.pos())))
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum Expr<'s> {
     Void(VoidLit<'s>),
     Bool(BoolLit<'s>),

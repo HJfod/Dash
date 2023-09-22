@@ -9,11 +9,12 @@ use crate::{
     shared::{logging::Message, is_none_or::IsNoneOr, src::Span},
     compiler::{typecheck::{TypeVisitor, Ty, Entity, ScopeLevel}, visitor::Visitors}
 };
-use super::{ty::Type, expr::Expr, token::{Ident, Parenthesized, Braced, self, Colon, Tokenize}, if_then_some};
+use super::{ty::Type, expr::{Expr, Visibility}, token::{Ident, Parenthesized, Braced, self, Colon, Tokenize}, if_then_some};
 
 #[derive(Debug)]
 #[ast_node]
 pub struct VarDecl<'s> {
+    public: Visibility<'s>,
     ident: Ident<'s>,
     ty: Option<Type<'s>>,
     value: Option<Box<Expr<'s>>>,
@@ -22,6 +23,7 @@ pub struct VarDecl<'s> {
 impl<'s> Parse<'s> for VarDecl<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.pos();
+        let public = stream.parse()?;
         token::Var::parse(stream)?;
         let ident = Ident::parse(stream)?;
         let ty = if Colon::peek_and_parse(stream).is_some() {
@@ -36,7 +38,7 @@ impl<'s> Parse<'s> for VarDecl<'s> {
         else {
             None
         };
-        Ok(VarDecl { ident, ty, value, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(VarDecl { public, ident, ty, value, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
 
@@ -71,7 +73,7 @@ impl<'s> Parse<'s> for FunParam<'s> {
         token::Colon::parse(stream)?;
         let ty = Type::parse(stream)?;
         let default_value = if token::Seq::peek_and_parse(stream).is_some() {
-            Some(Expr::parse(stream)?.into())
+            Some(Expr::parse(stream)?)
         }
         else {
             None
@@ -98,6 +100,7 @@ impl<'s, 'n> Visitors<'s, 'n> for FunParam<'s> {
 #[derive(Debug)]
 #[ast_node]
 pub struct FunDecl<'s> {
+    public: Visibility<'s>,
     ident: Option<Ident<'s>>,
     params: Vec<FunParam<'s>>,
     ret_ty: Option<Type<'s>>,
@@ -113,6 +116,7 @@ impl<'s> FunDecl<'s> {
 impl<'s> Parse<'s> for FunDecl<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.pos();
+        let public = stream.parse()?;
         token::Fun::parse(stream)?;
         let ident = Ident::parse(stream).ok();
         let mut params_stream = Parenthesized::parse(stream)?.into_stream();
@@ -126,7 +130,7 @@ impl<'s> Parse<'s> for FunDecl<'s> {
         }
         let ret_ty = if_then_some(
             token::Arrow::peek_and_parse(stream).is_some(),
-            || Ok(Type::parse(stream)?)
+            || Type::parse(stream)
         )?;
         let body = if token::FatArrow::peek_and_parse(stream).is_some() {
             Some(Box::from(stream.parse::<Expr<'s>>()?))
@@ -137,7 +141,7 @@ impl<'s> Parse<'s> for FunDecl<'s> {
         else {
             None
         };
-        Ok(FunDecl { ident, params, ret_ty, body, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(FunDecl { public, ident, params, ret_ty, body, span: Span::new(stream.src(), start, stream.pos()) })
     }
 }
 
