@@ -4,6 +4,7 @@ use gs_compiler::{
     compiler::{typecheck::TypeVisitor, compiler::ASTPool, visitor::Visitors},
     parser::{stream::Token, node::ASTNode}
 };
+use normalize_path::NormalizePath;
 use std::path::PathBuf;
 
 /// Simple program to greet a person
@@ -20,12 +21,15 @@ struct Args {
     debug_ast: bool,
 }
 
-// wrapped so the error can be formatted correctly
-fn run() -> Result<(), String> {
+fn main() {
     let args = Args::parse();
+    let cur_dir = std::env::current_dir().expect("Unable to get current directory");
     let src_pool = SrcPool::new_from_dir(
-        args.dir.unwrap_or(std::env::current_dir().unwrap())
-    )?;
+        args.dir
+            .map(|d| cur_dir.join(d).normalize())
+            .unwrap_or(cur_dir)
+    ).expect("Unable to find sources");
+    
     let logger = ConsoleLogger::new();
     if args.debug_tokens {
         for src in &src_pool {
@@ -40,8 +44,7 @@ fn run() -> Result<(), String> {
             } {}
         }
     }
-    let ast_pool = ASTPool::parse_src_pool(&src_pool, logger.clone())
-        .map_err(|e| e.to_string())?;
+    let ast_pool = ASTPool::parse_src_pool(&src_pool, logger.clone());
 
     if args.debug_ast {
         for ast in &ast_pool {
@@ -62,15 +65,7 @@ fn run() -> Result<(), String> {
         ref_logger.warn_count()
     );
     
-    Ok(())
-}
-
-fn main() {
-    match run() {
-        Ok(_) => (),
-        Err(e) => {
-            println!("{e}");
-            std::process::exit(1);
-        }
+    if ref_logger.error_count() > 0 {
+        std::process::exit(1);
     }
 }

@@ -1,6 +1,6 @@
 
 use crate::{
-    shared::{src::SrcPool, logging::{Message, LoggerRef}},
+    shared::{src::SrcPool, logging::LoggerRef},
     parser::ast::expr::AST
 };
 
@@ -9,12 +9,19 @@ pub struct ASTPool<'s> {
 }
 
 impl<'s> ASTPool<'s> {
-    pub fn parse_src_pool(pool: &'s SrcPool, logger: LoggerRef<'s>) -> Result<Self, Message<'s>> {
-        Ok(Self {
+    pub fn parse_src_pool(pool: &'s SrcPool, logger: LoggerRef<'s>) -> Self {
+        Self {
             asts: pool.iter()
                 .map(|src| src.tokenize(logger.clone()).parse())
-                .collect::<Result<_, _>>()?
-        })
+                .filter_map(|ast| match ast {
+                    Ok(ast) => Some(ast),
+                    Err(err) => {
+                        logger.lock().unwrap().log_msg(err);
+                        None
+                    }
+                })
+                .collect()
+        }
     }
 
     pub fn iter<'a>(&'s self) -> <&'a Vec<AST<'s>> as IntoIterator>::IntoIter {

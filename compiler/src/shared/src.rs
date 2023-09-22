@@ -167,10 +167,7 @@ impl Src {
     pub fn name(&self) -> String {
         match self {
             Src::Builtin => String::from("<compiler built-in>"),
-            Src::File { path, chars: _ } => path
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or("<anonymous file>".to_string()),
+            Src::File { path, chars: _ } => path.to_string_lossy().to_string(),
         }
     }
 
@@ -291,6 +288,9 @@ impl SrcPool {
     }
 
     pub fn new_from_dir(dir: PathBuf) -> Result<Self, String> {
+        if !dir.exists() {
+            Err(format!("directory does not exist"))?;
+        }
         let srcs = Self::find_src_files(dir);
         if srcs.is_empty() {
             Err(format!("directory is empty"))

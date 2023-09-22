@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.3.23", features = ["derive"] }
 gs-compiler = { path = "../compiler" }
+normalize-path = "0.2.1"
