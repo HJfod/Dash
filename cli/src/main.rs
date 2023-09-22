@@ -1,7 +1,7 @@
 use clap::Parser;
 use gs_compiler::{
     shared::{src::SrcPool, logging::ConsoleLogger},
-    compiler::{typecheck::TypeVisitor, compiler::ASTPool, visitor::Visitors},
+    compiler::{typecheck::TypeVisitor, pool::ASTPool, visitor::Visitors},
     parser::{stream::Token, node::ASTNode}
 };
 use normalize_path::NormalizePath;

@@ -219,8 +219,10 @@ impl Display for Ty<'_, '_> {
 
 impl<'s, 'n> Item<'s, 'n> for Ty<'s, 'n> {
     fn full_path(&self) -> FullPath {
+        #[allow(clippy::match_single_binding)]
         match self {
-            builtin => FullPath::new([format!("{builtin}")])
+            builtin => FullPath::new([format!("{builtin}")]),
+            // todo more
         }
     }
 
@@ -298,14 +300,6 @@ pub struct Space<'s, 'n, T: Item<'s, 'n>> {
 }
 
 impl<'s, 'n, T: Item<'s, 'n>> Space<'s, 'n, T> {
-    pub fn new() -> Self {
-        Self {
-            entities: Default::default(),
-            _phantom1: Default::default(),
-            _phantom2: Default::default(),
-        }
-    }
-
     pub fn push(&mut self, entity: T) -> &T {
         let name = entity.full_path().clone();
         self.entities.insert(entity.full_path().clone(), entity);
@@ -321,6 +315,16 @@ impl<'s, 'n, T: Item<'s, 'n>> Space<'s, 'n, T> {
             .find(|(full, _)| full.ends_with(path))
             .map(|p| p.0.clone())
             .unwrap_or(path.clone().into_full())
+    }
+}
+
+impl<'s, 'n, T: Item<'s, 'n>> Default for Space<'s, 'n, T> {
+    fn default() -> Self {
+        Self {
+            entities: Default::default(),
+            _phantom1: Default::default(),
+            _phantom2: Default::default(),
+        }
     }
 }
 
@@ -348,8 +352,8 @@ pub struct Scope<'s, 'n> {
 impl<'s, 'n> Scope<'s, 'n> {
     pub fn new(level: ScopeLevel, decl: ASTRef<'s, 'n>, return_type: Option<Ty<'s, 'n>>) -> Self {
         Self {
-            types: Space::new(),
-            entities: Space::new(),
+            types: Space::default(),
+            entities: Space::default(),
             level,
             decl,
             return_type,
@@ -418,6 +422,7 @@ impl<T> FindItem<T> {
     }
 }
 
+#[allow(clippy::from_over_into)]
 impl<T> Into<Option<T>> for FindItem<T> {
     fn into(self) -> Option<T> {
         match self {
@@ -488,7 +493,7 @@ impl<'s, 'n> TypeVisitor<'s, 'n> {
                 self.emit_msg(Message::from_span(
                     Level::Error,
                     format!("Entity '{}' already exists in this scope", item.full_path()),
-                    &span
+                    span
                 ).note(Note::from_span(
                     "Previous declaration here",
                     e.decl().span()
@@ -501,7 +506,7 @@ impl<'s, 'n> TypeVisitor<'s, 'n> {
     pub fn find<'a, T: Item<'s, 'n>, P: PathLike<'s, 'n>>(&'a self, path: &P) -> FindItem<&'a T> {
         let mut outside_function = false;
         for scope in self.scopes.iter().rev() {
-            let space = T::space(&scope);
+            let space = T::space(scope);
             if let Some(e) = space.find(&path.resolve(space)) {
                 return if !outside_function || e.can_access_outside_function() {
                     FindItem::Some(e)
@@ -527,7 +532,7 @@ impl<'s, 'n> TypeVisitor<'s, 'n> {
         match self.scopes.iter_mut().rev().find(|s| find.matches(s)) {
             Some(scope) => {
                 if let Some(ref old) = scope.return_type {
-                    if !ty.convertible_to(&old) {
+                    if !ty.convertible_to(old) {
                         self.logger.lock().unwrap().log_msg(Message::from_span(
                             Level::Error,
                             format!("Expected return type to be '{old}', got '{ty}'"),
@@ -549,7 +554,7 @@ impl<'s, 'n> TypeVisitor<'s, 'n> {
             None => {
                 self.emit_msg(Message::from_span(
                     Level::Error,
-                    format!("Can not return here"),
+                    "Can not return here",
                     node.span(),
                 ));
             }
@@ -574,7 +579,7 @@ impl<'s, 'n> TypeVisitor<'s, 'n> {
         }
         else {
             if let Some(ref old) = scope.return_type {
-                if !ty.convertible_to(&old) {
+                if !ty.convertible_to(old) {
                     self.logger.lock().unwrap().log_msg(Message::from_span(
                         Level::Error,
                         format!("Expected return type to be '{old}', got '{ty}'"),
@@ -612,7 +617,7 @@ impl<'s, 'n> TypeVisitor<'s, 'n> {
             scope.unreachable_expression_logged = true;
             self.logger.lock().unwrap().log_msg(Message::from_span(
                 Level::Error,
-                format!("Unreachable expression"),
+                "Unreachable expression",
                 expr.span(),
             ));
         }
@@ -638,7 +643,7 @@ impl<'s, 'n> TypeVisitor<'s, 'n> {
     }
 }
 
-fn get_unop_fun_name<'s, 'n>(a: &Ty<'s, 'n>, op: &Op) -> FullPath {
+fn get_unop_fun_name(a: &Ty<'_, '_>, op: &Op) -> FullPath {
     FullPath::new([format!("@unop`{a}{op}`")])
 }
 

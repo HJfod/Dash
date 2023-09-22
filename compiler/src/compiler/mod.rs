@@ -1,4 +1,4 @@
 
 pub mod typecheck;
-pub mod compiler;
+pub mod pool;
 pub mod visitor;

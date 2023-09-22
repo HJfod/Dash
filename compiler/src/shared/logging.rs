@@ -1,5 +1,5 @@
 
-use std::{fmt::{Display, Debug}, sync::{Arc, Mutex}};
+use std::{fmt::{Display, Debug, Write}, sync::{Arc, Mutex}};
 use super::src::Span;
 
 #[allow(unused)]
@@ -67,10 +67,10 @@ pub struct Message<'s> {
 }
 
 impl<'s> Message<'s> {
-    pub fn from_span(level: Level, info: String, span: &Span<'s>) -> Self {
+    pub fn from_span<S: Into<String>>(level: Level, info: S, span: &Span<'s>) -> Self {
         Self {
             level,
-            info,
+            info: info.into(),
             notes: vec![],
             span: span.clone(),
         }
@@ -105,8 +105,10 @@ impl Display for Message<'_> {
             self.info,
             self.notes
                 .iter()
-                .map(|note| format!("\n * {}", note))
-                .collect::<String>()
+                .fold(String::new(), |mut acc, note| {
+                    write!(&mut acc, " * {note}").unwrap();
+                    acc
+                })
         ))
     }
 }
@@ -129,6 +131,7 @@ pub struct ConsoleLogger {
 }
 
 impl ConsoleLogger {
+    #[allow(clippy::new_ret_no_self)]
     pub fn new<'s>() -> LoggerRef<'s> {
         Arc::from(Mutex::new(Self {
             warn_count: 0,

@@ -62,7 +62,7 @@ impl<'s> Display for Token<'s> {
             Token::Braced(b) => f.write_fmt(format_args!("{b}")),
             Token::Bracketed(b) => f.write_fmt(format_args!("{b}")),
             Token::Error(msg, _) => f.write_fmt(format_args!("invalid token: {msg}")),
-            Token::EOF(name, _) => f.write_str(&name)
+            Token::EOF(name, _) => f.write_str(name)
         }
     }
 }
@@ -112,14 +112,14 @@ impl<'s> SrcReader<'s> {
 impl<'s> Iterator for SrcReader<'s> {
     type Item = Token<'s>;
     fn next(&mut self) -> Option<Self::Item> {
-        fn get_while<'s, F: FnMut(char) -> bool>(reader: &mut SrcReader<'s>, mut fun: F, res: &mut String) {
-            while reader.src.get(reader.pos).is_some_and(|c| fun(c)) {
+        fn get_while<F: FnMut(char) -> bool>(reader: &mut SrcReader, mut fun: F, res: &mut String) {
+            while reader.src.get(reader.pos).is_some_and(&mut fun) {
                 res.push(reader.src.get(reader.pos).unwrap());
                 reader.pos += 1;
             }
         }
     
-        fn skip_ws<'s>(reader: &mut SrcReader<'s>) -> usize {
+        fn skip_ws(reader: &mut SrcReader) -> usize {
             loop {
                 let Some(ch) = reader.src.get(reader.pos) else { break };
                 // Ignore comments
@@ -180,10 +180,10 @@ impl<'s> Iterator for SrcReader<'s> {
             }
         }
         // Number
-        else if ch.is_digit(10) {
+        else if ch.is_ascii_digit() {
             let mut res = String::from(ch);
             let mut found_dot = false;
-            get_while(self, |c| c.is_digit(10) || {
+            get_while(self, |c| c.is_ascii_digit() || {
                 if c == '.' {
                     if found_dot {
                         false
@@ -241,7 +241,7 @@ impl<'s> Iterator for SrcReader<'s> {
                                 None => {
                                     self.logger.lock().unwrap().log_msg(Message::from_span(
                                         Level::Warning,
-                                        format!("Expected escape sequence"),
+                                        "Expected escape sequence",
                                         &self.src.span(self.pos - 1, self.pos)
                                     ));
                                     '\\'
@@ -348,6 +348,7 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenStream<'s, I> {
         self.next_token.span().start()
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Token<'s> {
         std::mem::replace(
             &mut self.next_token,

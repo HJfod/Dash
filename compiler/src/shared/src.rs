@@ -174,7 +174,14 @@ impl Src {
     pub fn get(&self, pos: usize) -> Option<char> {
         match self {
             Src::Builtin => None,
-            Src::File { path: _, chars } => chars.get(pos).map(|c| *c),
+            Src::File { path: _, chars } => chars.get(pos).copied(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        match self {
+            Src::Builtin => true,
+            Src::File { path: _, chars } => chars.is_empty(),
         }
     }
 
@@ -210,7 +217,7 @@ impl Src {
         }
     }
 
-    pub fn span<'s>(&'s self, mut start: usize, mut end: usize) -> Span<'s> {
+    pub fn span(&self, mut start: usize, mut end: usize) -> Span {
         if start > end {
             std::mem::swap(&mut start, &mut end);
         }
@@ -289,11 +296,11 @@ impl SrcPool {
 
     pub fn new_from_dir(dir: PathBuf) -> Result<Self, String> {
         if !dir.exists() {
-            Err(format!("directory does not exist"))?;
+            Err("Directory does not exist".to_string())?;
         }
         let srcs = Self::find_src_files(dir);
         if srcs.is_empty() {
-            Err(format!("directory is empty"))
+            Err("Directory is empty".to_string())
         }
         else {
             Self::new(srcs)
@@ -309,7 +316,7 @@ impl SrcPool {
                     if ty.is_dir() {
                         res.extend(Self::find_src_files(file.path()));
                     }
-                    else if file.path().extension() == Some(&OsStr::new("gs")) {
+                    else if file.path().extension() == Some(OsStr::new("gs")) {
                         res.push(file.path());
                     }
                 }
@@ -318,7 +325,7 @@ impl SrcPool {
         res
     }
 
-    pub fn iter<'s>(&'s self) -> <&'s Vec<Src> as IntoIterator>::IntoIter {
+    pub fn iter(&self) -> <&Vec<Src> as IntoIterator>::IntoIter {
         self.into_iter()
     }
 }

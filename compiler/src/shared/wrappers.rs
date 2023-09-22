@@ -10,7 +10,7 @@ impl<'t, T> Copy for RefWrapper<'t, T> {}
 
 impl<'t, T> Clone for RefWrapper<'t, T> {
     fn clone(&self) -> Self {
-        Self { value: self.value }
+        *self
     }
 }
 
