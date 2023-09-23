@@ -71,12 +71,35 @@ pub enum Expr<'s> {
 }
 
 impl<'s> Expr<'s> {
-    fn parse_single<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+    fn peek_item_decl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> bool {
+        token::Var::peek(stream).is_some() || token::Fun::peek(stream).is_some()
+    }
+
+    fn parse_item_decl<I: Iterator<Item = Token<'s>>>(
+        visibility: Visibility<'s>,
+        stream: &mut TokenStream<'s, I>
+    ) -> Result<Self, Message<'s>> {
         if token::Var::peek(stream).is_some() {
-            Ok(Self::VarDecl(stream.parse()?))
+            Ok(Self::VarDecl(VarDecl::parse_with(visibility, stream)?))
         }
         else if token::Fun::peek(stream).is_some() {
-            Ok(Self::FunDecl(stream.parse()?))
+            Ok(Self::FunDecl(FunDecl::parse_with(visibility, stream)?))
+        }
+        else {
+            Err(Message::from_span(
+                Level::Error,
+                "Expected item declaration",
+                stream.peek().span()
+            ))
+        }
+    }
+
+    fn parse_single<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+        if token::Public::peek(stream).is_some() || token::Private::peek(stream).is_some() {
+            return Self::parse_item_decl(stream.parse()?, stream);
+        }
+        if Self::peek_item_decl(stream) {
+            Self::parse_item_decl(stream.parse()?, stream)
         }
         else if token::If::peek(stream).is_some() {
             Ok(Self::If(stream.parse()?))

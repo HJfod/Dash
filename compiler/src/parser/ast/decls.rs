@@ -3,7 +3,7 @@ use gs_macros::ast_node;
 
 use crate::{
     parser::{
-        stream::{TokenStream, Token},
+        stream::{TokenStream, Token, self},
         node::{Parse, ASTNode, ASTRef}
     },
     shared::{logging::Message, is_none_or::IsNoneOr, src::Span},
@@ -14,16 +14,18 @@ use super::{ty::Type, expr::{Expr, Visibility}, token::{Ident, Parenthesized, Br
 #[derive(Debug)]
 #[ast_node]
 pub struct VarDecl<'s> {
-    public: Visibility<'s>,
+    visibility: Visibility<'s>,
     ident: Ident<'s>,
     ty: Option<Type<'s>>,
     value: Option<Box<Expr<'s>>>,
 }
 
-impl<'s> Parse<'s> for VarDecl<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.pos();
-        let public = stream.parse()?;
+impl<'s> VarDecl<'s> {
+    pub fn parse_with<I: Iterator<Item = Token<'s>>>(
+        visibility: Visibility<'s>,
+        stream: &mut TokenStream<'s, I>
+    ) -> Result<Self, Message<'s>> {
+        let start = visibility.span().start();
         token::Var::parse(stream)?;
         let ident = Ident::parse(stream)?;
         let ty = if Colon::peek_and_parse(stream).is_some() {
@@ -38,7 +40,13 @@ impl<'s> Parse<'s> for VarDecl<'s> {
         else {
             None
         };
-        Ok(VarDecl { public, ident, ty, value, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(VarDecl { visibility, ident, ty, value, span: Span::new(stream.src(), start, stream.pos()) })
+    }
+}
+
+impl<'s> Parse<'s> for VarDecl<'s> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+        Self::parse_with(stream.parse()?, stream)
     }
 }
 
@@ -100,7 +108,7 @@ impl<'s, 'n> Visitors<'s, 'n> for FunParam<'s> {
 #[derive(Debug)]
 #[ast_node]
 pub struct FunDecl<'s> {
-    public: Visibility<'s>,
+    visibility: Visibility<'s>,
     ident: Option<Ident<'s>>,
     params: Vec<FunParam<'s>>,
     ret_ty: Option<Type<'s>>,
@@ -111,12 +119,12 @@ impl<'s> FunDecl<'s> {
     pub fn requires_semicolon(&self) -> bool {
         self.body.as_ref().is_none_or(|b| b.requires_semicolon())
     }
-}
 
-impl<'s> Parse<'s> for FunDecl<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let start = stream.pos();
-        let public = stream.parse()?;
+    pub fn parse_with<I: Iterator<Item = Token<'s>>>(
+        visibility: Visibility<'s>,
+        stream: &mut TokenStream<'s, I>
+    ) -> Result<Self, Message<'s>> {
+        let start = visibility.span().start();
         token::Fun::parse(stream)?;
         let ident = Ident::parse(stream).ok();
         let mut params_stream = Parenthesized::parse(stream)?.into_stream();
@@ -141,7 +149,20 @@ impl<'s> Parse<'s> for FunDecl<'s> {
         else {
             None
         };
-        Ok(FunDecl { public, ident, params, ret_ty, body, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(FunDecl {
+            visibility,
+            ident,
+            params,
+            ret_ty,
+            body,
+            span: Span::new(stream.src(), start, stream.pos())
+        })
+    }
+}
+
+impl<'s> Parse<'s> for FunDecl<'s> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+        Self::parse_with(stream.parse()?, stream)
     }
 }
 
