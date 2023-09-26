@@ -9,7 +9,7 @@ use crate::{
     shared::{logging::Message, is_none_or::IsNoneOr, src::Span},
     compiler::{typecheck::{TypeVisitor, Ty, Entity, ScopeLevel}, visitor::Visitors}
 };
-use super::{ty::Type, expr::{Expr, Visibility}, token::{Ident, Parenthesized, Braced, self, Colon, Tokenize}, if_then_some};
+use super::{ty::Type, expr::{Expr, Visibility}, token::{Ident, Parenthesized, Braced, self, Colon, Tokenize}, if_then_some, Path};
 
 #[derive(Debug)]
 #[ast_node]
@@ -208,7 +208,7 @@ impl<'s> TypeAliasDecl<'s> {
         stream: &mut TokenStream<'s, I>
     ) -> Result<Self, Message<'s>> {
         let start = visibility.span().start;
-        token::Using::parse(stream)?;
+        token::Type::parse(stream)?;
         let ident = stream.parse()?;
         token::Seq::parse(stream)?;
         let value = stream.parse()?;
@@ -221,6 +221,12 @@ impl<'s> TypeAliasDecl<'s> {
     }
 }
 
+impl<'s> Parse<'s> for TypeAliasDecl<'s> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+        Self::parse_with(stream.parse()?, stream)
+    }
+}
+
 impl<'s, 'n> Visitors<'s, 'n> for TypeAliasDecl<'s> {
     fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         let ty = self.value.visit_type_full(visitor);
@@ -230,5 +236,26 @@ impl<'s, 'n> Visitors<'s, 'n> for TypeAliasDecl<'s> {
             decl: ASTRef::TypeAliasDecl(self.into()),
         }, self.span());
         ty
+    }
+}
+
+#[derive(Debug)]
+#[ast_node]
+pub struct Using<'s> {
+    path: Path<'s>,
+}
+
+impl<'s> Parse<'s> for Using<'s> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+        let start = stream.pos();
+        token::Using::parse(stream)?;
+        let path = stream.parse()?;
+        Ok(Self { path, span: start..stream.pos() })
+    }
+}
+
+impl<'s, 'n> Visitors<'s, 'n> for Using<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        todo!()
     }
 }

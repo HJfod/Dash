@@ -294,7 +294,7 @@ declare_token! {
         Void, True, False,
         // Declarations
         Var, Let, Fun, Struct, Enum, Using,
-        Macro, Extends, Module,
+        Macro, Extends, Module, Type,
         // Prepositions
         In, Is, As, Where, From,
         // Loops & conditional

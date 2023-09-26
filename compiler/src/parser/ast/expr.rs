@@ -50,6 +50,7 @@ impl<'s> Parse<'s> for Visibility<'s> {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum Expr<'s> {
     Void(VoidLit<'s>),
     Bool(BoolLit<'s>),
@@ -85,6 +86,9 @@ impl<'s> Expr<'s> {
         }
         else if token::Fun::peek(stream).is_some() {
             Ok(Self::FunDecl(FunDecl::parse_with(visibility, stream)?))
+        }
+        else if token::Type::peek(stream).is_some() {
+            Ok(Self::TypeAliasDecl(TypeAliasDecl::parse_with(visibility, stream)?))
         }
         else {
             Err(Message::from_span(

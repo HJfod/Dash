@@ -87,7 +87,7 @@
 				},
 				{
 					"name": "storage.type.gs",
-					"match": "\\b(let|var|const|fun|mut|decl|struct|macro|codegen|compiler_intrinsic|module|enum|extends|using|scope|public|private)\\b"
+					"match": "\\b(let|var|const|fun|mut|decl|struct|macro|codegen|compiler_intrinsic|module|enum|extends|using|type|public|private)\\b"
 				},
 				{
 					"name": "punctuation.gs",
