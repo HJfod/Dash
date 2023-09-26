@@ -66,6 +66,9 @@ pub trait Spanful<'s> {
             format!("{}-{}", self.start(), self.end())
         }
     }
+    fn full_display(&self) -> String {
+        format!("{}:{}", self.src(), self.display())
+    }
     fn underlined(&self) -> String {
         let start = self.start();
         let end = self.end();

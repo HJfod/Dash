@@ -46,11 +46,10 @@ impl Display for Note<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ref span) = self.at {
             f.write_fmt(format_args!(
-                "Note: {}\n{}\n(In {} at {})",
+                "Note: {}\n{}\n(In {})",
                 self.info,
                 span.underlined(),
-                span.src().name(),
-                span.display()
+                span.full_display()
             ))
         } else {
             f.write_fmt(format_args!("Note: {}", self.info))
@@ -97,10 +96,9 @@ impl<'s> Message<'s> {
 impl Display for Message<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
-            "{} in {} at {}:\n{}{}{}",
+            "{} at {}:\n{}{}{}",
             self.level,
-            self.span.src().name(),
-            self.span.display(),
+            self.span.full_display(),
             self.span.underlined(),
             self.info,
             self.notes
