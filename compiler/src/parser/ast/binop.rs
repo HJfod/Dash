@@ -34,7 +34,7 @@ impl<'s> BinOp<'s> {
         let op = stream.parse()?;
         let rhs = rhs(stream)?.into();
         Ok(Self {
-            lhs, op, rhs, span: Span::new(stream.src(), start, stream.pos()),
+            lhs, op, rhs, span: start..stream.pos(),
         })
     }
 }

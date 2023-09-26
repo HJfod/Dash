@@ -6,11 +6,8 @@ public struct CCPoint {
     y: float;
 }
 
-public extern struct NodeRef {}
-
 @React::reactive
 public extern struct CCNode {
-    private handle: NodeRef;
     pos: CCPoint;
     x: float {
         set(value) => pos.x = value;

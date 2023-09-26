@@ -1,7 +1,10 @@
 
 use std::fmt::Debug;
-use crate::shared::{src::{Span, Src}, logging::Message, wrappers::RefWrapper};
-use super::{stream::{TokenStream, Token}, ast::{expr::Expr, ty::Type, decls::{VarDecl, FunDecl, FunParam}, flow::Return}};
+use crate::shared::{src::{Span, Src, Spanful, BUILTIN_SPAN}, logging::Message, wrappers::RefWrapper};
+use super::{
+    stream::{TokenStream, Token},
+    ast::{expr::Expr, ty::Type, decls::{VarDecl, FunDecl, FunParam, TypeAliasDecl}, flow::Return}
+};
 use std::hash::Hash;
 
 pub trait ASTNode<'s>: Debug {
@@ -23,6 +26,7 @@ pub enum ASTRef<'s, 'n> {
     VarDecl(RefWrapper<'n, VarDecl<'s>>),
     FunDecl(RefWrapper<'n, FunDecl<'s>>),
     FunParam(RefWrapper<'n, FunParam<'s>>),
+    TypeAliasDecl(RefWrapper<'n, TypeAliasDecl<'s>>),
     Expr(RefWrapper<'n, Expr<'s>>),
     Type(RefWrapper<'n, Type<'s>>),
     Return(RefWrapper<'n, Return<'s>>),
@@ -31,10 +35,11 @@ pub enum ASTRef<'s, 'n> {
 impl<'s, 'n> ASTNode<'s> for ASTRef<'s, 'n> {
     fn span(&self) -> &Span<'s> {
         match self {
-            Self::Builtin => Span::builtin(),
+            Self::Builtin => &BUILTIN_SPAN,
             Self::VarDecl(e) => e.span(),
             Self::FunDecl(e) => e.span(),
             Self::FunParam(e) => e.span(),
+            Self::TypeAliasDecl(e) => e.span(),
             Self::Expr(e) => e.span(),
             Self::Type(e) => e.span(),
             Self::Return(e) => e.span(),

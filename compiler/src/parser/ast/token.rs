@@ -8,7 +8,7 @@ use crate::{
         node::{Parse, ASTNode},
         stream::{TokenStream, Token}
     },
-    shared::{logging::{Message, Level}, src::Span}, compiler::typecheck
+    shared::{logging::{Message, Level}, src::{Span, Spanful}}, compiler::typecheck
 };
 
 pub trait Tokenize<'s>: ASTNode<'s> + TryFrom<Token<'s>, Error = Message<'s>> {

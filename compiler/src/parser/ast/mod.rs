@@ -45,7 +45,7 @@ impl<'s> Parse<'s> for Path<'s> {
                 break;
             }
         }
-        Ok(Self { components, absolute, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(Self { components, absolute, span: start..stream.pos() })
     }
 }
 

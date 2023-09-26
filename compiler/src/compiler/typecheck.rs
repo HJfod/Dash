@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display, marker::PhantomData};
 use crate::parser::node::{ASTNode, ASTRef};
 use crate::parser::ast::token::{Op, self};
 use crate::shared::logging::{Message, Level, Note, LoggerRef};
-use crate::shared::src::{Src, Span};
+use crate::shared::src::{Src, Span, BUILTIN_SPAN};
 
 macro_rules! parse_op {
     (+)  => { token::Add };
@@ -30,7 +30,7 @@ macro_rules! define_ops {
     ($res:ident; $a:ident $op:tt $b:ident -> $r:ident;) => {
         $res.entities.push(Entity::new_builtin_binop(
             Ty::$a,
-            <parse_op!($op)>::new(Span::builtin().clone()).into(),
+            <parse_op!($op)>::new(BUILTIN_SPAN.clone()).into(),
             Ty::$b,
             Ty::$r
         ));
@@ -68,7 +68,7 @@ impl<'s, 'n> PathLike<'s, 'n> for FullPath {
     }
 }
 
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Path {
     absolute: bool,
     path: Vec<String>,
@@ -138,6 +138,12 @@ pub enum Ty<'s, 'n> {
         ret_ty: Box<Ty<'s, 'n>>,
         decl: ASTRef<'s, 'n>,
     },
+    /// Alias for another type
+    Alias {
+        name: String,
+        ty: Box<Ty<'s, 'n>>,
+        decl: ASTRef<'s, 'n>,
+    },
 }
 
 impl<'s, 'n> Ty<'s, 'n> {
@@ -151,12 +157,20 @@ impl<'s, 'n> Ty<'s, 'n> {
         matches!(self, Ty::Never)
     }
 
+    /// Reduce type into its canonical representation, for example remove aliases
+    pub fn reduce(&self) -> &Ty<'s, 'n> {
+        match self {
+            Self::Alias { name: _, ty, decl: _ } => ty,
+            other => other,
+        }
+    }
+
     /// Test whether this type is implicitly convertible to another type or 
     /// not
     /// 
     /// In most cases this means equality
     pub fn convertible_to(&self, other: &Ty<'s, 'n>) -> bool {
-        self.is_unreal() || other.is_unreal() || *self == *other
+        self.is_unreal() || other.is_unreal() || *self.reduce() == *other.reduce()
     }
 
     /// Get the return type of this type
@@ -182,6 +196,7 @@ impl<'s, 'n> Ty<'s, 'n> {
             Ty::Float => ASTRef::Builtin,
             Ty::String => ASTRef::Builtin,
             Ty::Function { params: _, ret_ty: _, decl } => *decl,
+            Ty::Alias { name: _, ty: _, decl } => *decl,
         }
     }
 
@@ -213,6 +228,7 @@ impl Display for Ty<'_, '_> {
                     .collect::<Vec<_>>()
                     .join(", ")
             )),
+            Self::Alias { name, ty: _, decl: _ } => f.write_str(&name),
         }
     }
 }

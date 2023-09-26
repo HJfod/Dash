@@ -312,7 +312,7 @@ impl<'s> Iterator for SrcReader<'s> {
             // push eof at the end of the tree (important!)
             tree.push(Token::EOF(
                 format!("'{}'", closing_paren(ch)),
-                Span::new(self.src, self.src.loc(self.pos), self.src.loc(self.pos))
+                self.src.loc(self.pos)..self.src.loc(self.pos)
             ));
             match ch {
                 '(' => Some(Token::Parenthesized(Parenthesized::new(tree, make_span(self.pos)))),
@@ -344,8 +344,8 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenStream<'s, I> {
         self.src
     }
 
-    pub fn pos(&self) -> Loc {
-        self.next_token.span().start()
+    pub fn pos(&self) -> Loc<'s> {
+        self.next_token.span().start
     }
 
     #[allow(clippy::should_implement_trait)]

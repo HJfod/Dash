@@ -1,6 +1,6 @@
 
 use std::{fmt::{Display, Debug, Write}, sync::{Arc, Mutex}};
-use super::src::Span;
+use super::src::{Span, Spanful};
 
 #[allow(unused)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -50,7 +50,7 @@ impl Display for Note<'_> {
                 self.info,
                 span.underlined(),
                 span.src().name(),
-                span
+                span.display()
             ))
         } else {
             f.write_fmt(format_args!("Note: {}", self.info))
@@ -100,7 +100,7 @@ impl Display for Message<'_> {
             "{} in {} at {}:\n{}{}{}",
             self.level,
             self.span.src().name(),
-            self.span,
+            self.span.display(),
             self.span.underlined(),
             self.info,
             self.notes

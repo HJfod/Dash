@@ -36,7 +36,7 @@ impl<'s> Parse<'s> for If<'s> {
         else {
             None
         };
-        Ok(Self { cond, truthy, falsy, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(Self { cond, truthy, falsy, span: start..stream.pos() })
     }
 }
 
@@ -64,7 +64,7 @@ impl<'s> Parse<'s> for Return<'s> {
         let start = stream.pos();
         token::Return::parse(stream)?;
         let expr = Expr::parse(stream).ok().map(|e| e.into());
-        Ok(Self { expr, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(Self { expr, span: start..stream.pos() })
     }
 }
 

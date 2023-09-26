@@ -24,7 +24,7 @@ impl<'s> Parse<'s> for UnOp<'s> {
         let start = stream.pos();
         let op = Op::parse(stream)?;
         let target = Expr::parse_unop(stream)?.into();
-        Ok(Self { op, target, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(Self { op, target, span: start..stream.pos() })
     }
 }
 
@@ -55,7 +55,7 @@ impl<'s> Call<'s> {
             }
             token::Comma::parse(&mut args_stream)?;
         }
-        Ok(Self { target: target.into(), args, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(Self { target: target.into(), args, span: start..stream.pos() })
     }
 }
 
@@ -117,7 +117,7 @@ impl<'s> Index<'s> {
                 other.span()
             ))?,
         }
-        Ok(Self { target: target.into(), index, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(Self { target: target.into(), index, span: start..stream.pos() })
     }
 }
 

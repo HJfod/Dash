@@ -49,7 +49,7 @@ impl<'s> Parse<'s> for TypeName<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.pos();
         let ident = Ident::parse(stream)?;
-        Ok(TypeName { ident, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(TypeName { ident, span: start..stream.pos() })
     }
 }
 

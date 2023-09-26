@@ -3,7 +3,7 @@ use gs_macros::ast_node;
 
 use crate::{
     parser::{
-        stream::{TokenStream, Token, self},
+        stream::{TokenStream, Token},
         node::{Parse, ASTNode, ASTRef}
     },
     shared::{logging::Message, is_none_or::IsNoneOr, src::Span},
@@ -25,7 +25,7 @@ impl<'s> VarDecl<'s> {
         visibility: Visibility<'s>,
         stream: &mut TokenStream<'s, I>
     ) -> Result<Self, Message<'s>> {
-        let start = visibility.span().start();
+        let start = visibility.span().start;
         token::Var::parse(stream)?;
         let ident = Ident::parse(stream)?;
         let ty = if Colon::peek_and_parse(stream).is_some() {
@@ -40,7 +40,7 @@ impl<'s> VarDecl<'s> {
         else {
             None
         };
-        Ok(VarDecl { visibility, ident, ty, value, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(VarDecl { visibility, ident, ty, value, span: start..stream.pos() })
     }
 }
 
@@ -86,7 +86,7 @@ impl<'s> Parse<'s> for FunParam<'s> {
         else {
             None
         };
-        Ok(FunParam { ident, ty, default_value, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(FunParam { ident, ty, default_value, span: start..stream.pos() })
     }
 }
 
@@ -124,9 +124,9 @@ impl<'s> FunDecl<'s> {
         visibility: Visibility<'s>,
         stream: &mut TokenStream<'s, I>
     ) -> Result<Self, Message<'s>> {
-        let start = visibility.span().start();
+        let start = visibility.span().start;
         token::Fun::parse(stream)?;
-        let ident = Ident::parse(stream).ok();
+        let ident = Ident::peek_and_parse(stream);
         let mut params_stream = Parenthesized::parse(stream)?.into_stream();
         let mut params = Vec::new();
         while !params_stream.eof() {
@@ -155,7 +155,7 @@ impl<'s> FunDecl<'s> {
             params,
             ret_ty,
             body,
-            span: Span::new(stream.src(), start, stream.pos())
+            span: start..stream.pos()
         })
     }
 }
@@ -191,5 +191,44 @@ impl<'s, 'n> Visitors<'s, 'n> for FunDecl<'s> {
             );
         }
         Ty::Void
+    }
+}
+
+#[derive(Debug)]
+#[ast_node]
+pub struct TypeAliasDecl<'s> {
+    visibility: Visibility<'s>,
+    ident: Ident<'s>,
+    value: Type<'s>,
+}
+
+impl<'s> TypeAliasDecl<'s> {
+    pub fn parse_with<I: Iterator<Item = Token<'s>>>(
+        visibility: Visibility<'s>,
+        stream: &mut TokenStream<'s, I>
+    ) -> Result<Self, Message<'s>> {
+        let start = visibility.span().start;
+        token::Using::parse(stream)?;
+        let ident = stream.parse()?;
+        token::Seq::parse(stream)?;
+        let value = stream.parse()?;
+        Ok(TypeAliasDecl {
+            visibility,
+            ident,
+            value,
+            span: start..stream.pos()
+        })
+    }
+}
+
+impl<'s, 'n> Visitors<'s, 'n> for TypeAliasDecl<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let ty = self.value.visit_type_full(visitor);
+        visitor.try_push(Ty::Alias {
+            name: self.ident.to_string(),
+            ty: ty.clone().into(),
+            decl: ASTRef::TypeAliasDecl(self.into()),
+        }, self.span());
+        ty
     }
 }

@@ -13,7 +13,7 @@ use crate::{
     compiler::{typecheck::{TypeVisitor, Ty, Entity, FindItem}, visitor::Visitors}
 };
 use super::{
-    decls::{VarDecl, FunDecl},
+    decls::{VarDecl, FunDecl, TypeAliasDecl},
     token::{Parenthesized, Prec, Braced, self, Tokenize},
     binop::BinOp,
     unop::{UnOp, Call},
@@ -44,7 +44,7 @@ impl<'s> Parse<'s> for Visibility<'s> {
             Ok(Self::Private(kw.span().clone()))
         }
         else {
-            Ok(Self::Default(Span::new(stream.src(), stream.pos(), stream.pos())))
+            Ok(Self::Default(stream.pos()..stream.pos()))
         }
     }
 }
@@ -64,6 +64,7 @@ pub enum Expr<'s> {
 
     VarDecl(VarDecl<'s>),
     FunDecl(FunDecl<'s>),
+    TypeAliasDecl(TypeAliasDecl<'s>),
 
     If(If<'s>),
     Block(Block<'s>),
@@ -71,7 +72,7 @@ pub enum Expr<'s> {
 }
 
 impl<'s> Expr<'s> {
-    fn peek_item_decl<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> bool {
+    fn peek_item_decl<I: Iterator<Item = Token<'s>>>(stream: &TokenStream<'s, I>) -> bool {
         token::Var::peek(stream).is_some() || token::Fun::peek(stream).is_some()
     }
 
@@ -197,6 +198,7 @@ impl<'s> ASTNode<'s> for Expr<'s> {
             Self::Entity(t) => t.span(),
             Self::VarDecl(t) => t.span(),
             Self::FunDecl(t) => t.span(),
+            Self::TypeAliasDecl(t) => t.span(),
             Self::UnOp(t) => t.span(),
             Self::BinOp(t) => t.span(),
             Self::Call(t) => t.span(),
@@ -245,6 +247,7 @@ impl<'s, 'n> Visitors<'s, 'n> for Expr<'s> {
             Self::Call(call) => call.visit_type_full(visitor),
             Self::VarDecl(t) => t.visit_type_full(visitor),
             Self::FunDecl(t) => t.visit_type_full(visitor),
+            Self::TypeAliasDecl(t) => t.visit_type_full(visitor),
             Self::Block(t) => t.visit_type_full(visitor),
             Self::If(t) => t.visit_type_full(visitor),
             Self::Return(t) => t.visit_type_full(visitor),
@@ -280,7 +283,7 @@ impl<'s> Parse<'s> for ExprList<'s> {
                 // todo: emit warning
             }
         }
-        Ok(Self { list, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(Self { list, span: start..stream.pos() })
     }
 }
 
@@ -301,7 +304,7 @@ impl<'s> Parse<'s> for Block<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
         let start = stream.pos();
         let mut braced = Braced::parse(stream)?.into_stream();
-        Ok(Self { list: braced.parse()?, span: Span::new(stream.src(), start, stream.pos()) })
+        Ok(Self { list: braced.parse()?, span: start..stream.pos() })
     }
 }
 
