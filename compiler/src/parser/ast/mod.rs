@@ -52,7 +52,6 @@ impl<'s> Parse<'s> for Path<'s> {
 pub mod token;
 pub mod expr;
 pub mod ty;
-pub mod decls;
-pub mod unop;
-pub mod binop;
+pub mod item;
+pub mod ops;
 pub mod flow;

@@ -228,7 +228,7 @@ impl Display for Ty<'_, '_> {
                     .collect::<Vec<_>>()
                     .join(", ")
             )),
-            Self::Alias { name, ty: _, decl: _ } => f.write_str(&name),
+            Self::Alias { name, ty: _, decl: _ } => f.write_str(name),
         }
     }
 }

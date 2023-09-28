@@ -13,10 +13,9 @@ use crate::{
     compiler::{typecheck::{TypeVisitor, Ty, Entity, FindItem}, visitor::Visitors}
 };
 use super::{
-    decls::{VarDecl, FunDecl, TypeAliasDecl},
+    item::{Item, UsingItem},
     token::{Parenthesized, Prec, Braced, self, Tokenize},
-    binop::BinOp,
-    unop::{UnOp, Call},
+    ops::{UnOp, BinOp, Call},
     flow::{If, Return}, Path
 };
 
@@ -63,9 +62,8 @@ pub enum Expr<'s> {
     BinOp(BinOp<'s>),
     Call(Call<'s>),
 
-    VarDecl(VarDecl<'s>),
-    FunDecl(FunDecl<'s>),
-    TypeAliasDecl(TypeAliasDecl<'s>),
+    Item(Item<'s>),
+    UsingItem(UsingItem<'s>),
 
     If(If<'s>),
     Block(Block<'s>),
@@ -73,38 +71,12 @@ pub enum Expr<'s> {
 }
 
 impl<'s> Expr<'s> {
-    fn peek_item_decl<I: Iterator<Item = Token<'s>>>(stream: &TokenStream<'s, I>) -> bool {
-        token::Var::peek(stream).is_some() || token::Fun::peek(stream).is_some()
-    }
-
-    fn parse_item_decl<I: Iterator<Item = Token<'s>>>(
-        visibility: Visibility<'s>,
-        stream: &mut TokenStream<'s, I>
-    ) -> Result<Self, Message<'s>> {
-        if token::Var::peek(stream).is_some() {
-            Ok(Self::VarDecl(VarDecl::parse_with(visibility, stream)?))
-        }
-        else if token::Fun::peek(stream).is_some() {
-            Ok(Self::FunDecl(FunDecl::parse_with(visibility, stream)?))
-        }
-        else if token::Type::peek(stream).is_some() {
-            Ok(Self::TypeAliasDecl(TypeAliasDecl::parse_with(visibility, stream)?))
-        }
-        else {
-            Err(Message::from_span(
-                Level::Error,
-                "Expected item declaration",
-                stream.peek().span()
-            ))
-        }
-    }
-
     fn parse_single<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        if token::Public::peek(stream).is_some() || token::Private::peek(stream).is_some() {
-            return Self::parse_item_decl(stream.parse()?, stream);
+        if Item::peek(stream) {
+            Ok(Self::Item(stream.parse()?))
         }
-        if Self::peek_item_decl(stream) {
-            Self::parse_item_decl(stream.parse()?, stream)
+        else if token::Using::peek(stream).is_some() {
+            Ok(Self::UsingItem(stream.parse()?))
         }
         else if token::If::peek(stream).is_some() {
             Ok(Self::If(stream.parse()?))
@@ -179,7 +151,7 @@ impl<'s> Expr<'s> {
     pub fn requires_semicolon(&self) -> bool {
         match self {
             Self::If(_) | Self::Block(_) => false,
-            Self::FunDecl(f) => f.requires_semicolon(),
+            Self::Item(f) => f.requires_semicolon(),
             _ => true,
         }
     }
@@ -200,9 +172,8 @@ impl<'s> ASTNode<'s> for Expr<'s> {
             Self::Float(t) => t.span(),
             Self::String(t) => t.span(),
             Self::Entity(t) => t.span(),
-            Self::VarDecl(t) => t.span(),
-            Self::FunDecl(t) => t.span(),
-            Self::TypeAliasDecl(t) => t.span(),
+            Self::Item(t) => t.span(),
+            Self::UsingItem(t) => t.span(),
             Self::UnOp(t) => t.span(),
             Self::BinOp(t) => t.span(),
             Self::Call(t) => t.span(),
@@ -249,9 +220,8 @@ impl<'s, 'n> Visitors<'s, 'n> for Expr<'s> {
             Self::UnOp(unop) => unop.visit_type_full(visitor),
             Self::BinOp(binop) => binop.visit_type_full(visitor),
             Self::Call(call) => call.visit_type_full(visitor),
-            Self::VarDecl(t) => t.visit_type_full(visitor),
-            Self::FunDecl(t) => t.visit_type_full(visitor),
-            Self::TypeAliasDecl(t) => t.visit_type_full(visitor),
+            Self::Item(t) => t.visit_type_full(visitor),
+            Self::UsingItem(t) => t.visit_type_full(visitor),
             Self::Block(t) => t.visit_type_full(visitor),
             Self::If(t) => t.visit_type_full(visitor),
             Self::Return(t) => t.visit_type_full(visitor),

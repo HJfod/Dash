@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use crate::shared::{src::{Span, Src, Spanful, BUILTIN_SPAN}, logging::Message, wrappers::RefWrapper};
 use super::{
     stream::{TokenStream, Token},
-    ast::{expr::Expr, ty::Type, decls::{VarDecl, FunDecl, FunParam, TypeAliasDecl}, flow::Return}
+    ast::{expr::Expr, ty::Type, item::{VarDecl, FunDecl, FunParam, TypeAliasDecl}, flow::Return}
 };
 use std::hash::Hash;
 

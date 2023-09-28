@@ -164,8 +164,16 @@ impl<'s> Iterator for SrcReader<'s> {
         let make_error = |msg, pos| Some(Token::Error(msg, make_span(pos)));
 
         // Identifier or keyword
-        if ch.is_xid_start() {
-            let mut res = String::from(ch);
+        if ch.is_xid_start() || (ch == '@' && next_ch.is_some_and(|c| c.is_xid_start())) {
+            let mut res = 
+                if ch == '@' {
+                    // the decorator symbol is not part of the identifier
+                    self.pos += 1;
+                    String::from(next_ch.unwrap())
+                }
+                else {
+                    String::from(ch)
+                };
             get_while(self, UnicodeXID::is_xid_continue, &mut res);
             if let Some(kw) = Kw::try_new(res.as_str(), make_span(self.pos)) {
                 Some(match kw {
@@ -176,7 +184,7 @@ impl<'s> Iterator for SrcReader<'s> {
                 })
             }
             else {
-                Some(Token::Ident(Ident::new(res, make_span(self.pos))))
+                Some(Token::Ident(Ident::new(res, ch == '@', make_span(self.pos))))
             }
         }
         // Number

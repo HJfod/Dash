@@ -408,10 +408,14 @@ declare_token! {
 declare_token! {
     [struct Ident "identifier"]
     +value: String;
+    +is_decorator: bool;
 
     display {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.write_str(&self.value)
+            f.write_fmt(format_args!("{}{}",
+                if self.is_decorator { "@" } else { "" },
+                &self.value
+            ))
         }
     }
 
@@ -421,12 +425,16 @@ declare_token! {
         Kw::try_new(self.value.as_str(), self.span.clone()).is_some()
     }
 
+    pub fn is_decorator(&self) -> bool {
+        self.is_decorator
+    }
+
     pub fn value(&self) -> &String {
         &self.value
     }
 
     pub fn path(&self) -> typecheck::Path {
-        typecheck::Path::new([self.value.clone()], false)
+        typecheck::Path::new([self.to_string()], false)
     }
 }
 
