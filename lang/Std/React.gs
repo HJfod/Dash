@@ -1,6 +1,6 @@
 
 fun getAncestorBinding(this: Reflect::Expr) -> Reflect::Field? {
-    let parent = unwrap this.parentExpr;
+    let parent = this.parentExpr!;
     // skip uses of bindings inside functions
     if parent is Reflect::FunDecl {
         return none;
@@ -26,5 +26,11 @@ public macro @reactive(prop: &var Reflect::Field) {
                 @(bind.parent.name).@(bind.name) = @(bind.value);
             });
         }
+    }
+}
+
+public macro @reactiveStruct(target: &var Reflect::StructDecl) {
+    for field in target.fields {
+        (@reactive)(field);
     }
 }

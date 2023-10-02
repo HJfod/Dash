@@ -1,12 +1,12 @@
 
-using React::@reactive;
+using React::@reactiveStruct;
 
 public struct CCPoint {
     x: float;
     y: float;
 }
 
-@React::reactive
+@reactiveStruct
 public extern struct CCNode {
     pos: CCPoint;
     x: float {

@@ -291,7 +291,9 @@ declare_token! {
     [enum Kw "keyword"]
     is_strict {
         // Literals
-        Void, True, False,
+        Void, True, False, None,
+        // Constants & special variables
+        This, Super,
         // Declarations
         Var, Let, Fun, Struct, Enum, Using,
         Macro, Extends, Module, Type,
@@ -312,6 +314,8 @@ declare_token! {
         Get, Set, Assert, Default,
     }
     is_reserved {
+        // Declarations
+        Trait, Class, Interface,
         // Control flow
         Yield, Match, Switch,
         // Visibility
@@ -319,7 +323,7 @@ declare_token! {
         // Reactivity
         Depends, Required,
         // Other
-        Mut, New,
+        Mut, New, Null,
     }
 }
 

@@ -102,8 +102,8 @@
 		"strings": {
 			"patterns": [
 				{
-					"name": "string.quoted.double.gs",
-					"begin": "\"",
+					"name": "string.quoted.double.interpolated.gs",
+					"begin": "\\$\"",
 					"end": "\"",
 					"beginCaptures": {
 						"0": {
@@ -133,6 +133,27 @@
 							"patterns": [{ "include": "#language" }]
 						}
 					]
+				},
+				{
+					"name": "string.quoted.double.gs",
+					"begin": "\"",
+					"end": "\"",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.begin.gs"
+						}
+					},
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.begin.gs"
+						}
+					},
+					"patterns": [
+						{
+							"name": "constant.character.escape.gs",
+							"match": "\\\\."
+						}
+					]
 				}
 			]
 		},
@@ -148,7 +169,7 @@
 				},
 				{
 					"name": "constant.language.gs",
-					"match": "\\b(this|super|root)\\b"
+					"match": "\\b(this|super)\\b"
 				},
 				{
 					"name": "constant.language.gs",

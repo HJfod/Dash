@@ -1,5 +1,16 @@
 
-CCLabelBMFont {
-    text: "Omg god";
-    pos: winSize / 2;
+using Std::Modify::{@modify, @override}
+
+@modify
+struct MenuLayer {
+    @override
+    fun init() -> bool {
+        if !MenuLayer::init() {
+            return false;
+        }
+
+        print("holy shit this hook was called from an interpreted language");
+
+        true
+    }
 }

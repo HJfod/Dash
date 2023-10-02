@@ -1,5 +1,5 @@
 
-var y = 5;
+const y = 5;
 
 fun what(a: int, b: int) -> int {
     if a > b {
@@ -10,4 +10,4 @@ fun what(a: int, b: int) -> int {
     }
 }
 
-var x = what(2, 5) + 6;
+const x = what(2, 5) + 6;

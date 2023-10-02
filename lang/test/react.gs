@@ -1,15 +1,19 @@
 
-decl MyNode {
-    let count: int = 0;
+using Std::React::@reactive;
+
+public fun buildReactiveUI() -> CCNode {
     CCNode {
-        layout: ColumnLayout {};
+        @reactive
+        let count: int = 0;
+        
+        layout: ColumnLayout {}
         CCLabelBMFont {
-            text: "Clicked {count} times";
+            text: $"Clicked {count} times",
         }
         CCMenu {
             CCMenuItemSpriteExtra {
                 ButtonSprite {
-                    text: "Click me!";
+                    text: "Click me!",
                 }
                 clicked: () => {
                     count += 1;
@@ -17,8 +21,4 @@ decl MyNode {
             }
         }
     }
-}
-
-MyNode {
-    count: 5;
 }
