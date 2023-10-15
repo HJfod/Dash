@@ -92,6 +92,61 @@ impl<'s, 'n> Visitors<'s, 'n> for VarDecl<'s> {
 
 #[derive(Debug)]
 #[ast_node]
+pub struct ConstDecl<'s> {
+    item_attrs: ItemAttrs<'s>,
+    ident: Ident<'s>,
+    ty: Option<Type<'s>>,
+    value: Box<Expr<'s>>,
+}
+
+impl<'s> ConstDecl<'s> {
+    pub fn parse_with<I: Iterator<Item = Token<'s>>>(
+        item_attrs: ItemAttrs<'s>,
+        stream: &mut TokenStream<'s, I>
+    ) -> Result<Self, Message<'s>> {
+        let start = item_attrs.span().start;
+        token::Let::parse(stream)?;
+        let ident = Ident::parse(stream)?;
+        let ty = if Colon::peek_and_parse(stream).is_some() {
+            Some(Type::parse(stream)?)
+        }
+        else {
+            None
+        };
+        token::Seq::parse(stream)?;
+        let value = Expr::parse(stream)?.into();
+        Ok(ConstDecl {
+            item_attrs,
+            ident,
+            ty,
+            value,
+            span: start..stream.pos()
+        })
+    }
+}
+
+impl<'s> Parse<'s> for ConstDecl<'s> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+        Self::parse_with(stream.parse()?, stream)
+    }
+}
+
+impl<'s, 'n> Visitors<'s, 'n> for ConstDecl<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let ty = self.ty.as_ref().map(|ty| ty.visit_type_full(visitor));
+        let value = self.value.visit_type_full(visitor);
+        let eval_ty = match (ty, value) {
+            (Some(a), b) => visitor.expect_eq(a, b, self.span()),
+            (None,    b) => b,
+        };
+        let name = visitor.resolve_new(self.ident.path());
+        visitor.try_push(Entity::new(name, ASTRef::ConstDecl(self.into()), eval_ty, true), &self.span);
+        Ty::Void
+    }
+}
+
+#[derive(Debug)]
+#[ast_node]
 pub struct FunParam<'s> {
     ident: Ident<'s>,
     ty: Type<'s>,
@@ -220,6 +275,80 @@ impl<'s, 'n> Visitors<'s, 'n> for FunDecl<'s> {
 
 #[derive(Debug)]
 #[ast_node]
+pub struct FieldDecl<'s> {
+    ident: Ident<'s>,
+    ty: Type<'s>,
+}
+
+impl<'s> FieldDecl<'s> {
+    pub fn requires_semicolon(&self) -> bool {
+        true
+    }
+}
+
+impl<'s> Parse<'s> for FieldDecl<'s> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+        let start = stream.pos();
+        let ident = stream.parse()?;
+        token::Colon::parse(stream)?;
+        let ty = stream.parse()?;
+        Ok(Self { ident, ty, span: start..stream.pos() })
+    }
+}
+
+#[derive(Debug)]
+#[ast_node]
+pub struct StructDecl<'s> {
+    item_attrs: ItemAttrs<'s>,
+    ident: Ident<'s>,
+    fields: Vec<FieldDecl<'s>>,
+}
+
+impl<'s> StructDecl<'s> {
+    pub fn parse_with<I: Iterator<Item = Token<'s>>>(
+        item_attrs: ItemAttrs<'s>,
+        stream: &mut TokenStream<'s, I>
+    ) -> Result<Self, Message<'s>> {
+        let start = item_attrs.span().start;
+        token::Struct::parse(stream)?;
+        let ident = stream.parse()?;
+        let mut fields_stream = Braced::parse(stream)?.into_stream();
+        let mut fields: Vec<FieldDecl<'s>> = vec![];
+        while !fields_stream.eof() {
+            fields.push(fields_stream.parse()?);
+            if fields_stream.eof() {
+                break;
+            }
+            if fields.last().unwrap().requires_semicolon() {
+                token::Semicolon::parse(&mut fields_stream)?;
+            }
+            else {
+                token::Semicolon::peek_and_parse(&mut fields_stream);
+            }
+        }
+        Ok(Self {
+            item_attrs,
+            ident,
+            fields,
+            span: start..stream.pos()
+        })
+    }
+}
+
+impl<'s> Parse<'s> for StructDecl<'s> {
+    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+        Self::parse_with(stream.parse()?, stream)
+    }
+}
+
+impl<'s, 'n> Visitors<'s, 'n> for StructDecl<'s> {
+    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
+#[ast_node]
 pub struct TypeAliasDecl<'s> {
     item_attrs: ItemAttrs<'s>,
     ident: Ident<'s>,
@@ -267,7 +396,9 @@ impl<'s, 'n> Visitors<'s, 'n> for TypeAliasDecl<'s> {
 #[allow(clippy::large_enum_variant)]
 pub enum Item<'s> {
     VarDecl(VarDecl<'s>),
+    ConstDecl(ConstDecl<'s>),
     FunDecl(FunDecl<'s>),
+    StructDecl(StructDecl<'s>),
     TypeAliasDecl(TypeAliasDecl<'s>),
 }
 
@@ -279,11 +410,17 @@ impl<'s> Item<'s> {
         if token::Var::peek(stream).is_some() {
             Ok(Self::VarDecl(VarDecl::parse_with(item_attrs, stream)?))
         }
+        else if token::Let::peek(stream).is_some() {
+            Ok(Self::ConstDecl(ConstDecl::parse_with(item_attrs, stream)?))
+        }
         else if token::Fun::peek(stream).is_some() {
             Ok(Self::FunDecl(FunDecl::parse_with(item_attrs, stream)?))
         }
         else if token::Type::peek(stream).is_some() {
             Ok(Self::TypeAliasDecl(TypeAliasDecl::parse_with(item_attrs, stream)?))
+        }
+        else if token::Struct::peek(stream).is_some() {
+            Ok(Self::StructDecl(StructDecl::parse_with(item_attrs, stream)?))
         }
         else {
             Err(Message::from_span(
@@ -296,7 +433,12 @@ impl<'s> Item<'s> {
 
     pub fn peek<I: Iterator<Item = Token<'s>>>(stream: &TokenStream<'s, I>) -> bool {
         token::Var::peek(stream).is_some() || 
+        token::Let::peek(stream).is_some() || 
         token::Fun::peek(stream).is_some() ||
+        token::Struct::peek(stream).is_some() ||
+        token::Class::peek(stream).is_some() ||
+        token::Trait::peek(stream).is_some() ||
+        token::Type::peek(stream).is_some() ||
         token::Public::peek(stream).is_some() ||
         token::Private::peek(stream).is_some() ||
         token::Extern::peek(stream).is_some()
@@ -306,6 +448,8 @@ impl<'s> Item<'s> {
         match self {
             Self::FunDecl(f) => f.requires_semicolon(),
             Self::VarDecl(_) => true,
+            Self::ConstDecl(_) => true,
+            Self::StructDecl(_) => false,
             Self::TypeAliasDecl(_) => true,
         }
     }
@@ -322,7 +466,9 @@ impl<'s, 'n> Visitors<'s, 'n> for Item<'s> {
         match self {
             Self::FunDecl(t) => t.visit_type_full(visitor),
             Self::VarDecl(t) => t.visit_type_full(visitor),
+            Self::ConstDecl(t) => t.visit_type_full(visitor),
             Self::TypeAliasDecl(t) => t.visit_type_full(visitor),
+            Self::StructDecl(t) => t.visit_type_full(visitor),
         }
     }
 }
@@ -331,7 +477,9 @@ impl<'s> ASTNode<'s> for Item<'s> {
     fn span(&self) -> &Span<'s> {
         match self {
             Self::VarDecl(t) => t.span(),
+            Self::ConstDecl(t) => t.span(),
             Self::FunDecl(t) => t.span(),
+            Self::StructDecl(t) => t.span(),
             Self::TypeAliasDecl(t) => t.span(),
         }
     }

@@ -1,5 +1,5 @@
 
-const y = 5;
+let y = 5;
 
 fun what(a: int, b: int) -> int {
     if a > b {
@@ -10,4 +10,4 @@ fun what(a: int, b: int) -> int {
     }
 }
 
-const x = what(2, 5) + 6;
+let x = what(2, 5) + 6;
