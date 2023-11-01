@@ -1,10 +1,10 @@
 [package]
-name = "gs-compiler"
+name = "gdml-compiler"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 unicode-xid = "0.2.4"
 strum = { version = "0.25.0", features = ["derive"] }
-gs-macros = { path = "macros" }
+gdml-macros = { path = "macros" }
 derive-new = "0.5.9"

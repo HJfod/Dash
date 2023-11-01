@@ -1,9 +1,9 @@
 [package]
-name = "gs-cli"
+name = "gdml-cli"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 clap = { version = "4.3.23", features = ["derive"] }
-gs-compiler = { path = "../compiler" }
+gdml-compiler = { path = "../compiler" }
 normalize-path = "0.2.1"

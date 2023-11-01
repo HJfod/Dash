@@ -1,5 +1,5 @@
 use clap::Parser;
-use gs_compiler::{
+use gdml_compiler::{
     shared::{src::SrcPool, logging::ConsoleLogger},
     compiler::{typecheck::TypeVisitor, pool::ASTPool, visitor::Visitors},
     parser::{stream::Token, node::ASTNode}

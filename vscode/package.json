@@ -1,7 +1,7 @@
 {
-    "name": "gs-lang-support",
-    "displayName": "GemScript Language Support",
-    "description": "Support for the GemScript language for Geometry Dash mods",
+    "name": "gdml-lang-support",
+    "displayName": "GDML Language Support",
+    "description": "Support for the GDML language for Geometry Dash mods",
     "author": {
         "name": "HJfod",
         "url": "https://github.com/hjfod"
@@ -20,8 +20,8 @@
     "contributes": {
         "languages": [{
             "id": "gemscript",
-            "aliases": ["GemScript", "GS"],
-            "extensions": [".gs"],
+            "aliases": ["GDML", "GDML"],
+            "extensions": [".gdml"],
             "configuration": "./language-configuration.json",
             "icon": {
                 "dark": "./logo.png",
@@ -30,8 +30,8 @@
         }],
         "grammars": [{
             "language": "gemscript",
-            "scopeName": "source.gs",
-            "path": "./syntaxes/gs.tmLanguage.json"
+            "scopeName": "source.gdml",
+            "path": "./syntaxes/gdml.tmLanguage.json"
         }]
     }
 }

@@ -1,0 +1,236 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "gemscript",
+	"patterns": [
+		{
+			"include": "#language"
+		}
+	],
+	"repository": {
+		"language": {
+			"patterns": [
+				{
+					"include": "#comments"
+				},
+				{
+					"include": "#constants"
+				},
+				{
+					"include": "#keywords"
+				},
+				{
+					"include": "#strings"
+				},
+				{
+					"include": "#declarations"
+				},
+				{
+					"include": "#parenthesis"
+				},
+				{
+					"include": "#operators"
+				},
+				{
+					"include": "#expression"
+				}
+			]
+		},
+		"declarations": {
+			"patterns": [
+				{
+					"match": "(?<=const\\s+)[a-zA-Z]+",
+					"name": "variable.other.constant.gdml"
+				},
+				{
+					"match": "(?<=\\b(new|as|macro|struct|extends|is|module|operator|using|->|decl(\\s+[a-zA-Z0-9]+\\s*=)?|[^:]:)\\b\\s*)[a-zA-Z0-9_]+",
+					"name": "entity.name.type.gdml"
+				},
+				{
+					"match": "\\b([A-Z][a-zA-Z0-9_]*)\\b",
+					"name": "entity.name.type.gdml"
+				},
+				{
+					"match": "\\b(\\w+\\!?)(?=(\\s*(::\\s*)?<[^>]*>)?\\s*\\()",
+					"captures": {
+						"1": {
+							"name": "entity.name.function.gdml"
+						}
+					}
+				},
+				{
+					"match": "[a-zA-Z0-9_]+(?=\\s*::)",
+					"name": "entity.name.type.gdml"
+				}
+			]
+		},
+		"keywords": {
+			"patterns": [
+				{
+					"name": "keyword.control.gdml",
+					"match": "\\b(for|while|if|else|unwrap|try|return|yield|break|from|continue|new|match|switch)\\b"
+				},
+				{
+					"name": "keyword.control.meta.gdml",
+					"match": "@(::)?([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+\\b"
+				},
+				{
+					"name": "keyword.control.less.gdml",
+					"match": "@!(::)?([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+\\b"
+				},
+				{
+					"name": "storage.type.gdml",
+					"match": "\\b(void|bool|int|float|string)\\b"
+				},
+				{
+					"name": "keyword.other.gdml",
+					"match": "\\b(in|is|as|where|extern|export|import|get|set|depends|required|default|assert)\\b"
+				},
+				{
+					"name": "storage.type.gdml",
+					"match": "\\b(let|var|const|fun|mut|decl|struct|macro|codegen|compiler_intrinsic|module|enum|extends|using|type|public|private)\\b"
+				},
+				{
+					"name": "punctuation.gdml",
+					"match": "(->)|\\.|;|,|:|\\?|#"
+				}
+			]
+		},
+		"operators": {
+			"name": "keyword.operator.gdml",
+			"match": "[\\+\\-\\*\\/=<>\\^\\|\\&\\!%~@]"
+		},
+		"strings": {
+			"patterns": [
+				{
+					"name": "string.quoted.double.interpolated.gdml",
+					"begin": "\\$\"",
+					"end": "\"",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.begin.gdml"
+						}
+					},
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.begin.gdml"
+						}
+					},
+					"patterns": [
+						{
+							"name": "constant.character.escape.gdml",
+							"match": "\\\\."
+						},
+						{
+							"name": "variable.gdml",
+							"begin": "\\{",
+							"end": "\\}",
+							"beginCaptures": {
+								"0": { "name": "punctuation.paren.open" }
+							},
+							"endCaptures": {
+								"0": { "name": "punctuation.paren.close" }
+							},
+							"patterns": [{ "include": "#language" }]
+						}
+					]
+				},
+				{
+					"name": "string.quoted.double.gdml",
+					"begin": "\"",
+					"end": "\"",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.begin.gdml"
+						}
+					},
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.begin.gdml"
+						}
+					},
+					"patterns": [
+						{
+							"name": "constant.character.escape.gdml",
+							"match": "\\\\."
+						}
+					]
+				}
+			]
+		},
+		"constants": {
+			"patterns": [
+				{
+					"name": "constant.numeric.gdml",
+					"match": "\\b(([0-9]*\\.[0-9]+)|([0-9]+))\\b"
+				},
+				{
+					"name": "constant.numeric.gdml",
+					"match": "0x[0-9A-Fa-f]+"
+				},
+				{
+					"name": "constant.language.gdml",
+					"match": "\\b(this|super)\\b"
+				},
+				{
+					"name": "constant.language.gdml",
+					"match": "\\b(true|false|null|none)\\b"
+				}
+			]
+		},
+		"comments": {
+			"patterns": [
+				{
+					"name": "comment.block",
+					"begin": "/\\*",
+					"end": "\\*/"
+				},
+				{
+					"name": "comment.line",
+					"begin": "//",
+					"end": "\n"
+				}
+			]
+		},
+		"parenthesis": {
+			"patterns": [
+				{
+					"begin": "\\(",
+					"end": "\\)",
+					"beginCaptures": {
+						"0": { "name": "punctuation.paren.open" }
+					},
+					"endCaptures": {
+						"0": { "name": "punctuation.paren.close" }
+					},
+					"name": "expression.group",
+					"patterns": [{ "include": "#language" }]
+				},
+				{
+					"begin": "\\{",
+					"end": "\\}",
+					"beginCaptures": {
+						"0": { "name": "punctuation.paren.open" }
+					},
+					"endCaptures": {
+						"0": { "name": "punctuation.paren.close" }
+					},
+					"name": "expression.group",
+					"patterns": [{ "include": "#language" }]
+				},
+				{
+					"begin": "\\[",
+					"end": "\\]",
+					"beginCaptures": {
+						"0": { "name": "punctuation.paren.open" }
+					},
+					"endCaptures": {
+						"0": { "name": "punctuation.paren.close" }
+					},
+					"name": "expression.group",
+					"patterns": [{ "include": "#language" }]
+				}
+			]
+		}
+	},
+	"scopeName": "source.gdml"
+}

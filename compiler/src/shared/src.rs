@@ -287,7 +287,7 @@ impl SrcPool {
                     if ty.is_dir() {
                         res.extend(Self::find_src_files(file.path()));
                     }
-                    else if file.path().extension() == Some(OsStr::new("gs")) {
+                    else if file.path().extension() == Some(OsStr::new("gdml")) {
                         res.push(file.path());
                     }
                 }

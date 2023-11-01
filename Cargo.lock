@@ -155,26 +155,26 @@ dependencies = [
 ]
 
 [[package]]
-name = "gs-cli"
+name = "gdml-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
- "gs-compiler",
+ "gdml-compiler",
  "normalize-path",
 ]
 
 [[package]]
-name = "gs-compiler"
+name = "gdml-compiler"
 version = "0.1.0"
 dependencies = [
  "derive-new",
- "gs-macros",
+ "gdml-macros",
  "strum",
  "unicode-xid",
 ]
 
 [[package]]
-name = "gs-macros"
+name = "gdml-macros"
 version = "0.1.0"
 dependencies = [
  "convert_case",
