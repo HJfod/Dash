@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use crate::shared::{src::{Span, Src, Spanful, BUILTIN_SPAN}, logging::Message, wrappers::RefWrapper};
 use super::{
     stream::{TokenStream, Token},
-    ast::{expr::Expr, ty::Type, item::{VarDecl, FunDecl, FunParam, TypeAliasDecl}, flow::Return}
+    ast::{expr::Expr, ty::Type, item::{VarDecl, FunDecl, FunParam, TypeAliasDecl, ConstDecl}, flow::Return}
 };
 use std::hash::Hash;
 
@@ -24,6 +24,7 @@ impl<'s, T: ASTNode<'s>> ASTNode<'s> for Box<T> {
 pub enum ASTRef<'s, 'n> {
     Builtin,
     VarDecl(RefWrapper<'n, VarDecl<'s>>),
+    ConstDecl(RefWrapper<'n, ConstDecl<'s>>),
     FunDecl(RefWrapper<'n, FunDecl<'s>>),
     FunParam(RefWrapper<'n, FunParam<'s>>),
     TypeAliasDecl(RefWrapper<'n, TypeAliasDecl<'s>>),
@@ -37,6 +38,7 @@ impl<'s, 'n> ASTNode<'s> for ASTRef<'s, 'n> {
         match self {
             Self::Builtin => &BUILTIN_SPAN,
             Self::VarDecl(e) => e.span(),
+            Self::ConstDecl(e) => e.span(),
             Self::FunDecl(e) => e.span(),
             Self::FunParam(e) => e.span(),
             Self::TypeAliasDecl(e) => e.span(),

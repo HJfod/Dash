@@ -2,7 +2,8 @@
 use super::typecheck::{TypeVisitor, Ty};
 
 pub trait Visitors<'s, 'n> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n>;
+    #[must_use]
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n>;
 }
 
 // pub trait ProxyVisitors<'s, 'n> {

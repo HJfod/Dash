@@ -4,37 +4,45 @@ use gdml_macros::ast_node;
 use crate::{
     parser::{
         stream::{TokenStream, Token},
-        node::{Parse, ASTNode}
+        node::{Parse, ASTNode}, ast::token::VoidLit
     },
     shared::{logging::{Message, Level, Note}, src::Span},
     compiler::{typecheck::{TypeVisitor, Ty, FindItem}, visitor::Visitors}
 };
 
-use super::token::Ident;
+use super::token::{Ident, Tokenize};
 
 #[derive(Debug)]
 pub enum Type<'s> {
+    Void(Span<'s>),
     TypeName(TypeName<'s>),
 }
 
 impl<'s> Parse<'s> for Type<'s> {
     fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        Ok(Type::TypeName(TypeName::parse(stream)?))
+        if let Some(tk) = VoidLit::peek_and_parse(stream) {
+            Ok(Type::Void(tk.span().clone()))
+        }
+        else {
+            Ok(Type::TypeName(TypeName::parse(stream)?))
+        }
     }
 }
 
 impl<'s> ASTNode<'s> for Type<'s> {
     fn span(&self) -> &Span<'s> {
         match self {
+            Self::Void(t) => t,
             Self::TypeName(t) => t.span(),
         }
     }
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for Type<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         match self {
-            Self::TypeName(t) => t.visit_type_full(visitor),
+            Self::Void(_) => Ty::Void,
+            Self::TypeName(t) => t.visit_coherency(visitor),
         }
     }
 }
@@ -54,7 +62,7 @@ impl<'s> Parse<'s> for TypeName<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for TypeName<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         let path = self.ident.path();
         match visitor.find::<Ty, _>(&path) {
             FindItem::Some(e) => e.clone(),
