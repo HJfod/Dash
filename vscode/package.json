@@ -7,7 +7,7 @@
         "url": "https://github.com/hjfod"
     },
     "repository": {
-        "url": "https://github.com/hjfod/gemscript"
+        "url": "https://github.com/hjfod/gdml"
     },
     "publisher": "HJfod",
     "version": "0.0.1",
@@ -19,7 +19,7 @@
     ],
     "contributes": {
         "languages": [{
-            "id": "gemscript",
+            "id": "gdml",
             "aliases": ["GDML", "GDML"],
             "extensions": [".gdml"],
             "configuration": "./language-configuration.json",
@@ -29,7 +29,7 @@
             }
         }],
         "grammars": [{
-            "language": "gemscript",
+            "language": "gdml",
             "scopeName": "source.gdml",
             "path": "./syntaxes/gdml.tmLanguage.json"
         }]
