@@ -1,6 +1,22 @@
 
 use gs_macros::ast_node;
 
+// notes to self on how to eval macros:
+// step 1. during typechecking, if a type can't be found yet, don't error but add it 
+// to a list of unresolved type expressions instead
+// step 2. during typechecking, if a macro contains unresolved types, do not evaluate 
+// any calls to that macro yet but instead add them to a list of unresolved macro calls
+// step 3. immediately evaluate any macro calls that only have resolved types
+// step 4. at the end of typechecking, if there are any unresolved macro calls, keep 
+// trying to resolve them, and if we got through typechecking without any new macro call 
+// resolutions happening, then we know there's a loop somewhere or the macro calls contain 
+// nonexistant types and send out compile errors for every unresolved type expression and 
+// macro
+// step 5. if all macro calls were resolved, go through one more time to try to resolve 
+// all remaining unresolved type expressions. if any are left unresolved, send out errors
+// step 6. if we got through typechecking with all macro calls and types resolved, then 
+// step 7. we are done :33
+
 use crate::{
     parser::{
         stream::{TokenStream, Token},
@@ -9,7 +25,7 @@ use crate::{
     shared::{logging::{Message, Level}, is_none_or::IsNoneOr, src::{Span, Loc}},
     compiler::{typecheck::{TypeVisitor, Ty, Entity, ScopeLevel}, visitor::Visitors}
 };
-use super::{ty::Type, expr::{Expr, Visibility}, token::{Ident, Parenthesized, Braced, self, Colon, Tokenize}, if_then_some, Path};
+use super::{ty::Type, expr::{Expr, Visibility, Block}, token::{Ident, Parenthesized, Braced, self, Colon, Tokenize}, Path};
 
 #[derive(Debug)]
 #[ast_node]
@@ -46,18 +62,15 @@ impl<'s> VarDecl<'s> {
         let start = item_attrs.span().start;
         token::Var::parse(stream)?;
         let ident = Ident::parse(stream)?;
-        let ty = if Colon::peek_and_parse(stream).is_some() {
-            Some(Type::parse(stream)?)
-        }
-        else {
-            None
-        };
-        let value = if token::Seq::peek_and_parse(stream).is_some() {
-            Some(Expr::parse(stream)?.into())
-        }
-        else {
-            None
-        };
+
+        let ty = Colon::peek_and_parse(stream)
+            .map(|_| Type::parse(stream))
+            .transpose()?;
+
+        let value = token::Seq::peek_and_parse(stream)
+            .map(|_| Expr::parse(stream).map(|e| e.into()))
+            .transpose()?;
+
         Ok(VarDecl {
             item_attrs,
             ident,
@@ -75,9 +88,9 @@ impl<'s> Parse<'s> for VarDecl<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for VarDecl<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        let ty = self.ty.as_ref().map(|ty| ty.visit_type_full(visitor));
-        let value = self.value.as_ref().map(|value| value.visit_type_full(visitor));
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let ty = self.ty.as_ref().map(|ty| ty.visit_coherency(visitor));
+        let value = self.value.as_ref().map(|value| value.visit_coherency(visitor));
         let eval_ty = match (ty, value) {
             (Some(a), Some(b)) => visitor.expect_eq(a, b, self.span()),
             (Some(a), None)    => a,
@@ -132,9 +145,9 @@ impl<'s> Parse<'s> for ConstDecl<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for ConstDecl<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        let ty = self.ty.as_ref().map(|ty| ty.visit_type_full(visitor));
-        let value = self.value.visit_type_full(visitor);
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let ty = self.ty.as_ref().map(|ty| ty.visit_coherency(visitor));
+        let value = self.value.visit_coherency(visitor);
         let eval_ty = match (ty, value) {
             (Some(a), b) => visitor.expect_eq(a, b, self.span()),
             (None,    b) => b,
@@ -170,9 +183,9 @@ impl<'s> Parse<'s> for FunParam<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for FunParam<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        let ty = self.ty.visit_type_full(visitor);
-        let value = self.default_value.as_ref().map(|v| v.visit_type_full(visitor));
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let ty = self.ty.visit_coherency(visitor);
+        let value = self.default_value.as_ref().map(|v| v.visit_coherency(visitor));
         let eval_ty = match (ty, value) {
             (a, Some(b)) => visitor.expect_eq(a, b, self.span()),
             (a, None)    => a,
@@ -215,19 +228,18 @@ impl<'s> FunDecl<'s> {
             }
             token::Comma::parse(&mut params_stream)?;
         }
-        let ret_ty = if_then_some(
-            token::Arrow::peek_and_parse(stream).is_some(),
-            || Type::parse(stream)
-        )?;
-        let body = if token::FatArrow::peek_and_parse(stream).is_some() {
-            Some(Box::from(stream.parse::<Expr<'s>>()?))
-        }
-        else if Braced::peek(stream).is_some() {
-            Some(Box::from(Expr::Block(stream.parse()?)))
-        }
-        else {
-            None
-        };
+        let ret_ty = token::Arrow::peek_and_parse(stream)
+            .map(|_| Type::parse(stream))
+            .transpose()?;
+        
+        let body = token::FatArrow::peek_and_parse(stream)
+            .map(|_| Expr::parse(stream).map(|e| e.into()))
+            .or_else(||
+                Braced::peek(stream)
+                    .map(|_| Block::parse(stream).map(|e| Expr::Block(e).into()))
+            )
+            .transpose()?;
+            
         Ok(FunDecl {
             item_attrs,
             ident,
@@ -246,11 +258,11 @@ impl<'s> Parse<'s> for FunDecl<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for FunDecl<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        let ret_ty = self.ret_ty.as_ref().map(|v| v.visit_type_full(visitor));
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let ret_ty = self.ret_ty.as_ref().map(|v| v.visit_coherency(visitor));
         visitor.push_scope(ScopeLevel::Function, ASTRef::FunDecl(self.into()), ret_ty.clone());
-        let param_tys = self.params.iter().map(|v| v.visit_type_full(visitor)).collect::<Vec<_>>();
-        let body_ty = self.body.as_ref().map(|v| v.visit_type_full(visitor));
+        let param_tys = self.params.iter().map(|v| v.visit_coherency(visitor)).collect::<Vec<_>>();
+        let body_ty = self.body.as_ref().map(|v| v.visit_coherency(visitor));
         visitor.pop_scope(body_ty.unwrap_or(Ty::Inferred), ASTRef::FunDecl(self.into()));
         if let Some(ref ident) = self.ident {
             let name = visitor.resolve_new(ident.path());
@@ -342,7 +354,7 @@ impl<'s> Parse<'s> for StructDecl<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for StructDecl<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         todo!()
     }
 }
@@ -381,8 +393,8 @@ impl<'s> Parse<'s> for TypeAliasDecl<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for TypeAliasDecl<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        let ty = self.value.visit_type_full(visitor);
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let ty = self.value.visit_coherency(visitor);
         visitor.try_push(Ty::Alias {
             name: self.ident.to_string(),
             ty: ty.clone().into(),
@@ -462,13 +474,13 @@ impl<'s> Parse<'s> for Item<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for Item<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         match self {
-            Self::FunDecl(t) => t.visit_type_full(visitor),
-            Self::VarDecl(t) => t.visit_type_full(visitor),
-            Self::ConstDecl(t) => t.visit_type_full(visitor),
-            Self::TypeAliasDecl(t) => t.visit_type_full(visitor),
-            Self::StructDecl(t) => t.visit_type_full(visitor),
+            Self::FunDecl(t) => t.visit_coherency(visitor),
+            Self::VarDecl(t) => t.visit_coherency(visitor),
+            Self::ConstDecl(t) => t.visit_coherency(visitor),
+            Self::TypeAliasDecl(t) => t.visit_coherency(visitor),
+            Self::StructDecl(t) => t.visit_coherency(visitor),
         }
     }
 }
@@ -501,7 +513,7 @@ impl<'s> Parse<'s> for UsingItem<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for UsingItem<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         todo!()
     }
 }

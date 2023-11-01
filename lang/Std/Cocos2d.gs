@@ -10,12 +10,12 @@ public struct CCPoint {
 public extern struct CCNode {
     pos: CCPoint;
     x: float {
-        set(value) => pos.x = value;
-        get => pos.x;
+        set(value) => this.pos.x = value;
+        get => this.pos.x;
     }
     y: float {
-        set(value) => pos.y = value;
-        get => pos.y;
+        set(value) => this.pos.y = value;
+        get => this.pos.y;
     }
 }
 

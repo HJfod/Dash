@@ -29,7 +29,7 @@ impl<'s> Parse<'s> for UnOp<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for UnOp<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         todo!()
     }
 }
@@ -66,9 +66,9 @@ impl<'s> Parse<'s> for Call<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for Call<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        let target_ty = self.target.visit_type_full(visitor);
-        let args_ty = self.args.iter().map(|v| v.visit_type_full(visitor)).collect::<Vec<_>>();
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let target_ty = self.target.visit_coherency(visitor);
+        let args_ty = self.args.iter().map(|v| v.visit_coherency(visitor)).collect::<Vec<_>>();
         match target_ty {
             Ty::Function { params, ret_ty, decl: _ } => {
                 let mut params_iter = params.into_iter();
@@ -128,7 +128,7 @@ impl<'s> Parse<'s> for Index<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for Index<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         todo!()
     }
 }
@@ -162,9 +162,9 @@ impl<'s> BinOp<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for BinOp<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        let lhs_ty = self.lhs.visit_type_full(visitor);
-        let rhs_ty = self.rhs.visit_type_full(visitor);
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        let lhs_ty = self.lhs.visit_coherency(visitor);
+        let rhs_ty = self.rhs.visit_coherency(visitor);
         match visitor.binop_ty(&lhs_ty, &self.op, &rhs_ty) {
             Some(ty) => ty,
             None => {

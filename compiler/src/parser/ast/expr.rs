@@ -185,7 +185,7 @@ impl<'s> ASTNode<'s> for Expr<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for Expr<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         match self {
             Self::Void(_) => Ty::Void,
             Self::Bool(_) => Ty::Bool,
@@ -217,14 +217,14 @@ impl<'s, 'n> Visitors<'s, 'n> for Expr<'s> {
                     }
                 }
             }
-            Self::UnOp(unop) => unop.visit_type_full(visitor),
-            Self::BinOp(binop) => binop.visit_type_full(visitor),
-            Self::Call(call) => call.visit_type_full(visitor),
-            Self::Item(t) => t.visit_type_full(visitor),
-            Self::UsingItem(t) => t.visit_type_full(visitor),
-            Self::Block(t) => t.visit_type_full(visitor),
-            Self::If(t) => t.visit_type_full(visitor),
-            Self::Return(t) => t.visit_type_full(visitor),
+            Self::UnOp(unop) => unop.visit_coherency(visitor),
+            Self::BinOp(binop) => binop.visit_coherency(visitor),
+            Self::Call(call) => call.visit_coherency(visitor),
+            Self::Item(t) => t.visit_coherency(visitor),
+            Self::UsingItem(t) => t.visit_coherency(visitor),
+            Self::Block(t) => t.visit_coherency(visitor),
+            Self::If(t) => t.visit_coherency(visitor),
+            Self::Return(t) => t.visit_coherency(visitor),
         }
     }
 }
@@ -262,8 +262,8 @@ impl<'s> Parse<'s> for ExprList<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for ExprList<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        self.list.iter().for_each(|v| drop(v.visit_type_full(visitor)));
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        self.list.iter().for_each(|v| drop(v.visit_coherency(visitor)));
         Ty::Void
     }
 }
@@ -283,8 +283,8 @@ impl<'s> Parse<'s> for Block<'s> {
 }
 
 impl<'s, 'n> Visitors<'s, 'n> for Block<'s> {
-    fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        self.list.visit_type_full(visitor);
+    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+        self.list.visit_coherency(visitor);
         Ty::Void
     }
 }

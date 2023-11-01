@@ -5,19 +5,6 @@ use crate::{shared::{logging::Message, src::Span}, compiler::typecheck};
 use self::token::{Ident, Dicolon, Tokenize};
 use super::{node::Parse, stream::{Token, TokenStream}};
 
-fn if_then_some<'s, R, F>(t: bool, then: F) -> Result<Option<R>, Message<'s>>
-    where
-        R: Parse<'s>,
-        F: FnOnce() -> Result<R, Message<'s>>
-{
-    if t {
-        Ok(Some(then()?))
-    }
-    else {
-        Ok(None)
-    }
-}
-
 #[derive(Debug)]
 #[ast_node]
 pub struct Path<'s> {

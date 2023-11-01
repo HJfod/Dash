@@ -55,7 +55,7 @@ fn main() {
 
     let mut visitor = TypeVisitor::new(logger.clone());
     for ast in &ast_pool {
-        ast.visit_type_full(&mut visitor);
+        ast.visit_coherency(&mut visitor);
     }
 
     let ref_logger = logger.lock().unwrap();
