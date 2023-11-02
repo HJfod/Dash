@@ -1,5 +1,5 @@
 
-use gs_macros::ast_node;
+use gdml_macros::ast_node;
 
 use crate::{
     parser::{

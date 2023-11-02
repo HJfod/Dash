@@ -42,11 +42,11 @@ impl<'s> Parse<'s> for If<'s> {
 
 impl<'s, 'n> Visitors<'s, 'n> for If<'s> {
     fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        visitor.push_scope(ScopeLevel::Opaque, ASTRef::Expr(self.cond.as_ref().into()), None);
+        visitor.push_scope(ScopeLevel::Opaque, ASTRef::Ref(self as &'n dyn ASTNode<'s>), None);
         let cond_ty = self.cond.visit_coherency(visitor);
         let truthy_ty = self.truthy.visit_coherency(visitor);
-        visitor.pop_scope(truthy_ty.clone(), ASTRef::Expr(self.truthy.as_ref().into()));
-        let falsy_ty = self.falsy.as_ref().map(|v| v.visit_coherency(visitor));
+        visitor.pop_scope(truthy_ty.clone(), ASTRef::Ref(self as &'n dyn ASTNode<'s>));
+        let falsy_ty = self.falsy.as_ref().map(|v| v.visit_coherency(visitor)).flatten();
         visitor.expect_eq(cond_ty, Ty::Bool, self.cond.span());
         visitor.expect_eq(falsy_ty.unwrap_or(Ty::Inferred), truthy_ty.clone(), &self.span);
         truthy_ty
@@ -70,11 +70,11 @@ impl<'s> Parse<'s> for Return<'s> {
 
 impl<'s, 'n> Visitors<'s, 'n> for Return<'s> {
     fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        let expr_ty = self.expr.as_ref().map(|v| v.visit_coherency(visitor));
+        let expr_ty = self.expr.as_ref().map(|v| v.visit_coherency(visitor)).flatten();
         visitor.infer_return_type(
             FindScope::ByLevel(ScopeLevel::Function),
             expr_ty.unwrap_or(Ty::Void),
-            ASTRef::Return(self.into())
+            ASTRef::Ref(self as &'n dyn ASTNode<'s>)
         );
         Ty::Never
     }

@@ -1,5 +1,5 @@
 
-use gs_macros::ast_node;
+use gdml_macros::ast_node;
 
 // notes to self on how to eval macros:
 // step 1. during typechecking, if a type can't be found yet, don't error but add it 
@@ -98,7 +98,7 @@ impl<'s, 'n> Visitors<'s, 'n> for VarDecl<'s> {
             (None,    None)    => Ty::Inferred,
         };
         let name = visitor.resolve_new(self.ident.path());
-        visitor.try_push(Entity::new(name, ASTRef::VarDecl(self.into()), eval_ty, true), &self.span);
+        visitor.try_push(Entity::new(name, ASTRef::Ref(self as &'n dyn ASTNode<'s>), eval_ty, true), &self.span);
         Ty::Void
     }
 }
@@ -153,7 +153,7 @@ impl<'s, 'n> Visitors<'s, 'n> for ConstDecl<'s> {
             (None,    b) => b,
         };
         let name = visitor.resolve_new(self.ident.path());
-        visitor.try_push(Entity::new(name, ASTRef::ConstDecl(self.into()), eval_ty, true), &self.span);
+        visitor.try_push(Entity::new(name, ASTRef::Ref(self as &'n dyn ASTNode<'s>), eval_ty, true), &self.span);
         Ty::Void
     }
 }
@@ -191,7 +191,7 @@ impl<'s, 'n> Visitors<'s, 'n> for FunParam<'s> {
             (a, None)    => a,
         };
         let name = visitor.resolve_new(self.ident.path());
-        visitor.try_push(Entity::new(name, ASTRef::FunParam(self.into()), eval_ty, true), &self.span)
+        visitor.try_push(Entity::new(name, ASTRef::Ref(self as &'n dyn ASTNode<'s>), eval_ty, true), &self.span)
             .map(|t| t.ty())
             .unwrap_or(Ty::Invalid)
     }
@@ -260,21 +260,21 @@ impl<'s> Parse<'s> for FunDecl<'s> {
 impl<'s, 'n> Visitors<'s, 'n> for FunDecl<'s> {
     fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
         let ret_ty = self.ret_ty.as_ref().map(|v| v.visit_coherency(visitor));
-        visitor.push_scope(ScopeLevel::Function, ASTRef::FunDecl(self.into()), ret_ty.clone());
+        visitor.push_scope(ScopeLevel::Function, ASTRef::Ref(self as &'n dyn ASTNode<'s>), ret_ty.clone());
         let param_tys = self.params.iter().map(|v| v.visit_coherency(visitor)).collect::<Vec<_>>();
-        let body_ty = self.body.as_ref().map(|v| v.visit_coherency(visitor));
-        visitor.pop_scope(body_ty.unwrap_or(Ty::Inferred), ASTRef::FunDecl(self.into()));
+        let body_ty = self.body.as_ref().map(|v| v.visit_coherency(visitor)).flatten();
+        visitor.pop_scope(body_ty.unwrap_or(Ty::Inferred), ASTRef::Ref(self as &'n dyn ASTNode<'s>));
         if let Some(ref ident) = self.ident {
             let name = visitor.resolve_new(ident.path());
             visitor.try_push(
                 Entity::new(
-                    name, ASTRef::FunDecl(self.into()), Ty::Function {
+                    name, ASTRef::Ref(self as &'n dyn ASTNode<'s>), Ty::Function {
                         params: self.params.iter()
                             .zip(param_tys)
                             .map(|(p, ty)| (p.ident.value().clone(), ty))
                             .collect(),
                         ret_ty: ret_ty.unwrap_or(Ty::Inferred).into(),
-                        decl: ASTRef::FunDecl(self.into())
+                        decl: ASTRef::Ref(self as &'n dyn ASTNode<'s>)
                     },
                     false
                 ),
@@ -398,7 +398,7 @@ impl<'s, 'n> Visitors<'s, 'n> for TypeAliasDecl<'s> {
         visitor.try_push(Ty::Alias {
             name: self.ident.to_string(),
             ty: ty.clone().into(),
-            decl: ASTRef::TypeAliasDecl(self.into()),
+            decl: ASTRef::Ref(self as &'n dyn ASTNode<'s>),
         }, self.span());
         ty
     }

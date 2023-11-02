@@ -1,31 +1,14 @@
 
 use super::typecheck::{TypeVisitor, Ty};
 
-pub trait Visitors<'s, 'n> {
-    #[must_use]
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n>;
+pub trait Welcome<'n, V> {
+    fn welcome(&'n mut self, visitor: &mut V) {}
 }
 
-// pub trait ProxyVisitors<'s, 'n> {
-//     type TypeFullResult;
-//     fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Self::TypeFullResult;
-// }
-
-// impl<'s, 'n, T: Visitors<'s, 'n>> ProxyVisitors<'s, 'n> for T {
-//     type TypeFullResult = Ty<'s, 'n>;
-//     fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Self::TypeFullResult {
-//         self.visit_type_full(visitor)
-//     }
-// }
-
-// impl<'s, 'n, T: ProxyVisitors<'s, 'n>> ProxyVisitors<'s, 'n> for Option<T> {
-//     fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Self::TypeFullResult {
-//         self.map(|v| v.visit_type_full(visitor))
-//     }
-// }
-
-// impl<'s, 'n, T: ProxyVisitors<'s, 'n>> ProxyVisitors<'s, 'n> for Vec<T> {
-//     fn visit_type_full(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Self::TypeFullResult {
-//         self.iter().map(|v| v.visit_type_full(visitor)).collect()
-//     }
-// }
+pub trait Visit<'n> {
+    fn send_visitor<V>(&'n mut self, visitor: &mut V);
+    fn visit<V>(&'n mut self, visitor: &mut V) {
+        self.send_visitor(visitor);
+        (self as Welcome<'n, V>).welcome(visitor);
+    }
+}

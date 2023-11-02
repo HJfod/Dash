@@ -1,10 +1,7 @@
 
 use std::fmt::Debug;
-use crate::shared::{src::{Span, Src, Spanful, BUILTIN_SPAN}, logging::Message, wrappers::RefWrapper};
-use super::{
-    stream::{TokenStream, Token},
-    ast::{expr::Expr, ty::Type, item::{VarDecl, FunDecl, FunParam, TypeAliasDecl, ConstDecl}, flow::Return}
-};
+use crate::shared::{src::{Span, Src, Spanful, BUILTIN_SPAN}, logging::Message};
+use super::stream::{TokenStream, Token};
 use std::hash::Hash;
 
 pub trait ASTNode<'s>: Debug {
@@ -20,31 +17,38 @@ impl<'s, T: ASTNode<'s>> ASTNode<'s> for Box<T> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy)]
 pub enum ASTRef<'s, 'n> {
     Builtin,
-    VarDecl(RefWrapper<'n, VarDecl<'s>>),
-    ConstDecl(RefWrapper<'n, ConstDecl<'s>>),
-    FunDecl(RefWrapper<'n, FunDecl<'s>>),
-    FunParam(RefWrapper<'n, FunParam<'s>>),
-    TypeAliasDecl(RefWrapper<'n, TypeAliasDecl<'s>>),
-    Expr(RefWrapper<'n, Expr<'s>>),
-    Type(RefWrapper<'n, Type<'s>>),
-    Return(RefWrapper<'n, Return<'s>>),
+    Ref(&'n dyn ASTNode<'s>),
+}
+
+impl<'s, 'n> PartialEq for ASTRef<'s, 'n> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (ASTRef::Ref(a), ASTRef::Ref(b)) => std::ptr::eq(a, b),
+            (ASTRef::Builtin, ASTRef::Builtin) => true,
+            (_, _) => false,
+        }
+    }
+}
+
+impl<'s, 'n> Eq for ASTRef<'s, 'n> {}
+
+impl<'s, 'n> Hash for ASTRef<'s, 'n> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Builtin => 0.hash(state),
+            Self::Ref(r) => (*r as *const dyn ASTNode<'s>).hash(state),
+        }
+    }
 }
 
 impl<'s, 'n> ASTNode<'s> for ASTRef<'s, 'n> {
     fn span(&self) -> &Span<'s> {
         match self {
             Self::Builtin => &BUILTIN_SPAN,
-            Self::VarDecl(e) => e.span(),
-            Self::ConstDecl(e) => e.span(),
-            Self::FunDecl(e) => e.span(),
-            Self::FunParam(e) => e.span(),
-            Self::TypeAliasDecl(e) => e.span(),
-            Self::Expr(e) => e.span(),
-            Self::Type(e) => e.span(),
-            Self::Return(e) => e.span(),
+            Self::Ref(e) => e.span(),
         }
     }
 }
