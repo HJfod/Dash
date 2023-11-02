@@ -19,7 +19,7 @@ pub fn snake_case_ident(stream: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn ast_node(args: TokenStream, stream: TokenStream) -> TokenStream {
+pub fn ast_node(_args: TokenStream, stream: TokenStream) -> TokenStream {
     let mut target = parse_macro_input!(stream as ItemStruct);
     match &mut target.fields {
         Fields::Named(named) => {

@@ -23,7 +23,7 @@ use crate::{
         node::{Parse, ASTNode, ASTRef}
     },
     shared::{logging::{Message, Level}, is_none_or::IsNoneOr, src::{Span, Loc}},
-    compiler::{typecheck::{TypeVisitor, Ty, Entity, ScopeLevel}, visitor::Visitors}
+    compiler::{ty::{TypeVisitor, Ty, Entity, ScopeLevel}, visitor::Visitors}
 };
 use super::{ty::Type, expr::{Expr, Visibility, Block}, token::{Ident, Parenthesized, Braced, self, Colon, Tokenize}, Path};
 

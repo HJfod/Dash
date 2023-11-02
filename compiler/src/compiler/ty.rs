@@ -1,0 +1,202 @@
+
+use std::fmt::Display;
+use crate::parser::node::{ASTNode, ASTRef};
+use crate::parser::ast::token::Op;
+use crate::shared::logging::{Message, Level, Note, LoggerRef};
+use crate::shared::src::Span;
+
+pub trait PathLike<'s, 'n> {
+    fn resolve<T: Item<'s, 'n>>(&self, space: &Space<'s, 'n, T>) -> FullPath;
+}
+
+#[derive(Clone, Hash, PartialEq, Eq)]
+pub struct FullPath {
+    path: Vec<String>,
+}
+
+impl FullPath {
+    pub fn new<T: Into<Vec<String>>>(path: T) -> Self {
+        Self { path: path.into() }
+    }
+
+    pub fn ends_with(&self, path: &Path) -> bool {
+        self.to_string().ends_with(&path.to_string())
+    }
+}
+
+impl Display for FullPath {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("::{}", self.path.join("::")))
+    }
+}
+
+impl<'s, 'n> PathLike<'s, 'n> for FullPath {
+    fn resolve<T: Item<'s, 'n>>(&self, _: &Space<'s, 'n, T>) -> FullPath {
+        self.clone()
+    }
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct Path {
+    absolute: bool,
+    path: Vec<String>,
+}
+
+impl Path {
+    pub fn new<T: Into<Vec<String>>>(path: T, absolute: bool) -> Self {
+        Self { path: path.into(), absolute }
+    }
+
+    pub fn into_full(self) -> FullPath {
+        FullPath::new(self.path)
+    }
+}
+
+impl Display for Path {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!("{}{}", 
+            if self.absolute { "::" } else { "" },
+            self.path.join("::")
+        ))
+    }
+}
+
+impl<'s, 'n> PathLike<'s, 'n> for Path {
+    fn resolve<T: Item<'s, 'n>>(&self, space: &Space<'s, 'n, T>) -> FullPath {
+        space.resolve(self)
+    }
+}
+
+pub trait Item<'s, 'n>: Sized {
+    fn full_path(&self) -> FullPath;
+    fn space<'a>(scope: &'a Scope<'s, 'n>) -> &'a Space<'s, 'n, Self>;
+    fn space_mut<'a>(scope: &'a mut Scope<'s, 'n>) -> &'a mut Space<'s, 'n, Self>;
+    fn can_access_outside_function(&self) -> bool;
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Ty<'s, 'n> {
+    /// Represents that an error occurred during typechecking. Only produced on 
+    /// errors - should **never** appear on a succesful compilation!
+    /// Always convertible to all other types in all contexts to avoid further 
+    /// typechecking errors
+    Invalid,
+    /// Represents a type whose value is not known yet, but will be inferred 
+    /// later
+    Inferred,
+    /// Represents that the branch which produced this value will never 
+    /// finish execution (for example because it returned to an outer scope)
+    /// Always convertible to all other types
+    /// No value of type `never` can ever exist
+    Never,
+    /// An unit type, can only have the value `void`
+    Void,
+    /// Boolean type
+    Bool,
+    /// 64-bit integer type
+    Int,
+    /// 64-bit floating point type
+    Float,
+    /// UTF-8 string type
+    String,
+    /// Function type (used for named functions that can't capture mutable 
+    /// variables from the outer scope)
+    Function {
+        params: Vec<(String, Ty<'s, 'n>)>,
+        ret_ty: Box<Ty<'s, 'n>>,
+        decl: ASTRef<'s, 'n>,
+    },
+    /// Alias for another type
+    Alias {
+        name: String,
+        ty: Box<Ty<'s, 'n>>,
+        decl: ASTRef<'s, 'n>,
+    },
+}
+
+impl<'s, 'n> Ty<'s, 'n> {
+    /// Whether this type is one that can't exist as a value (`unknown`, `invalid`, or `never`)
+    pub fn is_unreal(&self) -> bool {
+        matches!(self, Ty::Inferred | Ty::Invalid | Ty::Never)
+    }
+
+    /// Whether this type is  `never` 
+    pub fn is_never(&self) -> bool {
+        matches!(self, Ty::Never)
+    }
+
+    /// Reduce type into its canonical representation, for example remove aliases
+    pub fn reduce(&self) -> &Ty<'s, 'n> {
+        match self {
+            Self::Alias { name: _, ty, decl: _ } => ty,
+            other => other,
+        }
+    }
+
+    /// Test whether this type is implicitly convertible to another type or 
+    /// not
+    /// 
+    /// In most cases this means equality
+    pub fn convertible_to(&self, other: &Ty<'s, 'n>) -> bool {
+        self.is_unreal() || other.is_unreal() || *self.reduce() == *other.reduce()
+    }
+
+    /// Get the return type of this type
+    /// 
+    /// Returns the return type if the type is a function type, or itself 
+    /// if it's something else
+    pub fn return_ty(&self) -> Ty<'s, 'n> {
+        match self {
+            Self::Function { params: _, ret_ty, decl: _ } => *ret_ty.clone(),
+            _ => self.clone(),
+        }
+    }
+
+    /// Get the corresponding AST declaration that produced this type
+    pub fn decl(&self) -> ASTRef<'s, 'n> {
+        match self {
+            Ty::Invalid => ASTRef::Builtin,
+            Ty::Inferred => ASTRef::Builtin,
+            Ty::Never => ASTRef::Builtin,
+            Ty::Void => ASTRef::Builtin,
+            Ty::Bool => ASTRef::Builtin,
+            Ty::Int => ASTRef::Builtin,
+            Ty::Float => ASTRef::Builtin,
+            Ty::String => ASTRef::Builtin,
+            Ty::Function { params: _, ret_ty: _, decl } => *decl,
+            Ty::Alias { name: _, ty: _, decl } => *decl,
+        }
+    }
+
+    /// Returns `other` if this type is `invalid` or `unknown`
+    pub fn or(self, other: Ty<'s, 'n>) -> Ty<'s, 'n> {
+        if self.is_unreal() {
+            other
+        }
+        else {
+            self
+        }
+    }
+}
+
+impl Display for Ty<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Invalid => f.write_str("invalid"),
+            Self::Inferred => f.write_str("unknown"),
+            Self::Never => f.write_str("never"),
+            Self::Void => f.write_str("void"),
+            Self::Bool => f.write_str("bool"),
+            Self::Int => f.write_str("int"),
+            Self::Float => f.write_str("float"),
+            Self::String => f.write_str("string"),
+            Self::Function { params, ret_ty, decl: _ } => f.write_fmt(format_args!(
+                "fun({}) -> {ret_ty}", params.iter()
+                    .map(|(p, t)| format!("{p}: {t}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )),
+            Self::Alias { name, ty: _, decl: _ } => f.write_str(name),
+        }
+    }
+}

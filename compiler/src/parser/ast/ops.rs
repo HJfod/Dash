@@ -8,7 +8,7 @@ use crate::{
         node::{Parse, ASTNode}
     },
     shared::{logging::{Message, Level}, src::Span},
-    compiler::{typecheck::{TypeVisitor, Ty}, visitor::Visitors}
+    compiler::{ty::{TypeVisitor, Ty}, visitor::Visitors}
 };
 use super::{expr::Expr, token::{Parenthesized, Bracketed, self}};
 

@@ -10,7 +10,7 @@ use crate::{
         ast::token::{StringLit, IntLit, FloatLit, VoidLit, BoolLit, Ident, Op}
     },
     shared::{logging::{Message, Level, Note}, src::Span},
-    compiler::{typecheck::{TypeVisitor, Ty, Entity, FindItem}, visitor::Visitors}
+    compiler::{ty::{TypeVisitor, Ty, Entity, FindItem}, visitor::Visitors}
 };
 use super::{
     item::{Item, UsingItem},

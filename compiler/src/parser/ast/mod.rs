@@ -1,7 +1,7 @@
 
 use gdml_macros::ast_node;
 
-use crate::{shared::{logging::Message, src::Span}, compiler::typecheck};
+use crate::{shared::{logging::Message, src::Span}, compiler::ty};
 use self::token::{Ident, Dicolon, Tokenize};
 use super::{node::Parse, stream::{Token, TokenStream}};
 
@@ -13,8 +13,8 @@ pub struct Path<'s> {
 }
 
 impl<'s> Path<'s> {
-    pub fn path(&self) -> typecheck::Path {
-        typecheck::Path::new(
+    pub fn path(&self) -> ty::Path {
+        ty::Path::new(
             self.components.iter().map(|i| i.value().clone()).collect::<Vec<_>>(),
             self.absolute
         )

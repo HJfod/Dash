@@ -7,7 +7,7 @@ use crate::{
         node::{Parse, ASTNode}, ast::token::VoidLit
     },
     shared::{logging::{Message, Level, Note}, src::Span},
-    compiler::{typecheck::{TypeVisitor, Ty, FindItem}, visitor::Visitors}
+    compiler::{ty::{TypeVisitor, Ty, FindItem}, visitor::Visitors}
 };
 
 use super::token::{Ident, Tokenize};

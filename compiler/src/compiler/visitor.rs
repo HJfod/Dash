@@ -1,6 +1,4 @@
 
-use super::typecheck::{TypeVisitor, Ty};
-
 pub trait Welcome<'n, V> {
     fn welcome(&'n mut self, visitor: &mut V) {}
 }
