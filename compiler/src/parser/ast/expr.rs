@@ -10,7 +10,7 @@ use crate::{
         ast::token::{StringLit, IntLit, FloatLit, VoidLit, BoolLit, Ident, Op}
     },
     shared::{logging::{Message, Level, Note}, src::Span},
-    compiler::{ty::{TypeVisitor, Ty, Entity, FindItem}, visitor::Visitors}
+    compiler::{ty::Ty, visitor::{Visit, Welcome}, coherency::CoherencyVisitor}
 };
 use super::{
     item::{Item, UsingItem},
@@ -184,47 +184,34 @@ impl<'s> ASTNode<'s> for Expr<'s> {
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for Expr<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s, 'n> Visit<'n> for Expr<'s> {
+    fn send_visitor<V>(&'n mut self, visitor: &mut V) {
         match self {
-            Self::Void(_) => Ty::Void,
-            Self::Bool(_) => Ty::Bool,
-            Self::Int(_) => Ty::Int,
-            Self::Float(_) => Ty::Float,
-            Self::String(_) => Ty::String,
+            Self::Void(_) => (),
+            Self::Bool(_) => (),
+            Self::Int(_) => (),
+            Self::Float(_) => (),
+            Self::String(_) => (),
+            Self::Entity(_) => (),
+            Self::UnOp(e) => e.visit(visitor),
+            Self::BinOp(e) => e.visit(visitor),
+            Self::Call(e) => e.visit(visitor),
+            Self::Item(e) => e.visit(visitor),
+            Self::UsingItem(e) => e.visit(visitor),
+            Self::If(e) => e.visit(visitor),
+            Self::Block(e) => e.visit(visitor),
+            Self::Return(e) => e.visit(visitor),
+        }
+    }
+}
+
+impl<'s, 'n> Welcome<'n, CoherencyVisitor<'s, 'n>> for Expr<'s> {
+    fn welcome(&'n mut self, visitor: &mut CoherencyVisitor) {
+        match self {
             Self::Entity(name) => {
-                let path = name.path();
-                match visitor.find::<Entity, _>(&path) {
-                    FindItem::Some(e) => e.ty(),
-                    FindItem::NotAvailable(e) => {
-                        visitor.emit_msg(Message::from_span(
-                            Level::Error,
-                            format!("Entity '{path}' can not be used here"),
-                            name.span(),
-                        ).note(Note::from_span(
-                            format!("'{path}' declared here"),
-                            e.decl().span()
-                        )));
-                        Ty::Invalid
-                    }
-                    FindItem::None => {
-                        visitor.emit_msg(Message::from_span(
-                            Level::Error,
-                            format!("Unknown entity '{path}'"),
-                            name.span(),
-                        ));
-                        Ty::Invalid
-                    }
-                }
+                todo!()
             }
-            Self::UnOp(unop) => unop.visit_coherency(visitor),
-            Self::BinOp(binop) => binop.visit_coherency(visitor),
-            Self::Call(call) => call.visit_coherency(visitor),
-            Self::Item(t) => t.visit_coherency(visitor),
-            Self::UsingItem(t) => t.visit_coherency(visitor),
-            Self::Block(t) => t.visit_coherency(visitor),
-            Self::If(t) => t.visit_coherency(visitor),
-            Self::Return(t) => t.visit_coherency(visitor),
+            _ => ()
         }
     }
 }
@@ -261,10 +248,10 @@ impl<'s> Parse<'s> for ExprList<'s> {
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for ExprList<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        self.list.iter().for_each(|v| drop(v.visit_coherency(visitor)));
-        Ty::Void
+impl<'s, 'n> Visit<'n> for ExprList<'s> {
+    fn send_visitor<V>(&'n mut self, visitor: &mut V) {
+        self.list.iter().for_each(|v| drop(v.visit(visitor)));
+        todo!("Ty::Void")
     }
 }
 
@@ -282,10 +269,9 @@ impl<'s> Parse<'s> for Block<'s> {
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for Block<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        self.list.visit_coherency(visitor);
-        Ty::Void
+impl<'s, 'n> Visit<'n> for Block<'s> {
+    fn send_visitor<V>(&'n mut self, visitor: &mut V) {
+        self.list.visit(visitor)
     }
 }
 

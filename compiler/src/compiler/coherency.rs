@@ -89,6 +89,8 @@ pub enum Return<'s, 'n> {
 }
 
 pub struct Scope<'s, 'n> {
+    parent: *const Scope<'s, 'n>,
+    children: Vec<Scope<'s, 'n>>,
     level: ScopeLevel,
     types: Space<Ty<'s, 'n>>,
     entities: Space<Entity<'s, 'n>>,
@@ -97,8 +99,15 @@ pub struct Scope<'s, 'n> {
 }
 
 impl<'s, 'n> Scope<'s, 'n> {
-    pub fn new(level: ScopeLevel, decl: ASTRef<'s, 'n>, return_type: Option<Ty<'s, 'n>>) -> Self {
+    pub fn new(
+        parent: *const Scope<'s, 'n>,
+        level: ScopeLevel,
+        decl: ASTRef<'s, 'n>,
+        return_type: Return<'s, 'n>
+    ) -> Self {
         Self {
+            parent,
+            children: vec![],
             types: Space::default(),
             entities: Space::default(),
             level,
@@ -108,7 +117,12 @@ impl<'s, 'n> Scope<'s, 'n> {
     }
 
     pub fn new_top() -> Self {
-        let mut res = Self::new(ScopeLevel::Block, ASTRef::Builtin, None);
+        let mut res = Self::new(
+            std::ptr::null(),
+            ScopeLevel::Block,
+            ASTRef::Builtin,
+            Return::Void
+        );
         res.types.push_ty(Ty::Void);
         res.types.push_ty(Ty::Bool);
         res.types.push_ty(Ty::Int);
@@ -193,14 +207,17 @@ impl<'s, 'n> FindScope<'s, 'n> {
 
 pub struct CoherencyVisitor<'s, 'n> {
     logger: LoggerRef<'s>,
-    scopes: Vec<Scope<'s, 'n>>,
+    root_scope: Scope<'s, 'n>,
+    current_scope: *mut Scope<'s, 'n>,
 }
 
 impl<'s, 'n> CoherencyVisitor<'s, 'n> {
     pub fn new(logger: LoggerRef<'s>) -> Self {
+        let root_scope = Scope::new_top();
         Self {
             logger,
-            scopes: vec![Scope::new_top()],
+            current_scope: &root_scope,
+            root_scope,
         }
     }
 
@@ -224,8 +241,18 @@ impl<'s, 'n> CoherencyVisitor<'s, 'n> {
     }
 
     /// Push a scope onto the top of the scope stack
-    pub fn push_scope(&mut self, level: ScopeLevel, decl: ASTRef<'s, 'n>, return_type: Option<Ty<'s, 'n>>) {
-        self.scopes.push(Scope::new(level, decl, return_type));
+    pub fn push_scope(
+        &mut self,
+        level: ScopeLevel,
+        decl: ASTRef<'s, 'n>,
+        return_type: Return<'s, 'n>
+    ) -> *const Scope<'s, 'n> {
+        let new_scope = Scope::new(self.current_scope, level, decl, return_type);
+        unsafe {
+            (*self.current_scope).children.push(new_scope);
+        }
+        self.current_scope = &new_scope;
+        &new_scope
     }
 
     /// Pop the topmost scope from the scope stack with a default return type and 
