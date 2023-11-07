@@ -1,14 +1,14 @@
 {
 	"geode": "1.0.0",
 	"version": "v1.0.0",
-	"id": "hjfod.gdml",
-	"name": "GDML",
+	"id": "hjfod.dash",
+	"name": "Dash",
 	"developer": "HJfod",
 	"description": "",
 	"resources": {
 		"files": [
-			"test/MenuLayer.gdml",
-			"include/*.gdml"
+			"test/MenuLayer.dash",
+			"include/*.dash"
 		]
 	}
 }

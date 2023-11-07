@@ -1,6 +1,6 @@
 
 use std::fmt::Debug;
-use gdml_macros::ast_node;
+use dash_macros::ast_node;
 use strum::IntoEnumIterator;
 
 use crate::{

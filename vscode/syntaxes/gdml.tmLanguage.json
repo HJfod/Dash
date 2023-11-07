@@ -1,6 +1,6 @@
 {
 	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-	"name": "gdml",
+	"name": "dash",
 	"patterns": [
 		{
 			"include": "#language"
@@ -39,89 +39,89 @@
 			"patterns": [
 				{
 					"match": "(?<=const\\s+)[a-zA-Z]+",
-					"name": "variable.other.constant.gdml"
+					"name": "variable.other.constant.dash"
 				},
 				{
 					"match": "(?<=\\b(new|as|macro|struct|extends|is|module|operator|using|->|decl(\\s+[a-zA-Z0-9]+\\s*=)?|[^:]:)\\b\\s*)[a-zA-Z0-9_]+",
-					"name": "entity.name.type.gdml"
+					"name": "entity.name.type.dash"
 				},
 				{
 					"match": "\\b([A-Z][a-zA-Z0-9_]*)\\b",
-					"name": "entity.name.type.gdml"
+					"name": "entity.name.type.dash"
 				},
 				{
 					"match": "\\b(\\w+\\!?)(?=(\\s*(::\\s*)?<[^>]*>)?\\s*\\()",
 					"captures": {
 						"1": {
-							"name": "entity.name.function.gdml"
+							"name": "entity.name.function.dash"
 						}
 					}
 				},
 				{
 					"match": "[a-zA-Z0-9_]+(?=\\s*::)",
-					"name": "entity.name.type.gdml"
+					"name": "entity.name.type.dash"
 				}
 			]
 		},
 		"keywords": {
 			"patterns": [
 				{
-					"name": "keyword.control.gdml",
+					"name": "keyword.control.dash",
 					"match": "\\b(for|while|if|else|unwrap|try|return|yield|break|from|continue|new|match|switch)\\b"
 				},
 				{
-					"name": "keyword.control.meta.gdml",
+					"name": "keyword.control.meta.dash",
 					"match": "@(::)?([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+\\b"
 				},
 				{
-					"name": "keyword.control.less.gdml",
+					"name": "keyword.control.less.dash",
 					"match": "@!(::)?([a-zA-Z0-9_]+::)*[a-zA-Z0-9_]+\\b"
 				},
 				{
-					"name": "storage.type.gdml",
+					"name": "storage.type.dash",
 					"match": "\\b(void|bool|int|float|string)\\b"
 				},
 				{
-					"name": "keyword.other.gdml",
+					"name": "keyword.other.dash",
 					"match": "\\b(in|is|as|where|extern|export|import|get|set|depends|required|default|assert)\\b"
 				},
 				{
-					"name": "storage.type.gdml",
+					"name": "storage.type.dash",
 					"match": "\\b(let|var|const|fun|mut|decl|struct|macro|codegen|compiler_intrinsic|module|enum|extends|using|type|public|private)\\b"
 				},
 				{
-					"name": "punctuation.gdml",
+					"name": "punctuation.dash",
 					"match": "(->)|\\.|;|,|:|\\?|#"
 				}
 			]
 		},
 		"operators": {
-			"name": "keyword.operator.gdml",
+			"name": "keyword.operator.dash",
 			"match": "[\\+\\-\\*\\/=<>\\^\\|\\&\\!%~@]"
 		},
 		"strings": {
 			"patterns": [
 				{
-					"name": "string.quoted.double.interpolated.gdml",
+					"name": "string.quoted.double.interpolated.dash",
 					"begin": "\\$\"",
 					"end": "\"",
 					"beginCaptures": {
 						"0": {
-							"name": "punctuation.definition.string.begin.gdml"
+							"name": "punctuation.definition.string.begin.dash"
 						}
 					},
 					"endCaptures": {
 						"0": {
-							"name": "punctuation.definition.string.begin.gdml"
+							"name": "punctuation.definition.string.begin.dash"
 						}
 					},
 					"patterns": [
 						{
-							"name": "constant.character.escape.gdml",
+							"name": "constant.character.escape.dash",
 							"match": "\\\\."
 						},
 						{
-							"name": "variable.gdml",
+							"name": "variable.dash",
 							"begin": "\\{",
 							"end": "\\}",
 							"beginCaptures": {
@@ -135,22 +135,22 @@
 					]
 				},
 				{
-					"name": "string.quoted.double.gdml",
+					"name": "string.quoted.double.dash",
 					"begin": "\"",
 					"end": "\"",
 					"beginCaptures": {
 						"0": {
-							"name": "punctuation.definition.string.begin.gdml"
+							"name": "punctuation.definition.string.begin.dash"
 						}
 					},
 					"endCaptures": {
 						"0": {
-							"name": "punctuation.definition.string.begin.gdml"
+							"name": "punctuation.definition.string.begin.dash"
 						}
 					},
 					"patterns": [
 						{
-							"name": "constant.character.escape.gdml",
+							"name": "constant.character.escape.dash",
 							"match": "\\\\."
 						}
 					]
@@ -160,19 +160,19 @@
 		"constants": {
 			"patterns": [
 				{
-					"name": "constant.numeric.gdml",
+					"name": "constant.numeric.dash",
 					"match": "\\b(([0-9]*\\.[0-9]+)|([0-9]+))\\b"
 				},
 				{
-					"name": "constant.numeric.gdml",
+					"name": "constant.numeric.dash",
 					"match": "0x[0-9A-Fa-f]+"
 				},
 				{
-					"name": "constant.language.gdml",
+					"name": "constant.language.dash",
 					"match": "\\b(this|super)\\b"
 				},
 				{
-					"name": "constant.language.gdml",
+					"name": "constant.language.dash",
 					"match": "\\b(true|false|null|none)\\b"
 				}
 			]
@@ -232,5 +232,5 @@
 			]
 		}
 	},
-	"scopeName": "source.gdml"
+	"scopeName": "source.dash"
 }

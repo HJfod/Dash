@@ -3,15 +3,15 @@
 #include <Geode/DefaultInclude.hpp>
 
 #ifdef GEODE_IS_WINDOWS
-    #ifdef HJFOD_GDML_EXPORTING
-        #define GDML_DLL __declspec(dllexport)
+    #ifdef HJFOD_Dash_EXPORTING
+        #define Dash_DLL __declspec(dllexport)
     #else
-        #define GDML_DLL __declspec(dllimport)
+        #define Dash_DLL __declspec(dllimport)
     #endif
 #else
-    #define GDML_DLL
+    #define Dash_DLL
 #endif
 
-namespace gdml {
-    GDML_DLL void loadGDMLFromFile(cocos2d::CCNode* node, ghc::filesystem::path const& path);
+namespace dash {
+    Dash_DLL void loadDashFromFile(cocos2d::CCNode* node, ghc::filesystem::path const& path);
 }

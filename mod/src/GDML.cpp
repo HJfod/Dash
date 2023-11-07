@@ -1,8 +1,8 @@
-#include <GDML.hpp>
+#include <Dash.hpp>
 
-using namespace gdml;
-using namespace gdml::lang;
+using namespace dash;
+using namespace dash::lang;
 using namespace geode::prelude;
 
-void gdml::loadGDMLFromFile(CCNode* node, Path const& path) {
+void dash::loadDashFromFile(CCNode* node, Path const& path) {
 }

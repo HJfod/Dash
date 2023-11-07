@@ -1,10 +1,10 @@
 [package]
-name = "gdml-compiler"
+name = "dash-compiler"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 unicode-xid = "0.2.4"
 strum = { version = "0.25.0", features = ["derive"] }
-gdml-macros = { path = "macros" }
+dash-macros = { path = "macros" }
 derive-new = "0.5.9"

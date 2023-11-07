@@ -2,7 +2,7 @@
 // On structs, every non-binded member without a default value will be required
 // On decls, only properties explicitly marked required aren't optional
 
-// All .gdml files do `import "Std.gdml";` by default
+// All .dash files do `import "Std.dash";` by default
 
 // todo: pretypecheck to collect struct and fun names
 

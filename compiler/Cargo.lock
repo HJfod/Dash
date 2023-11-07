@@ -3,15 +3,15 @@
 version = 3
 
 [[package]]
-name = "gdml-compiler"
+name = "dash-compiler"
 version = "0.1.0"
 dependencies = [
- "gdml-macros",
+ "dash-macros",
  "unicode-xid",
 ]
 
 [[package]]
-name = "gdml-macros"
+name = "dash-macros"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",

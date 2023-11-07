@@ -1,9 +1,9 @@
 [package]
-name = "gdml-cli"
+name = "dash-cli"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 clap = { version = "4.3.23", features = ["derive"] }
-gdml-compiler = { path = "../compiler" }
+dash-compiler = { path = "../compiler" }
 normalize-path = "0.2.1"

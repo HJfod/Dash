@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.3.0)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-project(GDML VERSION 1.0.0)
+project(Dash VERSION 1.0.0)
 
 file(GLOB SOURCES
 	src/*.cpp
@@ -17,7 +17,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 
 if (PROJECT_IS_TOP_LEVEL)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE HJFOD_GDML_EXPORTING)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE HJFOD_Dash_EXPORTING)
 endif()
 
 if (NOT DEFINED ENV{GEODE_SDK})

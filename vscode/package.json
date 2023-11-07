@@ -1,13 +1,13 @@
 {
-    "name": "gdml-lang-support",
-    "displayName": "GDML Language Support",
-    "description": "Support for the GDML language for Geometry Dash mods",
+    "name": "dash-lang-support",
+    "displayName": "Dash Language Support",
+    "description": "Support for the Dash language for Geometry Dash mods",
     "author": {
         "name": "HJfod",
         "url": "https://github.com/hjfod"
     },
     "repository": {
-        "url": "https://github.com/hjfod/gdml"
+        "url": "https://github.com/hjfod/dash"
     },
     "publisher": "HJfod",
     "version": "0.0.1",
@@ -19,9 +19,9 @@
     ],
     "contributes": {
         "languages": [{
-            "id": "gdml",
-            "aliases": ["GDML", "GDML"],
-            "extensions": [".gdml"],
+            "id": "dash",
+            "aliases": ["Dash", "Dash"],
+            "extensions": [".dash"],
             "configuration": "./language-configuration.json",
             "icon": {
                 "dark": "./logo.png",
@@ -29,9 +29,9 @@
             }
         }],
         "grammars": [{
-            "language": "gdml",
-            "scopeName": "source.gdml",
-            "path": "./syntaxes/gdml.tmLanguage.json"
+            "language": "dash",
+            "scopeName": "source.dash",
+            "path": "./syntaxes/dash.tmLanguage.json"
         }]
     }
 }

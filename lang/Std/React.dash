@@ -11,7 +11,7 @@ fun getAncestorBinding(this: Reflect::Expr) -> Reflect::Field? {
     return parent.getAncestorBinding();
 }
 
-// GDML distinguishes between compile time and runtime operations
+// Dash distinguishes between compile time and runtime operations
 // Operations like evaluating a literal like `5` is available both at runtime and compile time
 // Operations like calling a macro or codegen are compile time only
 // Calling a function marked as `extern` is runtime only

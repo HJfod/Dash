@@ -254,37 +254,10 @@ impl<'s, 'n> CoherencyVisitor<'s, 'n> {
             ty
         };
 
-        // if any scope above this one has been returned to, this scope will never finish execution
-        // if self.any_upper_scope_returns() {
-            // ret_ty = Ty::Never;
-        // }
-        if scope.has_encountered_never {
-            ret_ty = Ty::Never;
-        }
-
         // if ret_ty.is_never() {
         //     self.encountered_never();
         // }
         ret_ty
-    }
-
-    fn encountered_never(&mut self) {
-        self.scopes.last_mut().unwrap().has_encountered_never = true;
-    }
-
-    fn check_if_current_expression_is_unreachable<E: ASTNode<'s> + ?Sized>(&mut self, expr: &E) {
-        // if any expression before whatever expression called this function 
-        // has returned never, then this experssion is never going to be 
-        // executed (by definition of never) 
-        let scope = self.scopes.last_mut().unwrap();
-        if scope.has_encountered_never && !scope.unreachable_expression_logged {
-            scope.unreachable_expression_logged = true;
-            self.logger.lock().unwrap().log_msg(Message::from_span(
-                Level::Error,
-                "Unreachable expression",
-                expr.span(),
-            ));
-        }
     }
 
     pub fn emit_msg(&self, msg: Message<'s>) {

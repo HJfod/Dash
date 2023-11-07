@@ -1,5 +1,5 @@
 
-use gdml_macros::ast_node;
+use dash_macros::ast_node;
 
 // notes to self on how to eval macros:
 // step 1. during typechecking, if a type can't be found yet, don't error but add it 

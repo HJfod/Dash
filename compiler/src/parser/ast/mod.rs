@@ -1,5 +1,5 @@
 
-use gdml_macros::ast_node;
+use dash_macros::ast_node;
 
 use crate::{shared::{logging::Message, src::Span}, compiler::ty};
 use self::token::{Ident, Dicolon, Tokenize};
