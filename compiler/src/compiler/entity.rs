@@ -30,6 +30,10 @@ impl<'s, 'n> Entity<'s, 'n> {
         }
     }
 
+    pub fn name(&self) -> &FullPath {
+        &self.name
+    }
+
     pub fn decl(&self) -> ASTRef<'s, 'n> {
         self.decl
     }

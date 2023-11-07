@@ -1,6 +1,6 @@
 
 use std::collections::HashMap;
-use crate::{parser::{node::ASTRef, ast::token::Op}, shared::logging::LoggerRef};
+use crate::{parser::{node::ASTRef, ast::token::Op}, shared::{logging::{LoggerRef, Message, Level}, src::Span}};
 use super::{ty::{FullPath, Path, Ty}, entity::{Entity, get_binop_fun_name}};
 use crate::parser::ast::token;
 use crate::shared::src::BUILTIN_SPAN;
@@ -28,12 +28,13 @@ macro_rules! define_ops {
     };
 
     ($res:ident; $a:ident $op:tt $b:ident -> $r:ident;) => {
-        $res.entities.push(Entity::new_builtin_binop(
+        let binop = Entity::new_builtin_binop(
             Ty::$a,
             <parse_op!($op)>::new(BUILTIN_SPAN.clone()).into(),
             Ty::$b,
             Ty::$r
-        ));
+        );
+        $res.entities.push(binop.name(), binop);
     };
 }
 
@@ -75,23 +76,24 @@ impl<'s, 'n> Space<Ty<'s, 'n>> {
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ScopeLevel {
-    Opaque,
+    /// Normal block scope. Variables from outer scopes may be used normally
+    Block,
+    /// Function scope. Only constants and types from outer scopes are available
     Function,
 }
 
+pub enum Return<'s, 'n> {
+    Void,
+    Explicit(Ty<'s, 'n>),
+    Inferred(Ty<'s, 'n>, ASTRef<'s, 'n>),
+}
+
 pub struct Scope<'s, 'n> {
+    level: ScopeLevel,
     types: Space<Ty<'s, 'n>>,
     entities: Space<Entity<'s, 'n>>,
-    level: ScopeLevel,
+    return_type: Return<'s, 'n>,
     decl: ASTRef<'s, 'n>,
-    return_type: Option<Ty<'s, 'n>>,
-    return_type_inferred_from: Option<ASTRef<'s, 'n>>,
-    is_returned_to: bool,
-    has_encountered_never: bool,
-    /// Just stores if unreachable expressions have already been found in this scope
-    /// Prevents producing six billion "unreachable expression" from a single let statement
-    /// after a return
-    unreachable_expression_logged: bool,
 }
 
 impl<'s, 'n> Scope<'s, 'n> {
@@ -102,15 +104,11 @@ impl<'s, 'n> Scope<'s, 'n> {
             level,
             decl,
             return_type,
-            return_type_inferred_from: None,
-            is_returned_to: false,
-            has_encountered_never: false,
-            unreachable_expression_logged: false,
         }
     }
 
     pub fn new_top() -> Self {
-        let mut res = Self::new(ScopeLevel::Opaque, ASTRef::Builtin, None);
+        let mut res = Self::new(ScopeLevel::Block, ASTRef::Builtin, None);
         res.types.push_ty(Ty::Void);
         res.types.push_ty(Ty::Bool);
         res.types.push_ty(Ty::Int);

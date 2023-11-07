@@ -1,13 +1,6 @@
 
 use std::fmt::Display;
-use crate::parser::node::{ASTNode, ASTRef};
-use crate::parser::ast::token::Op;
-use crate::shared::logging::{Message, Level, Note, LoggerRef};
-use crate::shared::src::Span;
-
-pub trait PathLike<'s, 'n> {
-    fn resolve<T: Item<'s, 'n>>(&self, space: &Space<'s, 'n, T>) -> FullPath;
-}
+use crate::parser::node::ASTRef;
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct FullPath {
@@ -27,12 +20,6 @@ impl FullPath {
 impl Display for FullPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("::{}", self.path.join("::")))
-    }
-}
-
-impl<'s, 'n> PathLike<'s, 'n> for FullPath {
-    fn resolve<T: Item<'s, 'n>>(&self, _: &Space<'s, 'n, T>) -> FullPath {
-        self.clone()
     }
 }
 
@@ -59,19 +46,6 @@ impl Display for Path {
             self.path.join("::")
         ))
     }
-}
-
-impl<'s, 'n> PathLike<'s, 'n> for Path {
-    fn resolve<T: Item<'s, 'n>>(&self, space: &Space<'s, 'n, T>) -> FullPath {
-        space.resolve(self)
-    }
-}
-
-pub trait Item<'s, 'n>: Sized {
-    fn full_path(&self) -> FullPath;
-    fn space<'a>(scope: &'a Scope<'s, 'n>) -> &'a Space<'s, 'n, Self>;
-    fn space_mut<'a>(scope: &'a mut Scope<'s, 'n>) -> &'a mut Space<'s, 'n, Self>;
-    fn can_access_outside_function(&self) -> bool;
 }
 
 #[derive(Debug, Clone, PartialEq)]
