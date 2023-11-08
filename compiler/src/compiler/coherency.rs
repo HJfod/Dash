@@ -99,7 +99,7 @@ pub struct Scope<'s, 'n> {
 }
 
 impl<'s, 'n> Scope<'s, 'n> {
-    pub fn new(
+    fn new(
         parent: *mut Scope<'s, 'n>,
         level: ScopeLevel,
         decl: ASTRef<'s, 'n>,
@@ -116,7 +116,7 @@ impl<'s, 'n> Scope<'s, 'n> {
         }
     }
 
-    pub fn new_top() -> Self {
+    fn new_top() -> Self {
         let mut res = Self::new(
             std::ptr::null(),
             ScopeLevel::Block,
@@ -221,32 +221,17 @@ impl<'s, 'n> CoherencyVisitor<'s, 'n> {
         }
     }
 
-    fn try_find(&self, a: &Ty<'s, 'n>, op: &Op, b: &Ty<'s, 'n>) -> Option<Ty<'s, 'n>> {
-        self.find::<Entity<'s, 'n>, _>(&get_binop_fun_name(a, op, b))
-            .option()
-            .map(move |e| e.ty().return_ty())
-    }
-
-    pub fn binop_ty(&self, a: &Ty<'s, 'n>, op: &Op, b: &Ty<'s, 'n>) -> Option<Ty<'s, 'n>> {
-        if let Some(ty) = self.try_find(a, op, b) {
-            return Some(ty);
-        }
-        // if op == Op::Neq {
-        //     return self.try_find(a, Op::Eq, b);
-        // }
-        // if op == Op::Eq {
-        //     return self.try_find(a, Op::Neq, b);
-        // }
-        None
+    pub fn find_entity(&self, name: Path) -> FindItem<Entity<'s, 'n>> {
+        
     }
 
     /// Push a scope onto the top of the scope stack
-    pub fn enter_scope<F>(&mut self, scope: &mut *const Scope<'s, 'n>, create: F)
+    pub fn enter_scope<F>(&mut self, scope: &mut *const Scope<'s, 'n>, or_create: F)
         where F:
             FnMut() -> (ScopeLevel, ASTRef<'s, 'n>, Return<'s, 'n>)
     {
         if scope.is_null() {
-            let (level, decl, return_type) = create();
+            let (level, decl, return_type) = or_create();
             let new_scope = Scope::new(self.current_scope, level, decl, return_type);
             unsafe {
                 (*self.current_scope).children.push(new_scope);
@@ -279,6 +264,7 @@ impl<'s, 'n> CoherencyVisitor<'s, 'n> {
         self.logger = logger;
     }
 
+    /// Helper function for verifying that types are convertible to each other
     pub fn expect_eq(&self, a: Ty<'s, 'n>, b: Ty<'s, 'n>, span: &Span<'s>) -> Ty<'s, 'n> {
         if !a.convertible_to(&b) {
             self.emit_msg(Message::from_span(
