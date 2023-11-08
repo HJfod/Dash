@@ -89,7 +89,7 @@ pub enum Return<'s, 'n> {
 }
 
 pub struct Scope<'s, 'n> {
-    parent: *const Scope<'s, 'n>,
+    parent: *mut Scope<'s, 'n>,
     children: Vec<Scope<'s, 'n>>,
     level: ScopeLevel,
     types: Space<Ty<'s, 'n>>,
@@ -100,7 +100,7 @@ pub struct Scope<'s, 'n> {
 
 impl<'s, 'n> Scope<'s, 'n> {
     pub fn new(
-        parent: *const Scope<'s, 'n>,
+        parent: *mut Scope<'s, 'n>,
         level: ScopeLevel,
         decl: ASTRef<'s, 'n>,
         return_type: Return<'s, 'n>
@@ -241,18 +241,22 @@ impl<'s, 'n> CoherencyVisitor<'s, 'n> {
     }
 
     /// Push a scope onto the top of the scope stack
-    pub fn push_scope(
-        &mut self,
-        level: ScopeLevel,
-        decl: ASTRef<'s, 'n>,
-        return_type: Return<'s, 'n>
-    ) -> *const Scope<'s, 'n> {
-        let new_scope = Scope::new(self.current_scope, level, decl, return_type);
-        unsafe {
-            (*self.current_scope).children.push(new_scope);
+    pub fn enter_scope<F>(&mut self, scope: &mut *const Scope<'s, 'n>, create: F)
+        where F:
+            FnMut() -> (ScopeLevel, ASTRef<'s, 'n>, Return<'s, 'n>)
+    {
+        if scope.is_null() {
+            let (level, decl, return_type) = create();
+            let new_scope = Scope::new(self.current_scope, level, decl, return_type);
+            unsafe {
+                (*self.current_scope).children.push(new_scope);
+            }
+            self.current_scope = &new_scope;
+            *scope = &new_scope;
         }
-        self.current_scope = &new_scope;
-        &new_scope
+        else {
+            self.current_scope = scope;
+        }
     }
 
     /// Pop the topmost scope from the scope stack with a default return type and 
@@ -261,28 +265,10 @@ impl<'s, 'n> CoherencyVisitor<'s, 'n> {
     /// If the scope contains an explicit return value (such as `yield value`) then 
     /// the default type does nothing (the default type is things like the final 
     /// expression in a block)
-    pub fn pop_scope(&mut self, ty: Ty<'s, 'n>, yielding_expr: ASTRef<'s, 'n>) -> Ty<'s, 'n> {
-        let scope = self.scopes.pop().expect("internal error: scope stack was empty");
-        let mut ret_ty = if scope.is_returned_to {
-            scope.return_type.unwrap()
+    pub fn leave_scope(&mut self) {
+        unsafe { 
+            self.current_scope = (*self.current_scope).parent;
         }
-        else {
-            if let Some(ref old) = scope.return_type {
-                if !ty.convertible_to(old) {
-                    self.logger.lock().unwrap().log_msg(Message::from_span(
-                        Level::Error,
-                        format!("Expected return type to be '{old}', got '{ty}'"),
-                        yielding_expr.span(),
-                    ));
-                }
-            }
-            ty
-        };
-
-        // if ret_ty.is_never() {
-        //     self.encountered_never();
-        // }
-        ret_ty
     }
 
     pub fn emit_msg(&self, msg: Message<'s>) {
