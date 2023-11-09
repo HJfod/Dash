@@ -1,7 +1,7 @@
 
 use std::collections::HashMap;
-use crate::{parser::{node::ASTRef, ast::token::Op}, shared::{logging::{LoggerRef, Message, Level}, src::Span}};
-use super::{ty::{FullPath, Path, Ty}, entity::{Entity, get_binop_fun_name}};
+use crate::{parser::node::ASTRef, shared::{logging::{LoggerRef, Message, Level}, src::Span, ptr_iter::PtrChainIter}};
+use super::{ty::{FullPath, Path, Ty}, entity::Entity};
 use crate::parser::ast::token;
 use crate::shared::src::BUILTIN_SPAN;
 
@@ -167,23 +167,23 @@ impl<'s, 'n> Scope<'s, 'n> {
     }
 }
 
-pub enum FindItem<T> {
+pub enum FoundItem<T> {
     Some(T),
     NotAvailable(T),
     None,
 }
 
-impl<T> FindItem<T> {
+impl<T> FoundItem<T> {
     pub fn option(self) -> Option<T> {
         self.into()
     }
 }
 
 #[allow(clippy::from_over_into)]
-impl<T> Into<Option<T>> for FindItem<T> {
+impl<T> Into<Option<T>> for FoundItem<T> {
     fn into(self) -> Option<T> {
         match self {
-            FindItem::Some(t) => Some(t),
+            FoundItem::Some(t) => Some(t),
             _ => None,
         }
     }
@@ -221,8 +221,34 @@ impl<'s, 'n> CoherencyVisitor<'s, 'n> {
         }
     }
 
-    pub fn find_entity(&self, name: Path) -> FindItem<Entity<'s, 'n>> {
-        
+    pub fn find_entity<'a>(&'a self, name: Path) -> FoundItem<&'a Entity<'s, 'n>> {
+        let mut outside_function = false;
+        for scope in self.iter_scopes() {
+            // try to find some entity with this name
+            if let Some(e) = scope.entities.find(&scope.entities.resolve(&name)) {
+                return if !outside_function || e.can_access_outside_function() {
+                    FoundItem::Some(e)
+                }
+                else {
+                    FoundItem::NotAvailable(e)
+                }
+            }
+            // can't access mutable entities defined outside a function scope
+            if scope.level >= ScopeLevel::Function {
+                outside_function = true;
+            }
+        }
+        // todo: check for similarly named items
+        FoundItem::None
+    }
+
+    pub fn find_ty<'a>(&'a self, name: Path) -> FoundItem<&'a Ty<'s, 'n>> {
+        for scope in self.iter_scopes() {
+            if let Some(t) = scope.types.find(&scope.types.resolve(&name)) {
+                return FoundItem::Some(t);
+            }
+        }
+        FoundItem::None
     }
 
     /// Push a scope onto the top of the scope stack
@@ -254,6 +280,10 @@ impl<'s, 'n> CoherencyVisitor<'s, 'n> {
         unsafe { 
             self.current_scope = (*self.current_scope).parent;
         }
+    }
+
+    fn iter_scopes(&self) -> impl Iterator<Item = &mut Scope<'s, 'n>> {
+        PtrChainIter::new(self.current_scope, |s| s.parent)
     }
 
     pub fn emit_msg(&self, msg: Message<'s>) {

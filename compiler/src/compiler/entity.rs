@@ -41,6 +41,11 @@ impl<'s, 'n> Entity<'s, 'n> {
     pub fn ty(&self) -> Ty<'s, 'n> {
         self.ty.clone()
     }
+
+    pub fn can_access_outside_function(&self) -> bool {
+        // only const entities defined outside the function scope can be accessed 
+        !self.mutable
+    }
 }
 
 pub fn get_unop_fun_name(a: &Ty<'_, '_>, op: &Op) -> FullPath {
