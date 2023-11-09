@@ -9,11 +9,15 @@ pub trait ASTNode<'s>: Debug {
     fn src(&self) -> &'s Src {
         self.span().src()
     }
+    fn iter_children(&mut self) -> impl Iterator<Item = &mut impl ASTNode<'s>>;
 }
 
 impl<'s, T: ASTNode<'s>> ASTNode<'s> for Box<T> {
     fn span(&self) -> &Span<'s> {
         self.as_ref().span()
+    }
+    fn iter_children(&mut self) -> impl Iterator<Item = &mut impl ASTNode<'s>> {
+        self.as_ref().iter_children()
     }
 }
 
@@ -49,6 +53,12 @@ impl<'s, 'n> ASTNode<'s> for ASTRef<'s, 'n> {
         match self {
             Self::Builtin => &BUILTIN_SPAN,
             Self::Ref(e) => e.span(),
+        }
+    }
+    fn iter_children(&mut self) -> impl Iterator<Item = &mut impl ASTNode<'s>> {
+        match self {
+            Self::Builtin => std::iter::empty(),
+            Self::Ref(e) => e.iter_children(),
         }
     }
 }

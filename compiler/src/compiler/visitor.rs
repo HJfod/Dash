@@ -1,12 +1,12 @@
 
-pub trait Welcome<'n, V> {
-    fn welcome(&'n mut self, visitor: &mut V) {}
-}
+use crate::parser::node::ASTNode;
 
 pub trait Visit<'n> {
-    fn send_visitor<V>(&'n mut self, visitor: &mut V);
+    fn visit<V>(&'n mut self, visitor: &mut V);
+}
+
+impl<'s, 'n, A: ASTNode<'s>> Visit<'n> for A {
     fn visit<V>(&'n mut self, visitor: &mut V) {
-        self.send_visitor(visitor);
-        (self as Welcome<'n, V>).welcome(visitor);
+        self.iter_children().for_each(|c| c.visit(visitor)); 
     }
 }
