@@ -7,7 +7,7 @@ use crate::{
         stream::{TokenStream, Token}
     },
     shared::{logging::Message, src::Span},
-    compiler::{ty::{TypeVisitor, Ty, ScopeLevel, FindScope}, visitor::Visitors,}
+    compiler::ty::Ty
 };
 use super::{expr::Expr, token::{self, Tokenize}};
 
