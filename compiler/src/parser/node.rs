@@ -9,14 +9,14 @@ pub trait ASTNode<'s>: Debug {
     fn src(&self) -> &'s Src {
         self.span().src()
     }
-    fn iter_children(&mut self) -> impl Iterator<Item = &mut impl ASTNode<'s>>;
+    fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode<'s>>;
 }
 
 impl<'s, T: ASTNode<'s>> ASTNode<'s> for Box<T> {
     fn span(&self) -> &Span<'s> {
         self.as_ref().span()
     }
-    fn iter_children(&mut self) -> impl Iterator<Item = &mut impl ASTNode<'s>> {
+    fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode<'s>> {
         self.as_ref().iter_children()
     }
 }

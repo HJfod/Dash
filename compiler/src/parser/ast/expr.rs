@@ -32,6 +32,10 @@ impl<'s> ASTNode<'s> for Visibility<'s> {
             Self::Default(span) | Self::Public(span) | Self::Private(span) => span,
         }
     }
+
+    fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode<'s>> {
+        std::iter::empty()
+    }
 }
 
 impl<'s> Parse<'s> for Visibility<'s> {
@@ -180,6 +184,25 @@ impl<'s> ASTNode<'s> for Expr<'s> {
             Self::Block(t) => t.span(),
             Self::If(t) => t.span(),
             Self::Return(t) => t.span(),
+        }
+    }
+
+    fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode<'s>> {
+        match self {
+            Self::Void(t) => t.iter_children(),
+            Self::Bool(t) => t.iter_children(),
+            Self::Int(t) => t.iter_children(),
+            Self::Float(t) => t.iter_children(),
+            Self::String(t) => t.iter_children(),
+            Self::Entity(t) => t.iter_children(),
+            Self::Item(t) => t.iter_children(),
+            Self::UsingItem(t) => t.iter_children(),
+            Self::UnOp(t) => t.iter_children(),
+            Self::BinOp(t) => t.iter_children(),
+            Self::Call(t) => t.iter_children(),
+            Self::Block(t) => t.iter_children(),
+            Self::If(t) => t.iter_children(),
+            Self::Return(t) => t.iter_children(),
         }
     }
 }
