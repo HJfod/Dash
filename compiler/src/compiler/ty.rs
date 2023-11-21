@@ -49,15 +49,15 @@ impl Display for Path {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Ty<'s, 'n> {
+pub enum Ty<'s> {
     /// Represents that an error occurred during typechecking. Only produced on 
     /// errors - should **never** appear on a succesful compilation!
     /// Always convertible to all other types in all contexts to avoid further 
     /// typechecking errors
     Invalid,
-    /// Represents a type whose value is not known yet, but will be inferred 
-    /// later
-    Inferred,
+    /// Represents a type whose value is not known yet. Compilation should never 
+    /// finish until all unknowns have been resolved
+    Unresolved,
     /// Represents that the branch which produced this value will never 
     /// finish execution (for example because it returned to an outer scope)
     /// Always convertible to all other types
@@ -76,22 +76,22 @@ pub enum Ty<'s, 'n> {
     /// Function type (used for named functions that can't capture mutable 
     /// variables from the outer scope)
     Function {
-        params: Vec<(String, Ty<'s, 'n>)>,
-        ret_ty: Box<Ty<'s, 'n>>,
-        decl: ASTRef<'s, 'n>,
+        params: Vec<(String, Ty<'s>)>,
+        ret_ty: Box<Ty<'s>>,
+        decl: ASTRef<'s>,
     },
     /// Alias for another type
     Alias {
         name: String,
-        ty: Box<Ty<'s, 'n>>,
-        decl: ASTRef<'s, 'n>,
+        ty: Box<Ty<'s>>,
+        decl: ASTRef<'s>,
     },
 }
 
-impl<'s, 'n> Ty<'s, 'n> {
+impl<'s> Ty<'s> {
     /// Whether this type is one that can't exist as a value (`unknown`, `invalid`, or `never`)
     pub fn is_unreal(&self) -> bool {
-        matches!(self, Ty::Inferred | Ty::Invalid | Ty::Never)
+        matches!(self, Ty::Unresolved | Ty::Invalid | Ty::Never)
     }
 
     /// Whether this type is  `never` 
@@ -100,7 +100,7 @@ impl<'s, 'n> Ty<'s, 'n> {
     }
 
     /// Reduce type into its canonical representation, for example remove aliases
-    pub fn reduce(&self) -> &Ty<'s, 'n> {
+    pub fn reduce(&self) -> &Ty<'s> {
         match self {
             Self::Alias { name: _, ty, decl: _ } => ty,
             other => other,
@@ -111,7 +111,7 @@ impl<'s, 'n> Ty<'s, 'n> {
     /// not
     /// 
     /// In most cases this means equality
-    pub fn convertible_to(&self, other: &Ty<'s, 'n>) -> bool {
+    pub fn convertible_to(&self, other: &Ty<'s>) -> bool {
         self.is_unreal() || other.is_unreal() || *self.reduce() == *other.reduce()
     }
 
@@ -119,7 +119,7 @@ impl<'s, 'n> Ty<'s, 'n> {
     /// 
     /// Returns the return type if the type is a function type, or itself 
     /// if it's something else
-    pub fn return_ty(&self) -> Ty<'s, 'n> {
+    pub fn return_ty(&self) -> Ty<'s> {
         match self {
             Self::Function { params: _, ret_ty, decl: _ } => *ret_ty.clone(),
             _ => self.clone(),
@@ -127,10 +127,10 @@ impl<'s, 'n> Ty<'s, 'n> {
     }
 
     /// Get the corresponding AST declaration that produced this type
-    pub fn decl(&self) -> ASTRef<'s, 'n> {
+    pub fn decl(&self) -> ASTRef<'s> {
         match self {
             Ty::Invalid => ASTRef::Builtin,
-            Ty::Inferred => ASTRef::Builtin,
+            Ty::Unresolved => ASTRef::Builtin,
             Ty::Never => ASTRef::Builtin,
             Ty::Void => ASTRef::Builtin,
             Ty::Bool => ASTRef::Builtin,
@@ -143,7 +143,7 @@ impl<'s, 'n> Ty<'s, 'n> {
     }
 
     /// Returns `other` if this type is `invalid` or `unknown`
-    pub fn or(self, other: Ty<'s, 'n>) -> Ty<'s, 'n> {
+    pub fn or(self, other: Ty<'s>) -> Ty<'s> {
         if self.is_unreal() {
             other
         }
@@ -157,7 +157,7 @@ impl Display for Ty<'_, '_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Invalid => f.write_str("invalid"),
-            Self::Inferred => f.write_str("unknown"),
+            Self::Unresolved => f.write_str("unknown"),
             Self::Never => f.write_str("never"),
             Self::Void => f.write_str("void"),
             Self::Bool => f.write_str("bool"),

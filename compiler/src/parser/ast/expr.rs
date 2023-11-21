@@ -207,8 +207,8 @@ impl<'s> ASTNode<'s> for Expr<'s> {
     }
 }
 
-impl<'s, 'n> TakeVisitor<'n, CoherencyVisitor<'s, 'n>> for Expr<'s> {
-    fn take_visitor(&'n mut self, visitor: &mut CoherencyVisitor) {
+impl<'s> TakeVisitor<CoherencyVisitor<'s>> for Expr<'s> {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         match self {
             Self::Entity(name) => {
                 todo!()

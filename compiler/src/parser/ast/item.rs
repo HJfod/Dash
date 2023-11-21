@@ -87,18 +87,18 @@ impl<'s> Parse<'s> for VarDecl<'s> {
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for VarDecl<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s> Visitors<'s> for VarDecl<'s> {
+    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
         let ty = self.ty.as_ref().map(|ty| ty.visit_coherency(visitor));
         let value = self.value.as_ref().map(|value| value.visit_coherency(visitor));
         let eval_ty = match (ty, value) {
             (Some(a), Some(b)) => visitor.expect_eq(a, b, self.span()),
             (Some(a), None)    => a,
             (None,    Some(b)) => b,
-            (None,    None)    => Ty::Inferred,
+            (None,    None)    => Ty::Unresolved,
         };
         let name = visitor.resolve_new(self.ident.path());
-        visitor.try_push(Entity::new(name, ASTRef::Ref(self as &'n dyn ASTNode<'s>), eval_ty, true), &self.span);
+        visitor.try_push(Entity::new(name, self.into(), eval_ty, true), &self.span);
         Ty::Void
     }
 }
@@ -144,8 +144,8 @@ impl<'s> Parse<'s> for ConstDecl<'s> {
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for ConstDecl<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s> Visitors<'s> for ConstDecl<'s> {
+    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
         let ty = self.ty.as_ref().map(|ty| ty.visit_coherency(visitor));
         let value = self.value.visit_coherency(visitor);
         let eval_ty = match (ty, value) {
@@ -153,7 +153,7 @@ impl<'s, 'n> Visitors<'s, 'n> for ConstDecl<'s> {
             (None,    b) => b,
         };
         let name = visitor.resolve_new(self.ident.path());
-        visitor.try_push(Entity::new(name, ASTRef::Ref(self as &'n dyn ASTNode<'s>), eval_ty, true), &self.span);
+        visitor.try_push(Entity::new(name, self.into(), eval_ty, true), &self.span);
         Ty::Void
     }
 }
@@ -182,8 +182,8 @@ impl<'s> Parse<'s> for FunParam<'s> {
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for FunParam<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s> Visitors<'s> for FunParam<'s> {
+    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
         let ty = self.ty.visit_coherency(visitor);
         let value = self.default_value.as_ref().map(|v| v.visit_coherency(visitor));
         let eval_ty = match (ty, value) {
@@ -191,7 +191,7 @@ impl<'s, 'n> Visitors<'s, 'n> for FunParam<'s> {
             (a, None)    => a,
         };
         let name = visitor.resolve_new(self.ident.path());
-        visitor.try_push(Entity::new(name, ASTRef::Ref(self as &'n dyn ASTNode<'s>), eval_ty, true), &self.span)
+        visitor.try_push(Entity::new(name, self.into(), eval_ty, true), &self.span)
             .map(|t| t.ty())
             .unwrap_or(Ty::Invalid)
     }
@@ -257,24 +257,24 @@ impl<'s> Parse<'s> for FunDecl<'s> {
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for FunDecl<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s> Visitors<'s> for FunDecl<'s> {
+    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
         let ret_ty = self.ret_ty.as_ref().map(|v| v.visit_coherency(visitor));
-        visitor.push_scope(ScopeLevel::Function, ASTRef::Ref(self as &'n dyn ASTNode<'s>), ret_ty.clone());
+        visitor.push_scope(ScopeLevel::Function, self.into(), ret_ty.clone());
         let param_tys = self.params.iter().map(|v| v.visit_coherency(visitor)).collect::<Vec<_>>();
         let body_ty = self.body.as_ref().map(|v| v.visit_coherency(visitor)).flatten();
-        visitor.pop_scope(body_ty.unwrap_or(Ty::Inferred), ASTRef::Ref(self as &'n dyn ASTNode<'s>));
+        visitor.pop_scope(body_ty.unwrap_or(Ty::Unresolved), self.into());
         if let Some(ref ident) = self.ident {
             let name = visitor.resolve_new(ident.path());
             visitor.try_push(
                 Entity::new(
-                    name, ASTRef::Ref(self as &'n dyn ASTNode<'s>), Ty::Function {
+                    name, self.into(), Ty::Function {
                         params: self.params.iter()
                             .zip(param_tys)
                             .map(|(p, ty)| (p.ident.value().clone(), ty))
                             .collect(),
-                        ret_ty: ret_ty.unwrap_or(Ty::Inferred).into(),
-                        decl: ASTRef::Ref(self as &'n dyn ASTNode<'s>)
+                        ret_ty: ret_ty.unwrap_or(Ty::Unresolved).into(),
+                        decl: self.into()
                     },
                     false
                 ),
@@ -353,8 +353,8 @@ impl<'s> Parse<'s> for StructDecl<'s> {
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for StructDecl<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s> Visitors<'s> for StructDecl<'s> {
+    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
         todo!()
     }
 }
@@ -392,13 +392,13 @@ impl<'s> Parse<'s> for TypeAliasDecl<'s> {
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for TypeAliasDecl<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s> Visitors<'s> for TypeAliasDecl<'s> {
+    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
         let ty = self.value.visit_coherency(visitor);
         visitor.try_push(Ty::Alias {
             name: self.ident.to_string(),
             ty: ty.clone().into(),
-            decl: ASTRef::Ref(self as &'n dyn ASTNode<'s>),
+            decl: self.into(),
         }, self.span());
         ty
     }
@@ -473,8 +473,8 @@ impl<'s> Parse<'s> for Item<'s> {
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for Item<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s> Visitors<'s> for Item<'s> {
+    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
         match self {
             Self::FunDecl(t) => t.visit_coherency(visitor),
             Self::VarDecl(t) => t.visit_coherency(visitor),
@@ -512,8 +512,8 @@ impl<'s> Parse<'s> for UsingItem<'s> {
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for UsingItem<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s> Visitors<'s> for UsingItem<'s> {
+    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
         todo!()
     }
 }

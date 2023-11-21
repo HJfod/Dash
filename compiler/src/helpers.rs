@@ -37,7 +37,7 @@ pub trait ConcatInto<T> {
     fn concat_into(self, target: &mut Vec<T>);
 }
 
-impl<'s, 'n, T: Rule<'s>> ConcatInto<T> for T {
+impl<'s, T: Rule<'s>> ConcatInto<T> for T {
     fn concat_into(self, target: &mut Vec<T>) {
         target.push(self);
     }
@@ -57,18 +57,18 @@ impl<A, T: ConcatInto<A>> ConcatInto<A> for Option<T> {
     }
 }
 
-pub trait EvalTypeHelper<'s, 'n> {
-    fn to_type(&self) -> Ty<'s, 'n>;
+pub trait EvalTypeHelper<'s> {
+    fn to_type(&self) -> Ty<'s>;
 }
 
-impl<'s, 'n> EvalTypeHelper<'s, 'n> for Ty<'s, 'n> {
-    fn to_type(&self) -> Ty<'s, 'n> {
+impl<'s> EvalTypeHelper<'s> for Ty<'s> {
+    fn to_type(&self) -> Ty<'s> {
         self.clone()
     }
 }
 
-impl<'s, 'n> EvalTypeHelper<'s, 'n> for Option<Ty<'s, 'n>> {
-    fn to_type(&self) -> Ty<'s, 'n> {
+impl<'s> EvalTypeHelper<'s> for Option<Ty<'s>> {
+    fn to_type(&self) -> Ty<'s> {
         self.clone().unwrap_or(Ty::Inferred)
     }
 }

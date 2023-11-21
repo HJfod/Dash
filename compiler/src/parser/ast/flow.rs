@@ -3,11 +3,11 @@ use dash_macros::ast_node;
 
 use crate::{
     parser::{
-        node::{Parse, ASTNode, ASTRef},
+        node::{Parse, ASTNode},
         stream::{TokenStream, Token}
     },
     shared::{logging::Message, src::Span},
-    compiler::ty::Ty
+    compiler::{ty::Ty, visitor::TakeVisitor, coherency::{CoherencyVisitor, ScopeLevel, FindScope}}
 };
 use super::{expr::Expr, token::{self, Tokenize}};
 
@@ -36,19 +36,19 @@ impl<'s> Parse<'s> for If<'s> {
         else {
             None
         };
-        Ok(Self { cond, truthy, falsy, span: start..stream.pos() })
+        Ok(Self { cond, truthy, falsy, span: start..stream.pos(), eval_ty: Ty::Unresolved })
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for If<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
-        visitor.push_scope(ScopeLevel::Opaque, ASTRef::Ref(self as &'n dyn ASTNode<'s>), None);
+impl<'s> TakeVisitor<CoherencyVisitor<'s>> for If<'s> {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
+        visitor.push_scope(ScopeLevel::Opaque, self.into(), None);
         let cond_ty = self.cond.visit_coherency(visitor);
         let truthy_ty = self.truthy.visit_coherency(visitor);
-        visitor.pop_scope(truthy_ty.clone(), ASTRef::Ref(self as &'n dyn ASTNode<'s>));
+        visitor.pop_scope(truthy_ty.clone(), self.into());
         let falsy_ty = self.falsy.as_ref().map(|v| v.visit_coherency(visitor)).flatten();
         visitor.expect_eq(cond_ty, Ty::Bool, self.cond.span());
-        visitor.expect_eq(falsy_ty.unwrap_or(Ty::Inferred), truthy_ty.clone(), &self.span);
+        visitor.expect_eq(falsy_ty.unwrap_or(Ty::Unresolved), truthy_ty.clone(), &self.span);
         truthy_ty
     }
 }
@@ -64,17 +64,17 @@ impl<'s> Parse<'s> for Return<'s> {
         let start = stream.pos();
         token::Return::parse(stream)?;
         let expr = Expr::parse(stream).ok().map(|e| e.into());
-        Ok(Self { expr, span: start..stream.pos() })
+        Ok(Self { expr, span: start..stream.pos(), eval_ty: Ty::Unresolved })
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for Return<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s> TakeVisitor<CoherencyVisitor<'s>> for Return<'s> {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         let expr_ty = self.expr.as_ref().map(|v| v.visit_coherency(visitor)).flatten();
         visitor.infer_return_type(
             FindScope::ByLevel(ScopeLevel::Function),
             expr_ty.unwrap_or(Ty::Void),
-            ASTRef::Ref(self as &'n dyn ASTNode<'s>)
+            self.into()
         );
         Ty::Never
     }

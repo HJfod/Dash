@@ -21,8 +21,15 @@ pub fn snake_case_ident(stream: TokenStream) -> TokenStream {
 #[proc_macro_attribute]
 pub fn ast_node(_args: TokenStream, stream: TokenStream) -> TokenStream {
     let mut target = parse_macro_input!(stream as ItemStruct);
+    let mut iter_chains = proc_macro2::TokenStream::new();
     match &mut target.fields {
         Fields::Named(named) => {
+            for named in &named.named {
+                let name = named.ident.as_ref().unwrap();
+                iter_chains.extend(quote! {
+                    .chain(self.#name.to_iter_helper())
+                });
+            }
             named.named.push(Field {
                 attrs: vec![],
                 mutability: syn::FieldMutability::None,
@@ -30,6 +37,14 @@ pub fn ast_node(_args: TokenStream, stream: TokenStream) -> TokenStream {
                 ident: Some(format_ident!("span")),
                 colon_token: None,
                 ty: syn::Type::Verbatim(quote! { Span<'s> })
+            });
+            named.named.push(Field {
+                attrs: vec![],
+                mutability: syn::FieldMutability::None,
+                vis: syn::Visibility::Inherited,
+                ident: Some(format_ident!("eval_ty")),
+                colon_token: None,
+                ty: syn::Type::Verbatim(quote! { Ty<'s> })
             });
         },
         _ => {
@@ -46,6 +61,15 @@ pub fn ast_node(_args: TokenStream, stream: TokenStream) -> TokenStream {
         impl<'s> crate::parser::node::ASTNode<'s> for #name<'s> {
             fn span(&self) -> &crate::shared::src::Span<'s> {
                 &self.span
+            }
+
+            fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode<'s>> {
+                std::iter::empty()
+                    #iter_chains
+            }
+
+            fn eval_ty(&self) -> Ty<'s> {
+                self.eval_ty.clone()
             }
         }
     }.into()

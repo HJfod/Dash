@@ -38,8 +38,8 @@ impl<'s> ASTNode<'s> for Type<'s> {
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for Type<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s> Visitors<'s> for Type<'s> {
+    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
         match self {
             Self::Void(_) => Ty::Void,
             Self::TypeName(t) => t.visit_coherency(visitor),
@@ -61,8 +61,8 @@ impl<'s> Parse<'s> for TypeName<'s> {
     }
 }
 
-impl<'s, 'n> Visitors<'s, 'n> for TypeName<'s> {
-    fn visit_coherency(&'n self, visitor: &mut TypeVisitor<'s, 'n>) -> Ty<'s, 'n> {
+impl<'s> Visitors<'s> for TypeName<'s> {
+    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
         let path = self.ident.path();
         match visitor.find::<Ty, _>(&path) {
             FindItem::Some(e) => e.clone(),
