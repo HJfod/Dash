@@ -1,6 +1,6 @@
 
 use std::fmt::Debug;
-use dash_macros::ast_node;
+use dash_macros::{ast_node, impl_opaque};
 use strum::IntoEnumIterator;
 
 use crate::{
@@ -10,7 +10,7 @@ use crate::{
         ast::token::{StringLit, IntLit, FloatLit, VoidLit, BoolLit, Ident, Op}
     },
     shared::{logging::{Message, Level}, src::Span},
-    compiler::{visitor::TakeVisitor, coherency::CoherencyVisitor}
+    compiler::{visitor::TakeVisitor, coherency::CoherencyVisitor, ty::Ty}
 };
 use super::{
     item::{Item, UsingItem},
@@ -20,26 +20,30 @@ use super::{
 };
 
 #[derive(Debug)]
-pub enum Visibility<'s> {
-    Default(Span<'s>),
-    Public(Span<'s>),
-    Private(Span<'s>),
+pub enum Visibility {
+    Default(Span),
+    Public(Span),
+    Private(Span),
 }
 
-impl<'s> ASTNode<'s> for Visibility<'s> {
-    fn span(&self) -> &Span<'s> {
+impl ASTNode for Visibility {
+    fn span(&self) -> &Span {
         match self {
             Self::Default(span) | Self::Public(span) | Self::Private(span) => span,
         }
     }
 
-    fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode<'s>> {
+    fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
         std::iter::empty()
+    }
+
+    fn eval_ty(&self) -> Ty {
+        Ty::Invalid
     }
 }
 
-impl<'s> Parse<'s> for Visibility<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for Visibility {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         if let Some(kw) = token::Public::peek_and_parse(stream) {
             Ok(Self::Public(kw.span().clone()))
         }
@@ -54,28 +58,38 @@ impl<'s> Parse<'s> for Visibility<'s> {
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum Expr<'s> {
-    Void(VoidLit<'s>),
-    Bool(BoolLit<'s>),
-    Int(IntLit<'s>),
-    Float(FloatLit<'s>),
-    String(StringLit<'s>),
-    Entity(Path<'s>),
+#[impl_opaque {
+    impl ASTNode {
+        fn span(&self) -> &Span:
+            e => e.span();
+        fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode>:
+            e => e.iter_children();
+        fn eval_ty(&self) -> Ty:
+            e => e.eval_ty()
+    }
+}]
+pub enum Expr {
+    Void(VoidLit),
+    Bool(BoolLit),
+    Int(IntLit),
+    Float(FloatLit),
+    String(StringLit),
+    Entity(Path),
 
-    UnOp(UnOp<'s>),
-    BinOp(BinOp<'s>),
-    Call(Call<'s>),
+    UnOp(UnOp),
+    BinOp(BinOp),
+    Call(Call),
 
-    Item(Item<'s>),
-    UsingItem(UsingItem<'s>),
+    Item(Item),
+    UsingItem(UsingItem),
 
-    If(If<'s>),
-    Block(Block<'s>),
-    Return(Return<'s>),
+    If(If),
+    Block(Block),
+    Return(Return),
 }
 
-impl<'s> Expr<'s> {
-    fn parse_single<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Expr {
+    fn parse_single<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         if Item::peek(stream) {
             Ok(Self::Item(stream.parse()?))
         }
@@ -107,7 +121,7 @@ impl<'s> Expr<'s> {
         }
     }
 
-    fn parse_postfix<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+    fn parse_postfix<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         let mut expr = Self::parse_single(stream)?;
         loop {
             if Parenthesized::peek(stream).is_some() {
@@ -120,7 +134,7 @@ impl<'s> Expr<'s> {
         Ok(expr)
     }
 
-    pub fn parse_unop<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+    pub fn parse_unop<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         if Op::peek(stream).is_some() {
             Ok(Self::UnOp(stream.parse()?))
         }
@@ -129,10 +143,10 @@ impl<'s> Expr<'s> {
         }
     }
     
-    fn parse_binop_prec<F, I>(prec: Prec, sides: &mut F, stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>>
+    fn parse_binop_prec<F, I>(prec: Prec, sides: &mut F, stream: &mut TokenStream<I>) -> Result<Self, Message>
         where
-            I: Iterator<Item = Token<'s>>,
-            F: FnMut(&mut TokenStream<'s, I>) -> Result<Expr<'s>, Message<'s>>
+            I: Iterator<Item = Token>,
+            F: FnMut(&mut TokenStream<I>) -> Result<Expr, Message>
     {
         let mut lhs = sides(stream)?;
         while prec.peek_op_of_this_prec(stream) {
@@ -141,11 +155,11 @@ impl<'s> Expr<'s> {
         Ok(lhs)
     }
 
-    fn parse_binop<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
-        let mut sides: Box<dyn FnMut(&mut TokenStream<'s, I>) -> _> = Box::from(Self::parse_unop);
+    fn parse_binop<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
+        let mut sides: Box<dyn FnMut(&mut TokenStream<I>) -> _> = Box::from(Self::parse_unop);
         for prec in Prec::iter().skip(1) {
             sides = Box::from(
-                move |stream: &mut TokenStream<'s, I>|
+                move |stream: &mut TokenStream<I>|
                     Self::parse_binop_prec(prec, &mut sides, stream)
             );
         }
@@ -161,53 +175,13 @@ impl<'s> Expr<'s> {
     }
 }
 
-impl<'s> Parse<'s> for Expr<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for Expr {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         Self::parse_binop(stream)
     }
 }
 
-impl<'s> ASTNode<'s> for Expr<'s> {
-    fn span(&self) -> &Span<'s> {
-        match self {
-            Self::Void(t) => t.span(),
-            Self::Bool(t) => t.span(),
-            Self::Int(t) => t.span(),
-            Self::Float(t) => t.span(),
-            Self::String(t) => t.span(),
-            Self::Entity(t) => t.span(),
-            Self::Item(t) => t.span(),
-            Self::UsingItem(t) => t.span(),
-            Self::UnOp(t) => t.span(),
-            Self::BinOp(t) => t.span(),
-            Self::Call(t) => t.span(),
-            Self::Block(t) => t.span(),
-            Self::If(t) => t.span(),
-            Self::Return(t) => t.span(),
-        }
-    }
-
-    fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode<'s>> {
-        match self {
-            Self::Void(t) => t.iter_children(),
-            Self::Bool(t) => t.iter_children(),
-            Self::Int(t) => t.iter_children(),
-            Self::Float(t) => t.iter_children(),
-            Self::String(t) => t.iter_children(),
-            Self::Entity(t) => t.iter_children(),
-            Self::Item(t) => t.iter_children(),
-            Self::UsingItem(t) => t.iter_children(),
-            Self::UnOp(t) => t.iter_children(),
-            Self::BinOp(t) => t.iter_children(),
-            Self::Call(t) => t.iter_children(),
-            Self::Block(t) => t.iter_children(),
-            Self::If(t) => t.iter_children(),
-            Self::Return(t) => t.iter_children(),
-        }
-    }
-}
-
-impl<'s> TakeVisitor<CoherencyVisitor<'s>> for Expr<'s> {
+impl TakeVisitor<CoherencyVisitor> for Expr {
     fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         match self {
             Self::Entity(name) => {
@@ -220,12 +194,12 @@ impl<'s> TakeVisitor<CoherencyVisitor<'s>> for Expr<'s> {
 
 #[derive(Debug)]
 #[ast_node]
-pub struct ExprList<'s> {
-    list: Vec<Expr<'s>>,
+pub struct ExprList {
+    list: Vec<Expr>,
 }
 
-impl<'s> Parse<'s> for ExprList<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for ExprList {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         let start = stream.pos();
         // just parse until the stream is over
         // since braces are treated as a single token that result in a substream 
@@ -246,22 +220,22 @@ impl<'s> Parse<'s> for ExprList<'s> {
                 // todo: emit warning
             }
         }
-        Ok(Self { list, span: start..stream.pos() })
+        Ok(Self { list, span: start..stream.pos(), eval_ty: Ty::Unresolved })
     }
 }
 
 #[derive(Debug)]
 #[ast_node]
-pub struct Block<'s> {
-    list: ExprList<'s>,
+pub struct Block {
+    list: ExprList,
 }
 
-impl<'s> Parse<'s> for Block<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for Block {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         let start = stream.pos();
         let mut braced = Braced::parse(stream)?.into_stream();
-        Ok(Self { list: braced.parse()?, span: start..stream.pos() })
+        Ok(Self { list: braced.parse()?, span: start..stream.pos(), eval_ty: Ty::Unresolved })
     }
 }
 
-pub type AST<'s> = ExprList<'s>;
+pub type AST = ExprList;

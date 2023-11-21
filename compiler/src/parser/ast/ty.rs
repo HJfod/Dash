@@ -1,5 +1,5 @@
 
-use dash_macros::ast_node;
+use dash_macros::{ast_node, impl_opaque};
 
 use crate::{
     parser::{
@@ -7,19 +7,29 @@ use crate::{
         node::{Parse, ASTNode}, ast::token::VoidLit
     },
     shared::{logging::{Message, Level, Note}, src::Span},
-    compiler::{ty::{TypeVisitor, Ty, FindItem}, visitor::Visitors}
+    compiler::{ty::Ty, coherency::{CoherencyVisitor, FoundItem}, visitor::TakeVisitor}
 };
 
 use super::token::{Ident, Tokenize};
 
 #[derive(Debug)]
-pub enum Type<'s> {
-    Void(Span<'s>),
-    TypeName(TypeName<'s>),
+#[impl_opaque {
+    impl ASTNode {
+        fn span(&self) -> &Span:
+            e => e.span();
+        fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode>:
+            e => e.iter_children();
+        fn eval_ty(&self) -> Ty:
+            e => e.eval_ty()
+    }
+}]
+pub enum Type {
+    Void(Span),
+    TypeName(TypeName),
 }
 
-impl<'s> Parse<'s> for Type<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for Type {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         if let Some(tk) = VoidLit::peek_and_parse(stream) {
             Ok(Type::Void(tk.span().clone()))
         }
@@ -29,17 +39,8 @@ impl<'s> Parse<'s> for Type<'s> {
     }
 }
 
-impl<'s> ASTNode<'s> for Type<'s> {
-    fn span(&self) -> &Span<'s> {
-        match self {
-            Self::Void(t) => t,
-            Self::TypeName(t) => t.span(),
-        }
-    }
-}
-
-impl<'s> Visitors<'s> for Type<'s> {
-    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
+impl TakeVisitor<CoherencyVisitor> for Type {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         match self {
             Self::Void(_) => Ty::Void,
             Self::TypeName(t) => t.visit_coherency(visitor),
@@ -49,24 +50,28 @@ impl<'s> Visitors<'s> for Type<'s> {
 
 #[derive(Debug)]
 #[ast_node]
-pub struct TypeName<'s> {
-    ident: Ident<'s>,
+pub struct TypeName {
+    ident: Ident,
 }
 
-impl<'s> Parse<'s> for TypeName<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for TypeName {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         let start = stream.pos();
         let ident = Ident::parse(stream)?;
-        Ok(TypeName { ident, span: start..stream.pos() })
+        Ok(TypeName {
+            ident,
+            span: start..stream.pos(),
+            eval_ty: Ty::Unresolved,
+        })
     }
 }
 
-impl<'s> Visitors<'s> for TypeName<'s> {
-    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
+impl TakeVisitor<CoherencyVisitor> for TypeName {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         let path = self.ident.path();
         match visitor.find::<Ty, _>(&path) {
-            FindItem::Some(e) => e.clone(),
-            FindItem::NotAvailable(e) => {
+            FoundItem::Some(e) => e.clone(),
+            FoundItem::NotAvailable(e) => {
                 visitor.emit_msg(Message::from_span(
                     Level::Error,
                     format!("Type '{path}' can not be used here"),
@@ -77,7 +82,7 @@ impl<'s> Visitors<'s> for TypeName<'s> {
                 )));
                 Ty::Invalid
             }
-            FindItem::None => {
+            FoundItem::None => {
                 visitor.emit_msg(Message::from_span(
                     Level::Error,
                     format!("Unknown type '{path}'"),

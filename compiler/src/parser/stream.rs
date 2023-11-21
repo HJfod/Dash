@@ -1,5 +1,5 @@
 
-use std::fmt::{Debug, Display};
+use std::{fmt::{Debug, Display}, rc::Rc};
 use crate::shared::{src::{Src, Span, Loc}, logging::{Message, LoggerRef, Level}};
 use unicode_xid::UnicodeXID;
 use super::{
@@ -15,38 +15,50 @@ use super::{
 // or maybe be evil and have doc comments be tokens that can only appear before items >:3
 
 #[derive(Clone, Debug)]
-pub enum Token<'s> {
+#[impl_opaque {
+    impl ASTNode {
+        fn span(&self) -> &Span:
+            Error(_, span) => span;
+            EOF(_, span) => span;
+            ..e => e.span();
+        fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode>:
+            ..e => e.iter_children();
+        fn eval_ty(&self) -> Ty:
+            ..e => e.eval_ty()
+    }
+}]
+pub enum Token {
     /// Keyword e.g. `return`
-    Kw(Kw<'s>),
+    Kw(Kw),
     /// Operator e.g. `+=`
-    Op(Op<'s>),
+    Op(Op),
     /// Identifier e.g. `ident`
-    Ident(Ident<'s>),
+    Ident(Ident),
     /// Punctuation e.g. `;`, `,`, `...`
-    Punct(Punct<'s>),
+    Punct(Punct),
     /// Void literal `void`
-    VoidLit(VoidLit<'s>),
+    VoidLit(VoidLit),
     /// Bool literal e.g. `true`, `false`
-    BoolLit(BoolLit<'s>),
+    BoolLit(BoolLit),
     /// String literal e.g. `"Example literal"`
-    StringLit(StringLit<'s>),
+    StringLit(StringLit),
     /// Integer literal e.g. `18`
-    IntLit(IntLit<'s>),
+    IntLit(IntLit),
     /// Float literal e.g. `2.3`
-    FloatLit(FloatLit<'s>),
+    FloatLit(FloatLit),
     /// Parenthesized list of tokens e.g. `(...)`
-    Parenthesized(Parenthesized<'s>),
+    Parenthesized(Parenthesized),
     /// Braced list of tokens e.g. `{...}`
-    Braced(Braced<'s>),
+    Braced(Braced),
     /// Bracketed list of tokens e.g. `[...]`
-    Bracketed(Bracketed<'s>),
+    Bracketed(Bracketed),
     /// An invalid token
-    Error(String, Span<'s>),
+    Error(String, Span),
     /// End-of-file
-    EOF(String, Span<'s>),
+    EOF(String, Span),
 }
 
-impl<'s> Display for Token<'s> {
+impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Token::Kw(kw) => f.write_fmt(format_args!("{kw}")),
@@ -67,8 +79,8 @@ impl<'s> Display for Token<'s> {
     }
 }
 
-impl<'s> ASTNode<'s> for Token<'s> {
-    fn span(&self) -> &Span<'s> {
+impl ASTNode for Token {
+    fn span(&self) -> &Span {
         match self {
             Token::Kw(kw) => kw.span(),
             Token::Op(op) => op.span(),
@@ -86,21 +98,33 @@ impl<'s> ASTNode<'s> for Token<'s> {
             Token::EOF(_, span) => span,
         }
     }
+
+    fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
+        
+    }
+
+    fn eval_ty(&self) -> crate::compiler::ty::Ty {
+        match self {
+            Token::Kw(kw) => kw.eval_ty(),
+            Token::Op(op) => op.eval_ty(),
+            Token::Ident(ident) => ident.eval_ty()
+        }
+    }
 }
 
-// todo: have subtrees be a Vec of parsed tokens instead and make the SrcReader<'s>
+// todo: have subtrees be a Vec of parsed tokens instead and make the SrcReader
 // parameter in `parse` be just an iterator that produces tokens
 
 /// Parses a source into a list of tokens
 #[derive(Debug)]
-pub struct SrcReader<'s> {
-    src: &'s Src,
+pub struct SrcReader {
+    src: Rc<Src>,
     pos: usize,
-    logger: LoggerRef<'s>,
+    logger: LoggerRef,
 }
 
-impl<'s> SrcReader<'s> {
-    pub fn new(src: &'s Src, logger: LoggerRef<'s>) -> Self {
+impl SrcReader {
+    pub fn new(src: Rc<Src>, logger: LoggerRef) -> Self {
         Self { src, pos: 0, logger }
     }
 
@@ -109,8 +133,8 @@ impl<'s> SrcReader<'s> {
     }
 }
 
-impl<'s> Iterator for SrcReader<'s> {
-    type Item = Token<'s>;
+impl Iterator for SrcReader {
+    type Item = Token;
     fn next(&mut self) -> Option<Self::Item> {
         fn get_while<F: FnMut(char) -> bool>(reader: &mut SrcReader, mut fun: F, res: &mut String) {
             while reader.src.get(reader.pos).is_some_and(&mut fun) {
@@ -335,36 +359,36 @@ impl<'s> Iterator for SrcReader<'s> {
     }
 }
 
-pub struct TokenStream<'s, I: Iterator<Item = Token<'s>>> {
-    src: &'s Src,
+pub struct TokenStream<I: Iterator<Item = Token>> {
+    src: Rc<Src>,
     iter: I,
     /// Stored for peeking
-    next_token: Token<'s>,
+    next_token: Token,
 }
 
-impl<'s, I: Iterator<Item = Token<'s>>> TokenStream<'s, I> {
-    pub fn new(src: &'s Src, mut iter: I) -> Self {
+impl<I: Iterator<Item = Token>> TokenStream<I> {
+    pub fn new(src: Rc<Src>, mut iter: I) -> Self {
         let next_token = iter.next().expect("IntoTokenStream::next() returned None");
         Self { src, iter, next_token }
     }
 
-    pub fn src(&self) -> &'s Src {
+    pub fn src(&self) -> Rc<Src> {
         self.src
     }
 
-    pub fn pos(&self) -> Loc<'s> {
+    pub fn pos(&self) -> Loc {
         self.next_token.span().start
     }
 
     #[allow(clippy::should_implement_trait)]
-    pub fn next(&mut self) -> Token<'s> {
+    pub fn next(&mut self) -> Token {
         std::mem::replace(
             &mut self.next_token,
             self.iter.next().expect("TokenStream::next() returned None")
         )
     }
 
-    pub fn peek(&self) -> Token<'s> {
+    pub fn peek(&self) -> Token {
         self.next_token.clone()
     }
 
@@ -372,7 +396,7 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenStream<'s, I> {
         matches!(self.next_token, Token::EOF(_, _))
     }
 
-    pub fn parse<P: Parse<'s>>(&mut self) -> Result<P, Message<'s>> {
+    pub fn parse<P: Parse>(&mut self) -> Result<P, Message> {
         P::parse(self)
     }
 }

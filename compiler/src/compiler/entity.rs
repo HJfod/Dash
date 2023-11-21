@@ -2,19 +2,19 @@
 use crate::parser::{node::ASTRef, ast::token::Op};
 use super::ty::{FullPath, Ty};
 
-pub struct Entity<'s> {
+pub struct Entity {
     name: FullPath,
-    decl: ASTRef<'s>,
-    ty: Ty<'s>,
+    decl: ASTRef,
+    ty: Ty,
     mutable: bool,
 }
 
-impl<'s> Entity<'s> {
-    pub fn new(name: FullPath, decl: ASTRef<'s>, ty: Ty<'s>, mutable: bool) -> Self {
+impl Entity {
+    pub fn new(name: FullPath, decl: ASTRef, ty: Ty, mutable: bool) -> Self {
         Self { name, decl, ty, mutable }
     }
 
-    pub fn new_builtin_binop(a: Ty<'s>, op: Op, b: Ty<'s>, ret: Ty<'s>) -> Self {
+    pub fn new_builtin_binop(a: Ty, op: Op, b: Ty, ret: Ty) -> Self {
         Self {
             name: get_binop_fun_name(&a, &op, &b),
             decl: ASTRef::Builtin,
@@ -34,11 +34,11 @@ impl<'s> Entity<'s> {
         &self.name
     }
 
-    pub fn decl(&self) -> ASTRef<'s> {
+    pub fn decl(&self) -> ASTRef {
         self.decl
     }
 
-    pub fn ty(&self) -> Ty<'s> {
+    pub fn ty(&self) -> Ty {
         self.ty.clone()
     }
 
@@ -48,10 +48,10 @@ impl<'s> Entity<'s> {
     }
 }
 
-pub fn get_unop_fun_name(a: &Ty<'_, '_>, op: &Op) -> FullPath {
+pub fn get_unop_fun_name(a: &Ty, op: &Op) -> FullPath {
     FullPath::new([format!("@unop`{a}{op}`")])
 }
 
-pub fn get_binop_fun_name<'s>(a: &Ty<'s>, op: &Op, b: &Ty<'s>) -> FullPath {
+pub fn get_binop_fun_name(a: &Ty, op: &Op, b: &Ty) -> FullPath {
     FullPath::new([format!("@binop`{a}{op}{b}`")])
 }

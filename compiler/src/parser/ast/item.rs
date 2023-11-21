@@ -1,5 +1,5 @@
 
-use dash_macros::ast_node;
+use dash_macros::{ast_node, impl_opaque};
 
 // notes to self on how to eval macros:
 // step 1. during typechecking, if a type can't be found yet, don't error but add it 
@@ -20,45 +20,46 @@ use dash_macros::ast_node;
 use crate::{
     parser::{
         stream::{TokenStream, Token},
-        node::{Parse, ASTNode, ASTRef}
+        node::{Parse, ASTNode}
     },
-    shared::{logging::{Message, Level}, is_none_or::IsNoneOr, src::{Span, Loc}},
-    compiler::{ty::{TypeVisitor, Ty, Entity, ScopeLevel}, visitor::Visitors}
+    shared::{logging::{Message, Level}, is_none_or::IsNoneOr, src::Span},
+    compiler::{ty::Ty, visitor::TakeVisitor, coherency::{CoherencyVisitor, ScopeLevel}, entity::Entity}
 };
 use super::{ty::Type, expr::{Expr, Visibility, Block}, token::{Ident, Parenthesized, Braced, self, Colon, Tokenize}, Path};
 
 #[derive(Debug)]
 #[ast_node]
-pub struct ItemAttrs<'s> {
-    visibility: Visibility<'s>,
-    is_extern: Option<token::Extern<'s>>,
+pub struct ItemAttrs {
+    visibility: Visibility,
+    is_extern: Option<token::Extern>,
 }
 
-impl<'s> Parse<'s> for ItemAttrs<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for ItemAttrs {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         let start = stream.pos();
         Ok(Self {
             visibility: stream.parse()?,
             is_extern: token::Extern::peek_and_parse(stream),
             span: start..stream.pos(),
+            eval_ty: Ty::Unresolved,
         })
     }
 }
 
 #[derive(Debug)]
 #[ast_node]
-pub struct VarDecl<'s> {
-    item_attrs: ItemAttrs<'s>,
-    ident: Ident<'s>,
-    ty: Option<Type<'s>>,
-    value: Option<Box<Expr<'s>>>,
+pub struct VarDecl {
+    item_attrs: ItemAttrs,
+    ident: Ident,
+    ty: Option<Type>,
+    value: Option<Box<Expr>>,
 }
 
-impl<'s> VarDecl<'s> {
-    pub fn parse_with<I: Iterator<Item = Token<'s>>>(
-        item_attrs: ItemAttrs<'s>,
-        stream: &mut TokenStream<'s, I>
-    ) -> Result<Self, Message<'s>> {
+impl VarDecl {
+    pub fn parse_with<I: Iterator<Item = Token>>(
+        item_attrs: ItemAttrs,
+        stream: &mut TokenStream<I>
+    ) -> Result<Self, Message> {
         let start = item_attrs.span().start;
         token::Var::parse(stream)?;
         let ident = Ident::parse(stream)?;
@@ -76,19 +77,20 @@ impl<'s> VarDecl<'s> {
             ident,
             ty,
             value,
-            span: start..stream.pos()
+            span: start..stream.pos(),
+            eval_ty: Ty::Unresolved,
         })
     }
 }
 
-impl<'s> Parse<'s> for VarDecl<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for VarDecl {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         Self::parse_with(stream.parse()?, stream)
     }
 }
 
-impl<'s> Visitors<'s> for VarDecl<'s> {
-    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
+impl TakeVisitor<CoherencyVisitor> for VarDecl {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         let ty = self.ty.as_ref().map(|ty| ty.visit_coherency(visitor));
         let value = self.value.as_ref().map(|value| value.visit_coherency(visitor));
         let eval_ty = match (ty, value) {
@@ -105,18 +107,18 @@ impl<'s> Visitors<'s> for VarDecl<'s> {
 
 #[derive(Debug)]
 #[ast_node]
-pub struct ConstDecl<'s> {
-    item_attrs: ItemAttrs<'s>,
-    ident: Ident<'s>,
-    ty: Option<Type<'s>>,
-    value: Box<Expr<'s>>,
+pub struct ConstDecl {
+    item_attrs: ItemAttrs,
+    ident: Ident,
+    ty: Option<Type>,
+    value: Box<Expr>,
 }
 
-impl<'s> ConstDecl<'s> {
-    pub fn parse_with<I: Iterator<Item = Token<'s>>>(
-        item_attrs: ItemAttrs<'s>,
-        stream: &mut TokenStream<'s, I>
-    ) -> Result<Self, Message<'s>> {
+impl ConstDecl {
+    pub fn parse_with<I: Iterator<Item = Token>>(
+        item_attrs: ItemAttrs,
+        stream: &mut TokenStream<I>
+    ) -> Result<Self, Message> {
         let start = item_attrs.span().start;
         token::Let::parse(stream)?;
         let ident = Ident::parse(stream)?;
@@ -133,19 +135,20 @@ impl<'s> ConstDecl<'s> {
             ident,
             ty,
             value,
-            span: start..stream.pos()
+            span: start..stream.pos(),
+            eval_ty: Ty::Unresolved,
         })
     }
 }
 
-impl<'s> Parse<'s> for ConstDecl<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for ConstDecl {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         Self::parse_with(stream.parse()?, stream)
     }
 }
 
-impl<'s> Visitors<'s> for ConstDecl<'s> {
-    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
+impl TakeVisitor<CoherencyVisitor> for ConstDecl {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         let ty = self.ty.as_ref().map(|ty| ty.visit_coherency(visitor));
         let value = self.value.visit_coherency(visitor);
         let eval_ty = match (ty, value) {
@@ -160,14 +163,14 @@ impl<'s> Visitors<'s> for ConstDecl<'s> {
 
 #[derive(Debug)]
 #[ast_node]
-pub struct FunParam<'s> {
-    ident: Ident<'s>,
-    ty: Type<'s>,
-    default_value: Option<Expr<'s>>,
+pub struct FunParam {
+    ident: Ident,
+    ty: Type,
+    default_value: Option<Expr>,
 }
 
-impl<'s> Parse<'s> for FunParam<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for FunParam {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         let start = stream.pos();
         let ident = Ident::parse(stream)?;
         token::Colon::parse(stream)?;
@@ -178,12 +181,18 @@ impl<'s> Parse<'s> for FunParam<'s> {
         else {
             None
         };
-        Ok(FunParam { ident, ty, default_value, span: start..stream.pos() })
+        Ok(FunParam {
+            ident,
+            ty,
+            default_value,
+            span: start..stream.pos(),
+            eval_ty: Ty::Unresolved,
+        })
     }
 }
 
-impl<'s> Visitors<'s> for FunParam<'s> {
-    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
+impl TakeVisitor<CoherencyVisitor> for FunParam {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         let ty = self.ty.visit_coherency(visitor);
         let value = self.default_value.as_ref().map(|v| v.visit_coherency(visitor));
         let eval_ty = match (ty, value) {
@@ -199,23 +208,23 @@ impl<'s> Visitors<'s> for FunParam<'s> {
 
 #[derive(Debug)]
 #[ast_node]
-pub struct FunDecl<'s> {
-    item_attrs: ItemAttrs<'s>,
-    ident: Option<Ident<'s>>,
-    params: Vec<FunParam<'s>>,
-    ret_ty: Option<Type<'s>>,
-    body: Option<Box<Expr<'s>>>,
+pub struct FunDecl {
+    item_attrs: ItemAttrs,
+    ident: Option<Ident>,
+    params: Vec<FunParam>,
+    ret_ty: Option<Type>,
+    body: Option<Box<Expr>>,
 }
 
-impl<'s> FunDecl<'s> {
+impl FunDecl {
     pub fn requires_semicolon(&self) -> bool {
         self.body.as_ref().is_none_or(|b| b.requires_semicolon())
     }
 
-    pub fn parse_with<I: Iterator<Item = Token<'s>>>(
-        item_attrs: ItemAttrs<'s>,
-        stream: &mut TokenStream<'s, I>
-    ) -> Result<Self, Message<'s>> {
+    pub fn parse_with<I: Iterator<Item = Token>>(
+        item_attrs: ItemAttrs,
+        stream: &mut TokenStream<I>
+    ) -> Result<Self, Message> {
         let start = item_attrs.span().start;
         token::Fun::parse(stream)?;
         let ident = Ident::peek_and_parse(stream);
@@ -246,19 +255,20 @@ impl<'s> FunDecl<'s> {
             params,
             ret_ty,
             body,
-            span: start..stream.pos()
+            span: start..stream.pos(),
+            eval_ty: Ty::Unresolved,
         })
     }
 }
 
-impl<'s> Parse<'s> for FunDecl<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for FunDecl {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         Self::parse_with(stream.parse()?, stream)
     }
 }
 
-impl<'s> Visitors<'s> for FunDecl<'s> {
-    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
+impl TakeVisitor<CoherencyVisitor> for FunParam {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         let ret_ty = self.ret_ty.as_ref().map(|v| v.visit_coherency(visitor));
         visitor.push_scope(ScopeLevel::Function, self.into(), ret_ty.clone());
         let param_tys = self.params.iter().map(|v| v.visit_coherency(visitor)).collect::<Vec<_>>();
@@ -287,45 +297,50 @@ impl<'s> Visitors<'s> for FunDecl<'s> {
 
 #[derive(Debug)]
 #[ast_node]
-pub struct FieldDecl<'s> {
-    ident: Ident<'s>,
-    ty: Type<'s>,
+pub struct FieldDecl {
+    ident: Ident,
+    ty: Type,
 }
 
-impl<'s> FieldDecl<'s> {
+impl FieldDecl {
     pub fn requires_semicolon(&self) -> bool {
         true
     }
 }
 
-impl<'s> Parse<'s> for FieldDecl<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for FieldDecl {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         let start = stream.pos();
         let ident = stream.parse()?;
         token::Colon::parse(stream)?;
         let ty = stream.parse()?;
-        Ok(Self { ident, ty, span: start..stream.pos() })
+        Ok(Self {
+            ident,
+            ty,
+            span: start..stream.pos(),
+            eval_ty: Ty::Unresolved,
+        })
     }
 }
 
 #[derive(Debug)]
 #[ast_node]
-pub struct StructDecl<'s> {
-    item_attrs: ItemAttrs<'s>,
-    ident: Ident<'s>,
-    fields: Vec<FieldDecl<'s>>,
+pub struct StructDecl {
+    item_attrs: ItemAttrs,
+    ident: Ident,
+    fields: Vec<FieldDecl>,
 }
 
-impl<'s> StructDecl<'s> {
-    pub fn parse_with<I: Iterator<Item = Token<'s>>>(
-        item_attrs: ItemAttrs<'s>,
-        stream: &mut TokenStream<'s, I>
-    ) -> Result<Self, Message<'s>> {
+impl StructDecl {
+    pub fn parse_with<I: Iterator<Item = Token>>(
+        item_attrs: ItemAttrs,
+        stream: &mut TokenStream<I>
+    ) -> Result<Self, Message> {
         let start = item_attrs.span().start;
         token::Struct::parse(stream)?;
         let ident = stream.parse()?;
         let mut fields_stream = Braced::parse(stream)?.into_stream();
-        let mut fields: Vec<FieldDecl<'s>> = vec![];
+        let mut fields: Vec<FieldDecl> = vec![];
         while !fields_stream.eof() {
             fields.push(fields_stream.parse()?);
             if fields_stream.eof() {
@@ -342,36 +357,37 @@ impl<'s> StructDecl<'s> {
             item_attrs,
             ident,
             fields,
-            span: start..stream.pos()
+            span: start..stream.pos(),
+            eval_ty: Ty::Unresolved,
         })
     }
 }
 
-impl<'s> Parse<'s> for StructDecl<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for StructDecl {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         Self::parse_with(stream.parse()?, stream)
     }
 }
 
-impl<'s> Visitors<'s> for StructDecl<'s> {
-    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
+impl TakeVisitor<CoherencyVisitor> for StructDecl {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         todo!()
     }
 }
 
 #[derive(Debug)]
 #[ast_node]
-pub struct TypeAliasDecl<'s> {
-    item_attrs: ItemAttrs<'s>,
-    ident: Ident<'s>,
-    value: Type<'s>,
+pub struct TypeAliasDecl {
+    item_attrs: ItemAttrs,
+    ident: Ident,
+    value: Type,
 }
 
-impl<'s> TypeAliasDecl<'s> {
-    pub fn parse_with<I: Iterator<Item = Token<'s>>>(
-        item_attrs: ItemAttrs<'s>,
-        stream: &mut TokenStream<'s, I>
-    ) -> Result<Self, Message<'s>> {
+impl TypeAliasDecl {
+    pub fn parse_with<I: Iterator<Item = Token>>(
+        item_attrs: ItemAttrs,
+        stream: &mut TokenStream<I>
+    ) -> Result<Self, Message> {
         let start = item_attrs.span().start;
         token::Type::parse(stream)?;
         let ident = stream.parse()?;
@@ -381,19 +397,20 @@ impl<'s> TypeAliasDecl<'s> {
             item_attrs,
             ident,
             value,
-            span: start..stream.pos()
+            span: start..stream.pos(),
+            eval_ty: Ty::Unresolved,
         })
     }
 }
 
-impl<'s> Parse<'s> for TypeAliasDecl<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for TypeAliasDecl {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         Self::parse_with(stream.parse()?, stream)
     }
 }
 
-impl<'s> Visitors<'s> for TypeAliasDecl<'s> {
-    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
+impl TakeVisitor<CoherencyVisitor> for TypeAliasDecl {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         let ty = self.value.visit_coherency(visitor);
         visitor.try_push(Ty::Alias {
             name: self.ident.to_string(),
@@ -406,19 +423,34 @@ impl<'s> Visitors<'s> for TypeAliasDecl<'s> {
 
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
-pub enum Item<'s> {
-    VarDecl(VarDecl<'s>),
-    ConstDecl(ConstDecl<'s>),
-    FunDecl(FunDecl<'s>),
-    StructDecl(StructDecl<'s>),
-    TypeAliasDecl(TypeAliasDecl<'s>),
+#[impl_opaque {
+    impl ASTNode {
+        fn span(&self) -> &Span:
+            e => e.span();
+        fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode>:
+            e => e.iter_children();
+        fn eval_ty(&self) -> Ty:
+            e => e.eval_ty();
+    }
+
+    impl TakeVisitor<CoherencyVisitor> {
+        fn take_visitor(&mut self, visitor: &mut CoherencyVisitor):
+            e => e.take_visitor(visitor);
+    }
+}]
+pub enum Item {
+    VarDecl(VarDecl),
+    ConstDecl(ConstDecl),
+    FunDecl(FunDecl),
+    StructDecl(StructDecl),
+    TypeAliasDecl(TypeAliasDecl),
 }
 
-impl<'s> Item<'s> {
-    pub fn parse_with<I: Iterator<Item = Token<'s>>>(
-        item_attrs: ItemAttrs<'s>,
-        stream: &mut TokenStream<'s, I>
-    ) -> Result<Self, Message<'s>> {
+impl Item {
+    pub fn parse_with<I: Iterator<Item = Token>>(
+        item_attrs: ItemAttrs,
+        stream: &mut TokenStream<I>
+    ) -> Result<Self, Message> {
         if token::Var::peek(stream).is_some() {
             Ok(Self::VarDecl(VarDecl::parse_with(item_attrs, stream)?))
         }
@@ -443,7 +475,7 @@ impl<'s> Item<'s> {
         }
     }
 
-    pub fn peek<I: Iterator<Item = Token<'s>>>(stream: &TokenStream<'s, I>) -> bool {
+    pub fn peek<I: Iterator<Item = Token>>(stream: &TokenStream<I>) -> bool {
         token::Var::peek(stream).is_some() || 
         token::Let::peek(stream).is_some() || 
         token::Fun::peek(stream).is_some() ||
@@ -467,53 +499,33 @@ impl<'s> Item<'s> {
     }
 }
 
-impl<'s> Parse<'s> for Item<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for Item {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         Self::parse_with(stream.parse()?, stream)
-    }
-}
-
-impl<'s> Visitors<'s> for Item<'s> {
-    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
-        match self {
-            Self::FunDecl(t) => t.visit_coherency(visitor),
-            Self::VarDecl(t) => t.visit_coherency(visitor),
-            Self::ConstDecl(t) => t.visit_coherency(visitor),
-            Self::TypeAliasDecl(t) => t.visit_coherency(visitor),
-            Self::StructDecl(t) => t.visit_coherency(visitor),
-        }
-    }
-}
-
-impl<'s> ASTNode<'s> for Item<'s> {
-    fn span(&self) -> &Span<'s> {
-        match self {
-            Self::VarDecl(t) => t.span(),
-            Self::ConstDecl(t) => t.span(),
-            Self::FunDecl(t) => t.span(),
-            Self::StructDecl(t) => t.span(),
-            Self::TypeAliasDecl(t) => t.span(),
-        }
     }
 }
 
 #[derive(Debug)]
 #[ast_node]
-pub struct UsingItem<'s> {
-    path: Path<'s>,
+pub struct UsingItem {
+    path: Path,
 }
 
-impl<'s> Parse<'s> for UsingItem<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for UsingItem {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         let start = stream.pos();
         token::Using::parse(stream)?;
         let path = stream.parse()?;
-        Ok(Self { path, span: start..stream.pos() })
+        Ok(Self {
+            path,
+            span: start..stream.pos(),
+            eval_ty: Ty::Unresolved,
+        })
     }
 }
 
-impl<'s> Visitors<'s> for UsingItem<'s> {
-    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
+impl TakeVisitor<CoherencyVisitor> for UsingItem {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         todo!()
     }
 }

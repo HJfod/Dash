@@ -6,7 +6,7 @@ use crate::{parser::Rule, compiler::{TypeCheck, Ty, TypeChecker}};
 macro_rules! rule_peek {
     ($parser: ident, $expr: expr) => {{
         let start = $parser.pos();
-        match || -> Result<_, Message<'s>> { Ok($expr) }() {
+        match || -> Result<_, Message> { Ok($expr) }() {
             Ok(_) => {
                 $parser.goto(start);
                 true
@@ -23,7 +23,7 @@ macro_rules! rule_peek {
 macro_rules! rule_try {
     ($parser: ident, $expr: expr) => {{
         let start = $parser.pos();
-        match || -> Result<_, Message<'s>> { Ok($expr) }() {
+        match || -> Result<_, Message> { Ok($expr) }() {
             Ok(r) => Ok(r),
             Err(e) => {
                 $parser.goto(start);
@@ -37,7 +37,7 @@ pub trait ConcatInto<T> {
     fn concat_into(self, target: &mut Vec<T>);
 }
 
-impl<'s, T: Rule<'s>> ConcatInto<T> for T {
+impl<T: Rule> ConcatInto<T> for T {
     fn concat_into(self, target: &mut Vec<T>) {
         target.push(self);
     }
@@ -57,18 +57,18 @@ impl<A, T: ConcatInto<A>> ConcatInto<A> for Option<T> {
     }
 }
 
-pub trait EvalTypeHelper<'s> {
-    fn to_type(&self) -> Ty<'s>;
+pub trait EvalTypeHelper {
+    fn to_type(&self) -> Ty;
 }
 
-impl<'s> EvalTypeHelper<'s> for Ty<'s> {
-    fn to_type(&self) -> Ty<'s> {
+impl EvalTypeHelper for Ty {
+    fn to_type(&self) -> Ty {
         self.clone()
     }
 }
 
-impl<'s> EvalTypeHelper<'s> for Option<Ty<'s>> {
-    fn to_type(&self) -> Ty<'s> {
+impl EvalTypeHelper for Option<Ty> {
+    fn to_type(&self) -> Ty {
         self.clone().unwrap_or(Ty::Inferred)
     }
 }

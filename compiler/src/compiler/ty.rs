@@ -12,7 +12,7 @@ impl FullPath {
         Self { path: path.into() }
     }
 
-    pub fn ends_with(&self, path: &Path) -> bool {
+    pub fn ends_with(&self, path: &IdentPath) -> bool {
         self.to_string().ends_with(&path.to_string())
     }
 }
@@ -24,12 +24,12 @@ impl Display for FullPath {
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
-pub struct Path {
+pub struct IdentPath {
     absolute: bool,
     path: Vec<String>,
 }
 
-impl Path {
+impl IdentPath {
     pub fn new<T: Into<Vec<String>>>(path: T, absolute: bool) -> Self {
         Self { path: path.into(), absolute }
     }
@@ -39,7 +39,7 @@ impl Path {
     }
 }
 
-impl Display for Path {
+impl Display for IdentPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{}{}", 
             if self.absolute { "::" } else { "" },
@@ -48,8 +48,8 @@ impl Display for Path {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Ty<'s> {
+#[derive(Default, Debug, Clone, PartialEq)]
+pub enum Ty {
     /// Represents that an error occurred during typechecking. Only produced on 
     /// errors - should **never** appear on a succesful compilation!
     /// Always convertible to all other types in all contexts to avoid further 
@@ -57,6 +57,7 @@ pub enum Ty<'s> {
     Invalid,
     /// Represents a type whose value is not known yet. Compilation should never 
     /// finish until all unknowns have been resolved
+    #[default]
     Unresolved,
     /// Represents that the branch which produced this value will never 
     /// finish execution (for example because it returned to an outer scope)
@@ -76,19 +77,19 @@ pub enum Ty<'s> {
     /// Function type (used for named functions that can't capture mutable 
     /// variables from the outer scope)
     Function {
-        params: Vec<(String, Ty<'s>)>,
-        ret_ty: Box<Ty<'s>>,
-        decl: ASTRef<'s>,
+        params: Vec<(String, Ty)>,
+        ret_ty: Box<Ty>,
+        decl: ASTRef,
     },
     /// Alias for another type
     Alias {
         name: String,
-        ty: Box<Ty<'s>>,
-        decl: ASTRef<'s>,
+        ty: Box<Ty>,
+        decl: ASTRef,
     },
 }
 
-impl<'s> Ty<'s> {
+impl Ty {
     /// Whether this type is one that can't exist as a value (`unknown`, `invalid`, or `never`)
     pub fn is_unreal(&self) -> bool {
         matches!(self, Ty::Unresolved | Ty::Invalid | Ty::Never)
@@ -100,7 +101,7 @@ impl<'s> Ty<'s> {
     }
 
     /// Reduce type into its canonical representation, for example remove aliases
-    pub fn reduce(&self) -> &Ty<'s> {
+    pub fn reduce(&self) -> &Ty {
         match self {
             Self::Alias { name: _, ty, decl: _ } => ty,
             other => other,
@@ -111,7 +112,7 @@ impl<'s> Ty<'s> {
     /// not
     /// 
     /// In most cases this means equality
-    pub fn convertible_to(&self, other: &Ty<'s>) -> bool {
+    pub fn convertible_to(&self, other: &Ty) -> bool {
         self.is_unreal() || other.is_unreal() || *self.reduce() == *other.reduce()
     }
 
@@ -119,7 +120,7 @@ impl<'s> Ty<'s> {
     /// 
     /// Returns the return type if the type is a function type, or itself 
     /// if it's something else
-    pub fn return_ty(&self) -> Ty<'s> {
+    pub fn return_ty(&self) -> Ty {
         match self {
             Self::Function { params: _, ret_ty, decl: _ } => *ret_ty.clone(),
             _ => self.clone(),
@@ -127,7 +128,7 @@ impl<'s> Ty<'s> {
     }
 
     /// Get the corresponding AST declaration that produced this type
-    pub fn decl(&self) -> ASTRef<'s> {
+    pub fn decl(&self) -> ASTRef {
         match self {
             Ty::Invalid => ASTRef::Builtin,
             Ty::Unresolved => ASTRef::Builtin,
@@ -143,7 +144,7 @@ impl<'s> Ty<'s> {
     }
 
     /// Returns `other` if this type is `invalid` or `unknown`
-    pub fn or(self, other: Ty<'s>) -> Ty<'s> {
+    pub fn or(self, other: Ty) -> Ty {
         if self.is_unreal() {
             other
         }
@@ -153,7 +154,7 @@ impl<'s> Ty<'s> {
     }
 }
 
-impl Display for Ty<'_, '_> {
+impl Display for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Invalid => f.write_str("invalid"),

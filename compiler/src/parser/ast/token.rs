@@ -8,21 +8,21 @@ use crate::{
         node::{Parse, ASTNode},
         stream::{TokenStream, Token}
     },
-    shared::{logging::{Message, Level}, src::{Span, Spanful}}, compiler::ty
+    shared::{logging::{Message, Level}, src::{Span, Spanful}}, compiler::ty::{Ty, self}
 };
 
-pub trait Tokenize<'s>: ASTNode<'s> + TryFrom<Token<'s>, Error = Message<'s>> {
+pub trait Tokenize: ASTNode + TryFrom<Token, Error = Message> {
     fn name() -> &'static str;
-    fn peek<I: Iterator<Item = Token<'s>>>(stream: &TokenStream<'s, I>) -> Option<Self> {
+    fn peek<I: Iterator<Item = Token>>(stream: &TokenStream<I>) -> Option<Self> {
         Self::try_from(stream.peek()).ok()
     }
-    fn peek_and_parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Option<Self> {
+    fn peek_and_parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Option<Self> {
         Self::peek(stream).and_then(|_| Self::parse(stream).ok())
     }
 }
 
-impl<'s, T: Tokenize<'s>> Parse<'s> for T {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl<T: Tokenize> Parse for T {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         Self::try_from(stream.next())
     }
 }
@@ -42,9 +42,9 @@ pub fn closing_paren(ch: char) -> char {
 
 macro_rules! impl_tokenize {
     ($class: ident::$item: ident -> $name: expr) => {
-        impl<'s> TryFrom<Token<'s>> for $item<'s> {
-            type Error = Message<'s>;
-            fn try_from(token: Token<'s>) -> Result<Self, Self::Error> {
+        impl TryFrom<Token> for $item {
+            type Error = Message;
+            fn try_from(token: Token) -> Result<Self, Self::Error> {
                 match token {
                     Token::$class($class::$item(v)) => Ok(v),
                     t => Err(Message::from_span(
@@ -56,23 +56,29 @@ macro_rules! impl_tokenize {
             }
         }
 
-        impl<'s> Tokenize<'s> for $item<'s> {
+        impl Tokenize for $item {
             fn name() -> &'static str {
                 $name
             }
         }
 
-        impl<'s> ASTNode<'s> for $item<'s> {
-            fn span(&self) -> &Span<'s> {
+        impl ASTNode for $item {
+            fn span(&self) -> &Span {
                 &self.span
+            }
+            fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
+                std::iter::empty()
+            }
+            fn eval_ty(&self) -> Ty {
+                Ty::Unresolved
             }
         }
     };
 
     ($item: ident -> $name: expr) => {
-        impl<'s> TryFrom<Token<'s>> for $item<'s> {
-            type Error = Message<'s>;
-            fn try_from(token: Token<'s>) -> Result<Self, Self::Error> {
+        impl TryFrom<Token> for $item {
+            type Error = Message;
+            fn try_from(token: Token) -> Result<Self, Self::Error> {
                 match token {
                     Token::$item(v) => Ok(v),
                     t => Err(Message::from_span(
@@ -84,15 +90,21 @@ macro_rules! impl_tokenize {
             }
         }
 
-        impl<'s> Tokenize<'s> for $item<'s> {
+        impl Tokenize for $item {
             fn name() -> &'static str {
                 $name
             }
         }
 
-        impl<'s> ASTNode<'s> for $item<'s> {
-            fn span(&self) -> &Span<'s> {
+        impl ASTNode for $item {
+            fn span(&self) -> &Span {
                 &self.span
+            }
+            fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
+                std::iter::empty()
+            }
+            fn eval_ty(&self) -> Ty {
+                Ty::Unresolved
             }
         }
     };
@@ -118,13 +130,13 @@ macro_rules! declare_token {
     ) => {
         $($(
             #[derive(new, Clone, Debug)]
-            pub struct $item<'s> {
-                span: Span<'s>,
+            pub struct $item {
+                span: Span,
             }
 
             impl_tokenize!($class::$item -> declare_token!(#get_display_name $($as_str)? $class_as_str $item));
 
-            impl<'s> Display for $item<'s> {
+            impl Display for $item {
                 fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                     f.write_str(Self::name())
                 }
@@ -132,25 +144,25 @@ macro_rules! declare_token {
         )*)*
 
         $($($(
-            impl<'s> $var<'s> {
+            impl $var {
                 pub fn $trait_fn(&self) -> $trait_fn_ty {
                     $value
                 }
             }
 
-            impl<'s> std::convert::From<$var<'s>> for $class<'s> {
-                fn from(value: $var<'s>) -> Self {
+            impl std::convert::From<$var> for $class {
+                fn from(value: $var) -> Self {
                     Self::$var(value)
                 }
             }
         )+)*)*
 
         #[derive(Clone, Debug)]
-        pub enum $class<'s> {
-            $($($item($item<'s>),)*)*
+        pub enum $class {
+            $($($item($item),)*)*
         }
 
-        impl<'s> $class<'s> {
+        impl $class {
             $(
                 pub fn $kind(&self) -> bool {
                     match self {
@@ -168,7 +180,7 @@ macro_rules! declare_token {
                 }
             )*
 
-            pub fn try_new(value: &str, span: Span<'s>) -> Option<$class<'s>> {
+            pub fn try_new(value: &str, span: Span) -> Option<$class> {
                 match value {
                     $(
                         $(
@@ -181,9 +193,9 @@ macro_rules! declare_token {
             }
         }
 
-        impl<'s> TryFrom<Token<'s>> for $class<'s> {
-            type Error = Message<'s>;
-            fn try_from(token: Token<'s>) -> Result<Self, Self::Error> {
+        impl TryFrom<Token> for $class {
+            type Error = Message;
+            fn try_from(token: Token) -> Result<Self, Self::Error> {
                 match token {
                     Token::$class(v) => Ok(v),
                     t => Err(Message::from_span(
@@ -195,25 +207,31 @@ macro_rules! declare_token {
             }
         }
 
-        impl<'s> Tokenize<'s> for $class<'s> {
+        impl Tokenize for $class {
             fn name() -> &'static str {
                 $class_as_str
             }
         }
 
-        impl<'s> ASTNode<'s> for $class<'s> {
-            fn span(&self) -> &Span<'s> {
+        impl ASTNode for $class {
+            fn span(&self) -> &Span {
                 match self {
-                    $(
-                        $(
-                            Self::$item(t) => t.span(),
-                        )*
-                    )*
+                    $($(Self::$item(t) => t.span(),)*)*
+                }
+            }
+            fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
+                match self {
+                    $($(Self::$item(t) => t.iter_children(),)*)*
+                }
+            }
+            fn eval_ty(&self) -> Ty {
+                match self {
+                    $($(Self::$item(t) => t.eval_ty(),)*)*
                 }
             }
         }
 
-        impl<'s> Display for $class<'s> {
+        impl Display for $class {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 match self {
                     $(
@@ -242,12 +260,12 @@ macro_rules! declare_token {
         )*
     ) => {
         #[derive(new, Clone, Debug)]
-        pub struct $item<'s> {
+        pub struct $item {
             $($field: $field_ty,)*
-            span: Span<'s>,
+            span: Span,
         }
 
-        impl<'s> $item<'s> {
+        impl $item {
             $($fun)*
         }
 
@@ -257,13 +275,13 @@ macro_rules! declare_token {
     };
 
     (#impl_display $item:ident $display:item) => {
-        impl<'s> Display for $item<'s> {
+        impl Display for $item {
             $display
         }
     };
 
     (#impl_display $item:ident) => {
-        impl<'s> Display for $item<'s> {
+        impl Display for $item {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.write_str(Self::name())
             }
@@ -340,8 +358,8 @@ pub enum Prec {
 }
 
 impl Prec {
-    pub fn peek_op_of_this_prec<'s, I>(&self, stream: &TokenStream<'s, I>) -> bool
-        where I: Iterator<Item = Token<'s>>
+    pub fn peek_op_of_this_prec<I>(&self, stream: &TokenStream<I>) -> bool
+        where I: Iterator<Item = Token>
     {
         if let Some(op) = Op::peek(stream) {
             op.prec() == *self
@@ -437,34 +455,34 @@ declare_token! {
         &self.value
     }
 
-    pub fn path(&self) -> ty::Path {
-        ty::Path::new([self.to_string()], false)
+    pub fn path(&self) -> ty::IdentPath {
+        ty::IdentPath::new([self.to_string()], false)
     }
 }
 
 declare_token! {
     [struct Parenthesized "parenthesized expression"]
-    +content: Vec<Token<'s>>;
+    +content: Vec<Token>;
     ---
-    pub fn into_stream(self) -> TokenStream<'s, std::vec::IntoIter<Token<'s>>> {
+    pub fn into_stream(self) -> TokenStream<std::vec::IntoIter<Token>> {
         TokenStream::new(self.span.src(), self.content.into_iter())
     }
 }
 
 declare_token! {
     [struct Bracketed "bracketed expression"]
-    +content: Vec<Token<'s>>;
+    +content: Vec<Token>;
     ---
-    pub fn into_stream(self) -> TokenStream<'s, std::vec::IntoIter<Token<'s>>> {
+    pub fn into_stream(self) -> TokenStream<std::vec::IntoIter<Token>> {
         TokenStream::new(self.span.src(), self.content.into_iter())
     }
 }
 
 declare_token! {
     [struct Braced "braced expression"]
-    +content: Vec<Token<'s>>;
+    +content: Vec<Token>;
     ---
-    pub fn into_stream(self) -> TokenStream<'s, std::vec::IntoIter<Token<'s>>> {
+    pub fn into_stream(self) -> TokenStream<std::vec::IntoIter<Token>> {
         TokenStream::new(self.span.src(), self.content.into_iter())
     }
 }

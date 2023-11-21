@@ -21,12 +21,12 @@ impl Display for Level {
 }
 
 #[derive(Debug)]
-pub struct Note<'s> {
+pub struct Note {
     info: String,
-    at: Option<Span<'s>>,
+    at: Option<Span>,
 }
 
-impl<'s> Note<'s> {
+impl Note {
     pub fn new(info: &str) -> Self {
         Self {
             info: info.into(),
@@ -34,7 +34,7 @@ impl<'s> Note<'s> {
         }
     }
 
-    pub fn from_span<S: Into<String>>(info: S, span: &Span<'s>) -> Self {
+    pub fn from_span<S: Into<String>>(info: S, span: &Span) -> Self {
         Self {
             info: info.into(),
             at: Some(span.clone()),
@@ -42,7 +42,7 @@ impl<'s> Note<'s> {
     }
 }
 
-impl Display for Note<'_> {
+impl Display for Note {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ref span) = self.at {
             f.write_fmt(format_args!(
@@ -58,15 +58,15 @@ impl Display for Note<'_> {
 }
 
 #[derive(Debug)]
-pub struct Message<'s> {
+pub struct Message {
     pub level: Level,
     pub info: String,
-    pub notes: Vec<Note<'s>>,
-    pub span: Span<'s>,
+    pub notes: Vec<Note>,
+    pub span: Span,
 }
 
-impl<'s> Message<'s> {
-    pub fn from_span<S: Into<String>>(level: Level, info: S, span: &Span<'s>) -> Self {
+impl Message {
+    pub fn from_span<S: Into<String>>(level: Level, info: S, span: &Span) -> Self {
         Self {
             level,
             info: info.into(),
@@ -75,12 +75,12 @@ impl<'s> Message<'s> {
         }
     }
 
-    pub fn note(mut self, note: Note<'s>) -> Self {
+    pub fn note(mut self, note: Note) -> Self {
         self.notes.push(note);
         self
     }
 
-    pub fn note_if(mut self, note: Option<Note<'s>>) -> Self {
+    pub fn note_if(mut self, note: Option<Note>) -> Self {
         if let Some(note) = note {
             self.notes.push(note);
         }
@@ -93,7 +93,7 @@ impl<'s> Message<'s> {
     }
 }
 
-impl Display for Message<'_> {
+impl Display for Message {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "{} at {}:\n{}{}{}",
@@ -111,16 +111,16 @@ impl Display for Message<'_> {
     }
 }
 
-pub trait Logger<'s>: Debug {
+pub trait Logger: Debug {
     /// Log a message in this logger
-    fn log_msg(&mut self, msg: Message<'s>);
+    fn log_msg(&mut self, msg: Message);
     /// Number of warnings sent to this logger
     fn warn_count(&self) -> usize;
     /// Number of errors sent to this logger
     fn error_count(&self) -> usize;
 }
 
-pub type LoggerRef<'s> = Arc<Mutex<dyn Logger<'s>>>;
+pub type LoggerRef = Arc<Mutex<dyn Logger>>;
 
 #[derive(Debug)]
 pub struct ConsoleLogger {
@@ -130,7 +130,7 @@ pub struct ConsoleLogger {
 
 impl ConsoleLogger {
     #[allow(clippy::new_ret_no_self)]
-    pub fn new<'s>() -> LoggerRef<'s> {
+    pub fn new() -> LoggerRef {
         Arc::from(Mutex::new(Self {
             warn_count: 0,
             error_count: 0,
@@ -138,8 +138,8 @@ impl ConsoleLogger {
     }
 }
 
-impl<'s> Logger<'s> for ConsoleLogger {
-    fn log_msg(&mut self, msg: Message<'s>) {
+impl Logger for ConsoleLogger {
+    fn log_msg(&mut self, msg: Message) {
         println!("{msg}");
     }
 

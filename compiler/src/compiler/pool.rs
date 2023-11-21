@@ -4,12 +4,12 @@ use crate::{
     parser::ast::expr::AST
 };
 
-pub struct ASTPool<'s> {
-    asts: Vec<AST<'s>>,
+pub struct ASTPool {
+    asts: Vec<AST>,
 }
 
-impl<'s> ASTPool<'s> {
-    pub fn parse_src_pool(pool: &'s SrcPool, logger: LoggerRef<'s>) -> Self {
+impl ASTPool {
+    pub fn parse_src_pool(pool: SrcPool, logger: LoggerRef) -> Self {
         Self {
             asts: pool.iter()
                 .map(|src| src.tokenize(logger.clone()).parse())
@@ -24,14 +24,14 @@ impl<'s> ASTPool<'s> {
         }
     }
 
-    pub fn iter<'a>(&'s self) -> <&'a Vec<AST<'s>> as IntoIterator>::IntoIter {
+    pub fn iter<'a>(&'a self) -> <&'a Vec<AST> as IntoIterator>::IntoIter {
         self.into_iter()
     }
 }
 
-impl<'s, 'a> IntoIterator for &'a ASTPool<'s> {
-    type Item = &'a AST<'s>;
-    type IntoIter = <&'a Vec<AST<'s>> as IntoIterator>::IntoIter;
+impl<'a> IntoIterator for &'a ASTPool {
+    type Item = &'a AST;
+    type IntoIter = <&'a Vec<AST> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.asts.iter()

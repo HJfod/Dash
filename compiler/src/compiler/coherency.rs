@@ -1,7 +1,7 @@
 
 use std::collections::HashMap;
 use crate::{parser::node::ASTRef, shared::{logging::{LoggerRef, Message, Level}, src::Span, ptr_iter::PtrChainIter}};
-use super::{ty::{FullPath, Path, Ty}, entity::Entity};
+use super::{ty::{FullPath, IdentPath, Ty}, entity::Entity};
 use crate::parser::ast::token;
 use crate::shared::src::BUILTIN_SPAN;
 
@@ -52,7 +52,7 @@ impl<T> Space<T> {
         self.entities.get(name)
     }
 
-    pub fn resolve(&self, path: &Path) -> FullPath {
+    pub fn resolve(&self, path: &IdentPath) -> FullPath {
         self.entities.iter()
             .find(|(full, _)| full.ends_with(path))
             .map(|p| p.0.clone())
@@ -68,8 +68,8 @@ impl<T> Default for Space<T> {
     }
 }
 
-impl<'s> Space<Ty<'s>> {
-    fn push_ty(&mut self, ty: Ty<'s>) -> &Ty<'s> {
+impl Space<Ty> {
+    fn push_ty(&mut self, ty: Ty) -> &Ty {
         self.push(FullPath::new([ty.to_string()]), ty)
     }
 }
@@ -82,28 +82,28 @@ pub enum ScopeLevel {
     Function,
 }
 
-pub enum Return<'s> {
+pub enum Return {
     Void,
-    Explicit(Ty<'s>),
-    Inferred(Ty<'s>, ASTRef<'s>),
+    Explicit(Ty),
+    Inferred(Ty, ASTRef),
 }
 
-pub struct Scope<'s> {
-    parent: *mut Scope<'s>,
-    children: Vec<Scope<'s>>,
+pub struct Scope {
+    parent: *mut Scope,
+    children: Vec<Scope>,
     level: ScopeLevel,
-    types: Space<Ty<'s>>,
-    entities: Space<Entity<'s>>,
-    return_type: Return<'s>,
-    decl: ASTRef<'s>,
+    types: Space<Ty>,
+    entities: Space<Entity>,
+    return_type: Return,
+    decl: ASTRef,
 }
 
-impl<'s> Scope<'s> {
+impl Scope {
     fn new(
-        parent: *mut Scope<'s>,
+        parent: *mut Scope,
         level: ScopeLevel,
-        decl: ASTRef<'s>,
-        return_type: Return<'s>
+        decl: ASTRef,
+        return_type: Return
     ) -> Self {
         Self {
             parent,
@@ -162,7 +162,7 @@ impl<'s> Scope<'s> {
         res
     }
 
-    pub fn decl(&self) -> ASTRef<'s> {
+    pub fn decl(&self) -> ASTRef {
         self.decl
     }
 }
@@ -189,14 +189,14 @@ impl<T> Into<Option<T>> for FoundItem<T> {
     }
 }
 
-pub enum FindScope<'s> {
+pub enum FindScope {
     ByLevel(ScopeLevel),
-    ByDecl(ASTRef<'s>),
+    ByDecl(ASTRef),
     TopMost,
 }
 
-impl<'s> FindScope<'s> {
-    pub fn matches(&self, scope: &Scope<'s>) -> bool {
+impl FindScope {
+    pub fn matches(&self, scope: &Scope) -> bool {
         match self {
             Self::ByLevel(level) => scope.level >= *level,
             Self::ByDecl(decl) => scope.decl == *decl,
@@ -205,14 +205,14 @@ impl<'s> FindScope<'s> {
     }
 }
 
-pub struct CoherencyVisitor<'s> {
-    logger: LoggerRef<'s>,
-    root_scope: Scope<'s>,
-    current_scope: *mut Scope<'s>,
+pub struct CoherencyVisitor {
+    logger: LoggerRef,
+    root_scope: Scope,
+    current_scope: *mut Scope,
 }
 
-impl<'s> CoherencyVisitor<'s> {
-    pub fn new(logger: LoggerRef<'s>) -> Self {
+impl CoherencyVisitor {
+    pub fn new(logger: LoggerRef) -> Self {
         let root_scope = Scope::new_top();
         Self {
             logger,
@@ -221,7 +221,7 @@ impl<'s> CoherencyVisitor<'s> {
         }
     }
 
-    pub fn find_entity<'a>(&'a self, name: Path) -> FoundItem<&'a Entity<'s>> {
+    pub fn find_entity<'a>(&'a self, name: IdentPath) -> FoundItem<&'a Entity> {
         let mut outside_function = false;
         for scope in self.iter_scopes() {
             // try to find some entity with this name
@@ -242,7 +242,7 @@ impl<'s> CoherencyVisitor<'s> {
         FoundItem::None
     }
 
-    pub fn find_ty<'a>(&'a self, name: Path) -> FoundItem<&'a Ty<'s>> {
+    pub fn find_ty<'a>(&'a self, name: IdentPath) -> FoundItem<&'a Ty> {
         for scope in self.iter_scopes() {
             if let Some(t) = scope.types.find(&scope.types.resolve(&name)) {
                 return FoundItem::Some(t);
@@ -252,9 +252,9 @@ impl<'s> CoherencyVisitor<'s> {
     }
 
     /// Push a scope onto the top of the scope stack
-    pub fn enter_scope<F>(&mut self, scope: &mut *const Scope<'s>, or_create: F)
+    pub fn enter_scope<F>(&mut self, scope: &mut *const Scope, or_create: F)
         where F:
-            FnMut() -> (ScopeLevel, ASTRef<'s>, Return<'s>)
+            FnMut() -> (ScopeLevel, ASTRef, Return)
     {
         if scope.is_null() {
             let (level, decl, return_type) = or_create();
@@ -282,20 +282,20 @@ impl<'s> CoherencyVisitor<'s> {
         }
     }
 
-    fn iter_scopes(&self) -> impl Iterator<Item = &mut Scope<'s>> {
+    fn iter_scopes(&self) -> impl Iterator<Item = &mut Scope> {
         PtrChainIter::new(self.current_scope, |s| s.parent)
     }
 
-    pub fn emit_msg(&self, msg: Message<'s>) {
+    pub fn emit_msg(&self, msg: Message) {
         self.logger.lock().unwrap().log_msg(msg);
     }
 
-    pub fn set_logger(&mut self, logger: LoggerRef<'s>) {
+    pub fn set_logger(&mut self, logger: LoggerRef) {
         self.logger = logger;
     }
 
     /// Helper function for verifying that types are convertible to each other
-    pub fn expect_eq(&self, a: Ty<'s>, b: Ty<'s>, span: &Span<'s>) -> Ty<'s> {
+    pub fn expect_eq(&self, a: Ty, b: Ty, span: &Span) -> Ty {
         if !a.convertible_to(&b) {
             self.emit_msg(Message::from_span(
                 Level::Error,

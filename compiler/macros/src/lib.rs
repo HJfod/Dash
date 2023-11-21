@@ -8,7 +8,7 @@ extern crate convert_case;
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{quote, format_ident};
-use syn::{parse_macro_input, Block, ItemFn, ItemStruct, Fields, Field, Error};
+use syn::{parse_macro_input, Block, ItemFn, ItemStruct, Fields, Field, Error, ItemEnum, Expr, parse::Parse, Token, braced, Signature, Type};
 use convert_case::{Case, Casing};
 
 #[proc_macro]
@@ -36,7 +36,7 @@ pub fn ast_node(_args: TokenStream, stream: TokenStream) -> TokenStream {
                 vis: syn::Visibility::Inherited,
                 ident: Some(format_ident!("span")),
                 colon_token: None,
-                ty: syn::Type::Verbatim(quote! { Span<'s> })
+                ty: syn::Type::Verbatim(quote! { Span })
             });
             named.named.push(Field {
                 attrs: vec![],
@@ -44,7 +44,7 @@ pub fn ast_node(_args: TokenStream, stream: TokenStream) -> TokenStream {
                 vis: syn::Visibility::Inherited,
                 ident: Some(format_ident!("eval_ty")),
                 colon_token: None,
-                ty: syn::Type::Verbatim(quote! { Ty<'s> })
+                ty: syn::Type::Verbatim(quote! { Ty })
             });
         },
         _ => {
@@ -58,17 +58,17 @@ pub fn ast_node(_args: TokenStream, stream: TokenStream) -> TokenStream {
     quote! {
         #target
 
-        impl<'s> crate::parser::node::ASTNode<'s> for #name<'s> {
-            fn span(&self) -> &crate::shared::src::Span<'s> {
+        impl crate::parser::node::ASTNode for #name {
+            fn span(&self) -> &crate::shared::src::Span {
                 &self.span
             }
 
-            fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode<'s>> {
+            fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
                 std::iter::empty()
                     #iter_chains
             }
 
-            fn eval_ty(&self) -> Ty<'s> {
+            fn eval_ty(&self) -> Ty {
                 self.eval_ty.clone()
             }
         }
@@ -91,4 +91,95 @@ pub fn log_fun_io(_: TokenStream, stream: TokenStream) -> TokenStream {
     } }.into();
     fun.block = parse_macro_input!(nblock as Block).into();
     quote! { #fun }.into()
+}
+
+struct OpaqueFnImpl {
+    sig: Signature,
+    param: Ident,
+    body: Expr,
+}
+
+impl Parse for OpaqueFnImpl {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let sig = input.parse()?;
+        input.parse::<Token![:]>()?;
+        let param = input.parse()?;
+        input.parse::<Token![=>]>()?;
+        let body = input.parse()?;
+        Ok(Self { sig, param, body })
+    }
+}
+
+struct OpaqueImpl {
+    name: Type,
+    fns: Vec<OpaqueFnImpl>,
+}
+
+impl Parse for OpaqueImpl {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        input.parse::<Token![impl]>()?;
+        let name = input.parse()?;
+        let content;
+        braced!(content in input);
+        Ok(Self {
+            name,
+            fns: content.parse_terminated(OpaqueFnImpl::parse, Token![;])?
+                .into_iter()
+                .collect()
+        })
+    }
+}
+
+struct ManyOpaqueImpls {
+    impls: Vec<OpaqueImpl>,
+}
+
+impl Parse for ManyOpaqueImpls {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut impls = vec![];
+        while !input.is_empty() {
+            impls.push(input.parse()?);
+        }
+        Ok(Self { impls })
+    }
+}
+
+#[proc_macro_attribute]
+pub fn impl_opaque(args: TokenStream, stream: TokenStream) -> TokenStream {
+    let target = parse_macro_input!(stream as ItemEnum);
+    let opaques = parse_macro_input!(args as ManyOpaqueImpls);
+    let mut res = quote! {};
+    for opaque in opaques.impls {
+        let mut impl_res = quote! {};
+        for fnc in opaque.fns {
+            let sig = fnc.sig;
+            let param = fnc.param;
+            let body = fnc.body;
+            let mut matches = quote! {};
+            for field in &target.variants {
+                let field = &field.ident;
+                matches.extend(quote! {
+                    Self::#field(#param) => #body,
+                });
+            }
+            impl_res.extend(quote! {
+                #sig {
+                    match self {
+                        #matches
+                    }
+                }
+            });
+        }
+        let trait_to_impl = opaque.name;
+        let impl_to = &target.ident;
+        res.extend(quote! {
+            impl #trait_to_impl for #impl_to {
+                #impl_res
+            }
+        });
+    }
+    quote! {
+        #target
+        #res
+    }.into()
 }

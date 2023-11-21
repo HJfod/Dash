@@ -8,43 +8,48 @@ use crate::{
         node::{Parse, ASTNode}
     },
     shared::{logging::{Message, Level}, src::Span},
-    compiler::{ty::{TypeVisitor, Ty}, visitor::Visitors}
+    compiler::{ty::Ty, visitor::TakeVisitor, coherency::CoherencyVisitor}
 };
 use super::{expr::Expr, token::{Parenthesized, Bracketed, self}};
 
 #[derive(Debug)]
 #[ast_node]
-pub struct UnOp<'s> {
-    op: Op<'s>,
-    target: Box<Expr<'s>>,
+pub struct UnOp {
+    op: Op,
+    target: Box<Expr>,
 }
 
-impl<'s> Parse<'s> for UnOp<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for UnOp {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         let start = stream.pos();
         let op = Op::parse(stream)?;
         let target = Expr::parse_unop(stream)?.into();
-        Ok(Self { op, target, span: start..stream.pos() })
+        Ok(Self {
+            op,
+            target,
+            span: start..stream.pos(),
+            eval_ty: Ty::Unresolved,
+        })
     }
 }
 
-impl<'s> Visitors<'s> for UnOp<'s> {
-    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
+impl TakeVisitor<CoherencyVisitor> for UnOp {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         todo!()
     }
 }
 
 #[derive(Debug)]
 #[ast_node]
-pub struct Call<'s> {
-    target: Box<Expr<'s>>,
-    args: Vec<Expr<'s>>,
+pub struct Call {
+    target: Box<Expr>,
+    args: Vec<Expr>,
 }
 
-impl<'s> Call<'s> {
-    pub fn parse_with<I: Iterator<Item = Token<'s>>>(
-        target: Expr<'s>, stream: &mut TokenStream<'s, I>
-    ) -> Result<Self, Message<'s>> {
+impl Call {
+    pub fn parse_with<I: Iterator<Item = Token>>(
+        target: Expr, stream: &mut TokenStream<I>
+    ) -> Result<Self, Message> {
         let start = stream.pos();
         let mut args_stream = Parenthesized::parse(stream)?.into_stream();
         let mut args = Vec::new();
@@ -55,18 +60,23 @@ impl<'s> Call<'s> {
             }
             token::Comma::parse(&mut args_stream)?;
         }
-        Ok(Self { target: target.into(), args, span: start..stream.pos() })
+        Ok(Self {
+            target: target.into(),
+            args,
+            span: start..stream.pos(),
+            eval_ty: Ty::Unresolved,
+        })
     }
 }
 
-impl<'s> Parse<'s> for Call<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for Call {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         Self::parse_with(stream.parse()?, stream)
     }
 }
 
-impl<'s> Visitors<'s> for Call<'s> {
-    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
+impl TakeVisitor<CoherencyVisitor> for Call {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         let target_ty = self.target.visit_coherency(visitor);
         let args_ty = self.args.iter().map(|v| v.visit_coherency(visitor)).collect::<Vec<_>>();
         match target_ty {
@@ -99,16 +109,16 @@ impl<'s> Visitors<'s> for Call<'s> {
 
 #[derive(Debug)]
 #[ast_node]
-pub struct Index<'s> {
-    target: Box<Expr<'s>>,
-    index: Box<Expr<'s>>,
+pub struct Index {
+    target: Box<Expr>,
+    index: Box<Expr>,
 }
 
-impl<'s> Index<'s> {
-    pub fn parse_with<I: Iterator<Item = Token<'s>>>(target: Expr<'s>, stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Index {
+    pub fn parse_with<I: Iterator<Item = Token>>(target: Expr, stream: &mut TokenStream<I>) -> Result<Self, Message> {
         let start = stream.pos();
         let mut args_stream = Bracketed::parse(stream)?.into_stream();
-        let index = args_stream.parse::<Expr<'s>>()?.into();
+        let index = args_stream.parse::<Expr>()?.into();
         match args_stream.next() {
             Token::EOF(_, _) => {},
             other => Err(Message::from_span(
@@ -117,52 +127,59 @@ impl<'s> Index<'s> {
                 other.span()
             ))?,
         }
-        Ok(Self { target: target.into(), index, span: start..stream.pos() })
+        Ok(Self {
+            target: target.into(),
+            index,
+            span: start..stream.pos(),
+            eval_ty: Ty::Unresolved,
+        })
     }
 }
 
-impl<'s> Parse<'s> for Index<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for Index {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         Self::parse_with(stream.parse()?, stream)
     }
 }
 
-impl<'s> Visitors<'s> for Index<'s> {
-    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
+impl TakeVisitor<CoherencyVisitor> for Index {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         todo!()
     }
 }
 
 #[derive(Debug)]
 #[ast_node]
-pub struct BinOp<'s> {
-    lhs: Box<Expr<'s>>,
-    op: Op<'s>,
-    rhs: Box<Expr<'s>>,
+pub struct BinOp {
+    lhs: Box<Expr>,
+    op: Op,
+    rhs: Box<Expr>,
 }
 
-impl<'s> BinOp<'s> {
+impl BinOp {
     pub fn parse_with<F, I>(
-        lhs: Expr<'s>,
+        lhs: Expr,
         mut rhs: F,
-        stream: &mut TokenStream<'s, I>
-    ) -> Result<Self, Message<'s>>
+        stream: &mut TokenStream<I>
+    ) -> Result<Self, Message>
         where
-            I: Iterator<Item = Token<'s>>,
-            F: FnMut(&mut TokenStream<'s, I>) -> Result<Expr<'s>, Message<'s>>
+            I: Iterator<Item = Token>,
+            F: FnMut(&mut TokenStream<I>) -> Result<Expr, Message>
     {
         let start = stream.pos();
         let lhs = lhs.into();
         let op = stream.parse()?;
         let rhs = rhs(stream)?.into();
         Ok(Self {
-            lhs, op, rhs, span: start..stream.pos(),
+            lhs, op, rhs,
+            span: start..stream.pos(),
+            eval_ty: Ty::Unresolved,
         })
     }
 }
 
-impl<'s> Visitors<'s> for BinOp<'s> {
-    fn visit_coherency(&self, visitor: &mut TypeVisitor<'s>) -> Ty<'s> {
+impl TakeVisitor<CoherencyVisitor> for BinOp {
+    fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         let lhs_ty = self.lhs.visit_coherency(visitor);
         let rhs_ty = self.rhs.visit_coherency(visitor);
         match visitor.binop_ty(&lhs_ty, &self.op, &rhs_ty) {

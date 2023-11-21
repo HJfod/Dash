@@ -9,7 +9,7 @@ pub trait Visit {
     fn visit<V>(&mut self, visitor: &mut V);
 }
 
-impl<'s, V, A: ASTNode<'s> + TakeVisitor<V>> Visit for A {
+impl<V, A: ASTNode + TakeVisitor<V>> Visit for A {
     fn visit(&mut self, visitor: &mut V) {
         self.iter_children().for_each(|c| c.visit(visitor)); 
         self.take_visitor(visitor);

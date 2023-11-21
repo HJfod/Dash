@@ -3,24 +3,24 @@ use std::{
     cmp::max,
     fmt::{Debug, Display},
     fs,
-    path::{Path, PathBuf}, ffi::OsStr, hash::Hash,
+    path::{Path, PathBuf}, ffi::OsStr, hash::Hash, rc::Rc,
 };
 use crate::parser::stream::{SrcReader, TokenStream};
 
 use super::logging::LoggerRef;
 
-#[derive(Debug, Copy, Clone)]
-pub struct Loc<'s> {
-    pub src: &'s Src,
+#[derive(Debug, Clone)]
+pub struct Loc {
+    pub src: Rc<Src>,
     pub line: usize,
     pub column: usize,
     pub offset: usize,
 }
 
-impl<'s> Loc<'s> {
+impl Loc {
     pub const fn builtin() -> Self {
         Self {
-            src: &Src::Builtin,
+            src: Src::builtin(),
             line: 0,
             column: 0,
             offset: 0,
@@ -28,35 +28,35 @@ impl<'s> Loc<'s> {
     }
 }
 
-impl PartialEq for Loc<'_> {
+impl PartialEq for Loc {
     fn eq(&self, other: &Self) -> bool {
         self.offset == other.offset
     }
 }
 
-impl PartialOrd for Loc<'_> {
+impl PartialOrd for Loc {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.offset.partial_cmp(&other.offset)
     }
 }
 
-impl Display for Loc<'_> {
+impl Display for Loc {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!("{}:{}", self.line + 1, self.column + 1))
     }
 }
 
-pub type Span<'s> = std::ops::Range<Loc<'s>>;
+pub type Span = std::ops::Range<Loc>;
 
-pub static BUILTIN_SPAN: Span<'static> = Span {
+pub static BUILTIN_SPAN: Span = Span {
     start: Loc::builtin(),
     end: Loc::builtin(),
 };
 
-pub trait Spanful<'s> {
-    fn start(&self) -> Loc<'s>;
-    fn end(&self) -> Loc<'s>;
-    fn src(&self) -> &'s Src {
+pub trait Spanful {
+    fn start(&self) -> Loc;
+    fn end(&self) -> Loc;
+    fn src(&self) -> Rc<Src> {
         self.start().src
     }
     fn display(&self) -> String {
@@ -108,12 +108,12 @@ pub trait Spanful<'s> {
     }
 }
 
-impl<'s> Spanful<'s> for Span<'s> {
-    fn start(&self) -> Loc<'s> {
+impl Spanful for Span {
+    fn start(&self) -> Loc {
         self.start
     }
 
-    fn end(&self) -> Loc<'s> {
+    fn end(&self) -> Loc {
         self.end
     }
 }
@@ -125,14 +125,18 @@ pub enum Src {
 }
 
 impl Src {
-    pub fn from_file(path: &Path) -> Result<Self, String> {
-        Ok(Src::File {
+    pub fn builtin() -> Rc<Self> {
+        Rc::from(Self::Builtin)
+    }
+
+    pub fn from_file(path: &Path) -> Result<Rc<Self>, String> {
+        Ok(Rc::from(Src::File {
             path: path.to_path_buf(),
             chars: fs::read_to_string(path)
                 .map_err(|e| format!("Can't read file: {}", e))?
                 .chars()
                 .collect(),
-        })
+        }))
     }
 
     pub fn name(&self) -> String {
@@ -211,7 +215,7 @@ impl Src {
         }
     }
 
-    pub fn tokenize<'s>(&'s self, logger: LoggerRef<'s>) -> TokenStream<'s, SrcReader<'s>> {
+    pub fn tokenize(self: Rc<Self>, logger: LoggerRef) -> TokenStream<SrcReader> {
         TokenStream::new(self, SrcReader::new(self, logger))
     }
 }
@@ -252,7 +256,7 @@ impl Display for Src {
 
 #[derive(Debug)]
 pub struct SrcPool {
-    srcs: Vec<Src>,
+    srcs: Vec<Rc<Src>>,
 }
 
 impl SrcPool {
@@ -301,9 +305,9 @@ impl SrcPool {
     }
 }
 
-impl<'s> IntoIterator for &'s SrcPool {
-    type Item = &'s Src;
-    type IntoIter = <&'s Vec<Src> as IntoIterator>::IntoIter;
+impl<'p> IntoIterator for &'p SrcPool {
+    type Item = Rc<Src>;
+    type IntoIter = <&'p Vec<Rc<Src>> as IntoIterator>::IntoIter;
     
     fn into_iter(self) -> Self::IntoIter {
         self.srcs.iter()

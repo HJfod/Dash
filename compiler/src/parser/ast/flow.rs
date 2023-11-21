@@ -13,17 +13,17 @@ use super::{expr::Expr, token::{self, Tokenize}};
 
 #[derive(Debug)]
 #[ast_node]
-pub struct If<'s> {
-    cond: Box<Expr<'s>>,
-    truthy: Box<Expr<'s>>,
-    falsy: Option<Box<Expr<'s>>>,
+pub struct If {
+    cond: Box<Expr>,
+    truthy: Box<Expr>,
+    falsy: Option<Box<Expr>>,
 }
 
-impl<'s> Parse<'s> for If<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for If {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         let start = stream.pos();
         token::If::parse(stream)?;
-        let cond = Box::from(stream.parse::<Expr<'s>>()?);
+        let cond = Box::from(stream.parse::<Expr>()?);
         let truthy = Box::from(Expr::Block(stream.parse()?));
         let falsy = if token::Else::parse(stream).is_ok() {
             Some(Box::from(if token::If::peek(stream).is_some() {
@@ -40,7 +40,7 @@ impl<'s> Parse<'s> for If<'s> {
     }
 }
 
-impl<'s> TakeVisitor<CoherencyVisitor<'s>> for If<'s> {
+impl TakeVisitor<CoherencyVisitor> for If {
     fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         visitor.push_scope(ScopeLevel::Opaque, self.into(), None);
         let cond_ty = self.cond.visit_coherency(visitor);
@@ -55,12 +55,12 @@ impl<'s> TakeVisitor<CoherencyVisitor<'s>> for If<'s> {
 
 #[derive(Debug)]
 #[ast_node]
-pub struct Return<'s> {
-    expr: Option<Box<Expr<'s>>>,
+pub struct Return {
+    expr: Option<Box<Expr>>,
 }
 
-impl<'s> Parse<'s> for Return<'s> {
-    fn parse<I: Iterator<Item = Token<'s>>>(stream: &mut TokenStream<'s, I>) -> Result<Self, Message<'s>> {
+impl Parse for Return {
+    fn parse<I: Iterator<Item = Token>>(stream: &mut TokenStream<I>) -> Result<Self, Message> {
         let start = stream.pos();
         token::Return::parse(stream)?;
         let expr = Expr::parse(stream).ok().map(|e| e.into());
@@ -68,7 +68,7 @@ impl<'s> Parse<'s> for Return<'s> {
     }
 }
 
-impl<'s> TakeVisitor<CoherencyVisitor<'s>> for Return<'s> {
+impl TakeVisitor<CoherencyVisitor> for Return {
     fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         let expr_ty = self.expr.as_ref().map(|v| v.visit_coherency(visitor)).flatten();
         visitor.infer_return_type(
