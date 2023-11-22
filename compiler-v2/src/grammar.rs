@@ -1,44 +1,111 @@
 
-enum Type {
+use std::collections::{HashSet, HashMap};
+use serde::{Deserialize, Deserializer};
+
+#[derive(Deserialize)]
+struct Keywords {
+    strict: HashSet<String>,
+    reserved: HashSet<String>,
+    contextual: HashSet<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum MemberKind {
+    Rule,
+    Maybe,
+    List,
+}
+
+enum Item {
+    Token(String),
     Rule(String),
-    Optional(String),
-    List(String),
 }
 
-struct Member {
-    name: String,
-    ty: Type,
+impl<'de> Deserialize<'de> for Item {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>
+    {
+        let s: &str = Deserialize::deserialize(deserializer)?;
+        if let Some(rule) = s.strip_prefix('#') {
+            Ok(Item::Rule(rule.to_string()))
+        }
+        else {
+            Ok(Item::Token(s.to_string()))
+        }
+    }
 }
 
-struct Layout {
-    members: Vec<Member>,
-}
-
-enum ItemRef {
-    Keyword(String),
-    Rule(String),
-}
-
-enum GrammarLine {
+#[derive(Deserialize)]
+enum Grammar {
     Match {
-        what: ItemRef,
-        into: String,
-    },
-    Peek {
-        what: ItemRef,
+        #[serde(rename = "match")]
+        match_: Item,
+        into: Option<String>,
     },
     If {
-        cond: Box<GrammarLine>,
-        truthy: Grammar,
-        falsy: Grammar,
+        #[serde(rename = "if")]
+        if_: Box<Grammar>,
+        then: Vec<Grammar>,
+        #[serde(default)]
+        #[serde(rename = "else")]
+        else_: Vec<Grammar>,
+    },
+    While {
+        #[serde(rename = "while")]
+        while_: Box<Grammar>,
+        then: Vec<Grammar>,
+    },
+    Return {
+        #[serde(rename = "return")]
+        return_: Item,
+    },
+    Error {
+        error: String,
     },
 }
 
-type Grammar = Vec<GrammarLine>;
+enum TypeItem {
+    Member(String),
+    Type(String),
+}
 
+impl<'de> Deserialize<'de> for TypeItem {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>
+    {
+        let s: &str = Deserialize::deserialize(deserializer)?;
+        if let Some(rule) = s.strip_prefix('@') {
+            Ok(TypeItem::Type(rule.to_string()))
+        }
+        else {
+            Ok(TypeItem::Member(s.to_string()))
+        }
+    }
+}
+
+#[derive(Deserialize)]
+enum Check {
+    Equal {
+        equal: Vec<TypeItem>,
+    }
+}
+
+#[derive(Deserialize)]
 struct Rule {
-    layout: Layout,
-    grammar: Grammar,
+    #[serde(default)]
+    layout: HashMap<String, MemberKind>,
+    grammar: Vec<Grammar>,
+    #[serde(default)]
+    check: Vec<Check>,
+}
+
+#[derive(Deserialize)]
+struct GrammarFile {
+    keywords: Keywords,
+    rules: HashMap<String, Rule>,
 }
 
 struct Runner {}

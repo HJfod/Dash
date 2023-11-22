@@ -1,0 +1,100 @@
+
+{
+    "keywords": {
+        "strict": [
+            "if", "let", "if", "else"
+        ],
+        "reserved": [],
+        "contextual": []
+    },
+    "rules": {
+        "ident-path": {
+            "layout": {
+                "parts": "list"
+            },
+            "grammar": [
+                { "match": "ident", "into": "parts" },
+                {
+                    "while": { "match": "::" },
+                    "then": [
+                        { "match": "ident", "into": "parts" }
+                    ]
+                }
+            ]
+        },
+        "if": {
+            "layout": {
+                "cond": "rule",
+                "truthy": "rule",
+                "falsy": "maybe"
+            },
+            "grammar": [
+                { "match": "if" },
+                { "match": "#expr", "into": "cond" },
+                { "match": "#block", "into": "truthy" },
+                {
+                    "if": { "match": "else" },
+                    "then": [
+                        {
+                            "if": { "peek": "if" },
+                            "then": [
+                                { "match": "#if", "into": "falsy" }
+                            ],
+                            "else": [
+                                { "match": "#block", "into": "falsy" }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "check": [
+                { "equal": ["cond", "@bool"] },
+                { "equal": ["truthy", "falsy"] }
+            ]
+        },
+        "let": {
+            "layout": {
+                "name": "rule",
+                "type": "maybe",
+                "value": "maybe"
+            },
+            "grammar": [
+                { "match": "let" },
+                { "match": "ident", "into": "name" },
+                {
+                    "if": { "match": ":" },
+                    "then": [
+                        { "match": "#type", "into": "type" }
+                    ]
+                },
+                {
+                    "if": { "match": "=" },
+                    "then": [
+                        { "match": "#expr", "into": "value" }
+                    ]
+                }
+            ],
+            "check": [
+                { "equal": ["type", "value"] }
+            ]
+        },
+        "expr": {
+            "grammar": [
+                {
+                    "if": { "peek": "let" },
+                    "then": [{ "return": "#expr" }]
+                },
+                {
+                    "if": { "peek": "if" },
+                    "then": [{ "return": "#if" }]
+                },
+                {
+                    "error": "Expected expression"
+                }
+            ]
+        },
+        "main": {
+            "grammar": [{ "return": "#expr" }]
+        }
+    }
+}
