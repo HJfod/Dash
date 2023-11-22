@@ -3,7 +3,7 @@ use std::{
     cmp::max,
     fmt::{Debug, Display},
     fs,
-    path::{Path, PathBuf}, ffi::OsStr, hash::Hash, rc::Rc,
+    path::{Path, PathBuf}, ffi::OsStr, hash::Hash, sync::Arc,
 };
 use crate::parser::stream::{SrcReader, TokenStream};
 
@@ -11,7 +11,7 @@ use super::logging::LoggerRef;
 
 #[derive(Debug, Clone)]
 pub struct Loc {
-    pub src: Rc<Src>,
+    pub src: Arc<Src>,
     pub line: usize,
     pub column: usize,
     pub offset: usize,
@@ -56,7 +56,7 @@ pub static BUILTIN_SPAN: Span = Span {
 pub trait Spanful {
     fn start(&self) -> Loc;
     fn end(&self) -> Loc;
-    fn src(&self) -> Rc<Src> {
+    fn src(&self) -> Arc<Src> {
         self.start().src
     }
     fn display(&self) -> String {
@@ -125,12 +125,12 @@ pub enum Src {
 }
 
 impl Src {
-    pub fn builtin() -> Rc<Self> {
-        Rc::from(Self::Builtin)
+    pub fn builtin() -> Arc<Self> {
+        Arc::from(Self::Builtin)
     }
 
-    pub fn from_file(path: &Path) -> Result<Rc<Self>, String> {
-        Ok(Rc::from(Src::File {
+    pub fn from_file(path: &Path) -> Result<Arc<Self>, String> {
+        Ok(Arc::from(Src::File {
             path: path.to_path_buf(),
             chars: fs::read_to_string(path)
                 .map_err(|e| format!("Can't read file: {}", e))?
@@ -167,7 +167,7 @@ impl Src {
         }
     }
 
-    pub fn loc(&self, offset: usize) -> Loc {
+    pub fn loc(self: Arc<Self>, offset: usize) -> Loc {
         let mut o = 0usize;
         let len = self.len();
         let mut line = 0;
@@ -193,7 +193,7 @@ impl Src {
         }
     }
 
-    pub fn span(&self, mut start: usize, mut end: usize) -> Span {
+    pub fn span(self: Arc<Self>, mut start: usize, mut end: usize) -> Span {
         if start > end {
             std::mem::swap(&mut start, &mut end);
         }
@@ -215,7 +215,7 @@ impl Src {
         }
     }
 
-    pub fn tokenize(self: Rc<Self>, logger: LoggerRef) -> TokenStream<SrcReader> {
+    pub fn tokenize(self: Arc<Self>, logger: LoggerRef) -> TokenStream<SrcReader> {
         TokenStream::new(self, SrcReader::new(self, logger))
     }
 }
@@ -256,7 +256,7 @@ impl Display for Src {
 
 #[derive(Debug)]
 pub struct SrcPool {
-    srcs: Vec<Rc<Src>>,
+    srcs: Vec<Arc<Src>>,
 }
 
 impl SrcPool {
@@ -300,16 +300,7 @@ impl SrcPool {
         res
     }
 
-    pub fn iter(&self) -> <&Vec<Src> as IntoIterator>::IntoIter {
-        self.into_iter()
-    }
-}
-
-impl<'p> IntoIterator for &'p SrcPool {
-    type Item = Rc<Src>;
-    type IntoIter = <&'p Vec<Rc<Src>> as IntoIterator>::IntoIter;
-    
-    fn into_iter(self) -> Self::IntoIter {
-        self.srcs.iter()
+    pub fn srcs(&self) -> &Vec<Arc<Src>> {
+        &self.srcs
     }
 }

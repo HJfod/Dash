@@ -5,7 +5,7 @@ use crate::{shared::{logging::Message, src::Span}, compiler::ty::IdentPath};
 use self::token::{Ident, Dicolon, Tokenize};
 use super::{node::Parse, stream::{Token, TokenStream}};
 use crate::compiler::ty::Ty;
-use crate::parser::node::ASTNode;
+use crate::parser::node::{ASTNode, ASTRef};
 
 #[derive(Debug)]
 #[ast_node]

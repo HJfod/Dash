@@ -11,7 +11,7 @@ pub struct ASTPool {
 impl ASTPool {
     pub fn parse_src_pool(pool: SrcPool, logger: LoggerRef) -> Self {
         Self {
-            asts: pool.iter()
+            asts: pool.srcs().iter()
                 .map(|src| src.tokenize(logger.clone()).parse())
                 .filter_map(|ast| match ast {
                     Ok(ast) => Some(ast),

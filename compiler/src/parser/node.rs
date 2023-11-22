@@ -1,15 +1,15 @@
 
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 use crate::{shared::{src::{Span, Src, Spanful, BUILTIN_SPAN}, logging::Message}, compiler::ty::Ty};
 use super::stream::{TokenStream, Token};
 use std::hash::Hash;
 
 pub trait ASTNode: Debug {
     fn span(&self) -> &Span;
-    fn src(&self) -> Rc<Src> {
+    fn src(&self) -> Arc<Src> {
         self.span().src()
     }
-    fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode>;
+    fn children(&mut self) -> Vec<ASTRef>;
 
     /// Get the resulting type for this expression.
     /// If the expression has not yet been definitely evaluated, the type is 
@@ -22,8 +22,8 @@ impl<T: ASTNode> ASTNode for Box<T> {
     fn span(&self) -> &Span {
         self.as_ref().span()
     }
-    fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
-        self.as_ref().iter_children()
+    fn children(&mut self) -> Vec<ASTRef> {
+        self.as_mut().children()
     }
     fn eval_ty(&self) -> Ty {
         self.as_ref().eval_ty()
@@ -36,8 +36,8 @@ pub enum ASTRef {
     Ref(*mut dyn ASTNode),
 }
 
-impl<T: ASTNode> From<&T> for ASTRef {
-    fn from(value: &T) -> Self {
+impl<T: ASTNode> From<&mut T> for ASTRef {
+    fn from(value: &mut T) -> Self {
         Self::Ref(value as *mut dyn ASTNode)
     }
 }
@@ -67,19 +67,19 @@ impl ASTNode for ASTRef {
     fn span(&self) -> &Span {
         match self {
             Self::Builtin => &BUILTIN_SPAN,
-            Self::Ref(e) => e.span(),
+            Self::Ref(e) => unsafe { **e }.span(),
         }
     }
-    fn iter_children(&mut self) -> impl Iterator<Item = &mut impl ASTNode> {
+    fn children(&mut self) -> Vec<ASTRef> {
         match self {
-            Self::Builtin => std::iter::empty(),
-            Self::Ref(e) => e.iter_children(),
+            Self::Builtin => vec![],
+            Self::Ref(e) => unsafe { **e }.children(),
         }
     }
     fn eval_ty(&self) -> Ty {
         match self {
             Self::Builtin => Ty::Invalid,
-            Self::Ref(r) => r.eval_ty(),
+            Self::Ref(r) => unsafe { **r }.eval_ty(),
         }
     }
 }
@@ -89,23 +89,23 @@ pub trait Parse: Sized + ASTNode {
 }
 
 pub trait ChildIterHelper {
-    fn to_iter_helper(&mut self) -> impl Iterator<Item = &mut dyn ASTNode>;
+    fn to_iter_helper(&mut self) -> Vec<ASTRef>;
 }
 
 impl<T: ASTNode> ChildIterHelper for T {
-    fn to_iter_helper(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
+    fn to_iter_helper(&mut self) -> Vec<ASTRef> {
         std::iter::once(self)
     }
 }
 
 impl<T: ASTNode> ChildIterHelper for Vec<T> {
-    fn to_iter_helper(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
+    fn to_iter_helper(&mut self) -> Vec<ASTRef> {
         self.iter_mut()
     }
 }
 
 impl<T: ASTNode> ChildIterHelper for Option<T> {
-    fn to_iter_helper(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
+    fn to_iter_helper(&mut self) -> Vec<ASTRef> {
         self.iter_mut()
     }
 }

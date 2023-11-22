@@ -1,6 +1,7 @@
 
-use std::{fmt::{Debug, Display}, rc::Rc};
-use crate::shared::{src::{Src, Span, Loc}, logging::{Message, LoggerRef, Level}};
+use std::{fmt::{Debug, Display}, sync::Arc};
+use crate::{shared::{src::{Src, Span, Loc}, logging::{Message, LoggerRef, Level}}, compiler::ty::Ty};
+use dash_macros::impl_opaque;
 use unicode_xid::UnicodeXID;
 use super::{
     node::{ASTNode, Parse},
@@ -18,13 +19,14 @@ use super::{
 #[impl_opaque {
     impl ASTNode {
         fn span(&self) -> &Span:
-            Error(_, span) => span;
-            EOF(_, span) => span;
+            Self::Error(_, span) | Self::EOF(_, span) => span;
             ..e => e.span();
-        fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode>:
-            ..e => e.iter_children();
+        // fn children(&mut self) -> Vec<ASTRef>:
+        //     Self::Error(_, _) | Self::EOF(_, _) => std::iter::empty() as dyn Iterator<Item = ASTRef>;
+        //     ..e => e.children();
         fn eval_ty(&self) -> Ty:
-            ..e => e.eval_ty()
+            Self::Error(_, _) | Self::EOF(_, _) => Ty::Invalid;
+            ..e => e.eval_ty();
     }
 }]
 pub enum Token {
@@ -79,52 +81,16 @@ impl Display for Token {
     }
 }
 
-impl ASTNode for Token {
-    fn span(&self) -> &Span {
-        match self {
-            Token::Kw(kw) => kw.span(),
-            Token::Op(op) => op.span(),
-            Token::Ident(ident) => ident.span(),
-            Token::Punct(pun) => pun.span(),
-            Token::VoidLit(lit) => lit.span(),
-            Token::BoolLit(lit) => lit.span(),
-            Token::StringLit(lit) => lit.span(),
-            Token::IntLit(lit) => lit.span(),
-            Token::FloatLit(lit) => lit.span(),
-            Token::Parenthesized(p) => p.span(),
-            Token::Braced(p) => p.span(),
-            Token::Bracketed(p) => p.span(),
-            Token::Error(_, span) => span,
-            Token::EOF(_, span) => span,
-        }
-    }
-
-    fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
-        
-    }
-
-    fn eval_ty(&self) -> crate::compiler::ty::Ty {
-        match self {
-            Token::Kw(kw) => kw.eval_ty(),
-            Token::Op(op) => op.eval_ty(),
-            Token::Ident(ident) => ident.eval_ty()
-        }
-    }
-}
-
-// todo: have subtrees be a Vec of parsed tokens instead and make the SrcReader
-// parameter in `parse` be just an iterator that produces tokens
-
 /// Parses a source into a list of tokens
 #[derive(Debug)]
 pub struct SrcReader {
-    src: Rc<Src>,
+    src: Arc<Src>,
     pos: usize,
     logger: LoggerRef,
 }
 
 impl SrcReader {
-    pub fn new(src: Rc<Src>, logger: LoggerRef) -> Self {
+    pub fn new(src: Arc<Src>, logger: LoggerRef) -> Self {
         Self { src, pos: 0, logger }
     }
 
@@ -360,19 +326,19 @@ impl Iterator for SrcReader {
 }
 
 pub struct TokenStream<I: Iterator<Item = Token>> {
-    src: Rc<Src>,
+    src: Arc<Src>,
     iter: I,
     /// Stored for peeking
     next_token: Token,
 }
 
 impl<I: Iterator<Item = Token>> TokenStream<I> {
-    pub fn new(src: Rc<Src>, mut iter: I) -> Self {
+    pub fn new(src: Arc<Src>, mut iter: I) -> Self {
         let next_token = iter.next().expect("IntoTokenStream::next() returned None");
         Self { src, iter, next_token }
     }
 
-    pub fn src(&self) -> Rc<Src> {
+    pub fn src(&self) -> Arc<Src> {
         self.src
     }
 

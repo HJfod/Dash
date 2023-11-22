@@ -18,20 +18,33 @@
         "Programming Languages"
     ],
     "contributes": {
-        "languages": [{
-            "id": "dash",
-            "aliases": ["Dash", "Dash"],
-            "extensions": [".dash"],
-            "configuration": "./language-configuration.json",
-            "icon": {
-                "dark": "./logo.png",
-                "light": "./logo.png"
+        "languages": [
+            {
+                "id": "dash",
+                "aliases": ["Dash"],
+                "extensions": [".dash"],
+                "configuration": "./language-configuration.json",
+                "icon": {
+                    "dark": "./logo.png",
+                    "light": "./logo.png"
+                }
+            },
+            {
+                "id": "dash-grammar",
+                "filenames": ["DashGrammar"]
             }
-        }],
-        "grammars": [{
-            "language": "dash",
-            "scopeName": "source.dash",
-            "path": "./syntaxes/dash.tmLanguage.json"
-        }]
+        ],
+        "grammars": [
+            {
+                "language": "dash",
+                "scopeName": "source.dash",
+                "path": "./syntaxes/dash.tmLanguage.json"
+            },
+            {
+                "language": "dash-grammar",
+                "scopeName": "source.dash-grammar",
+                "path": "./syntaxes/dash-grammar.tmLanguage.json"
+            }
+        ]
     }
 }

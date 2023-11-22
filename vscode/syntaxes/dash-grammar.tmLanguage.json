@@ -1,0 +1,19 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "dash-grammar",
+	"patterns": [
+		{
+			"match": "\\b(keyword|rule|maybe|list|type|group|rule|token)\\b",
+			"name": "keyword.other.dash-grammar"
+		},
+		{
+			"match": "(?<=\\b(keyword|rule|as|maybe|list|type|group|rule|token)\\s+)\\w+",
+            "name": "entity.name.class.dash-grammar"
+		},
+		{
+			"match": "\\b(match|peek|layout|grammar|check|eq|in|as|into|and|on|if|else|while)\\b",
+			"name": "keyword.dash-grammar"
+		}
+	],
+	"scopeName": "source.dash-grammar"
+}

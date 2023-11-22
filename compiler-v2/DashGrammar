@@ -1,0 +1,49 @@
+
+rule IdentPath
+    layout
+        parts as list Ident
+    
+    grammar
+        match rule Ident into parts
+        while match token ::
+            match rule Ident into parts
+    
+    check
+
+group Expr
+    rule If
+        layout
+            cond as Expr
+            truthy as Block
+            falsy as maybe Expr
+
+        grammar
+            match token if
+            match rule Expr into cond
+            match rule Block into truthy
+            if match token else
+                if peek token if
+                    match rule If into falsy
+                else
+                    match rule Block into falsy
+
+        check
+            eq cond and type bool
+            eq truthy and falsy
+
+    rule Let
+        layout
+            name as Ident
+            ty as maybe Type
+            value as maybe Expr
+        
+        grammar
+            match token let
+            match token Ident into name
+            if match token :
+                match rule Type into ty
+            if match token =
+                match rule Expr into
+
+        check
+            eq ty and value

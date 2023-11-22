@@ -5,7 +5,7 @@ use strum::IntoEnumIterator;
 
 use crate::{
     parser::{
-        node::{Parse, ASTNode},
+        node::{Parse, ASTNode, ASTRef},
         stream::{TokenStream, Token},
         ast::token::{StringLit, IntLit, FloatLit, VoidLit, BoolLit, Ident, Op}
     },
@@ -33,8 +33,8 @@ impl ASTNode for Visibility {
         }
     }
 
-    fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
-        std::iter::empty()
+    fn children(&mut self) -> Vec<ASTRef> {
+        vec![]
     }
 
     fn eval_ty(&self) -> Ty {
@@ -61,11 +61,11 @@ impl Parse for Visibility {
 #[impl_opaque {
     impl ASTNode {
         fn span(&self) -> &Span:
-            e => e.span();
-        fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode>:
-            e => e.iter_children();
+            ..e => e.span();
+        fn children(&mut self) -> Vec<ASTRef>:
+            ..e => e.children();
         fn eval_ty(&self) -> Ty:
-            e => e.eval_ty()
+            ..e => e.eval_ty();
     }
 }]
 pub enum Expr {

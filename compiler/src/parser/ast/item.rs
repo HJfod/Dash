@@ -20,7 +20,7 @@ use dash_macros::{ast_node, impl_opaque};
 use crate::{
     parser::{
         stream::{TokenStream, Token},
-        node::{Parse, ASTNode}
+        node::{Parse, ASTNode, ASTRef}
     },
     shared::{logging::{Message, Level}, is_none_or::IsNoneOr, src::Span},
     compiler::{ty::Ty, visitor::TakeVisitor, coherency::{CoherencyVisitor, ScopeLevel}, entity::Entity}
@@ -267,7 +267,7 @@ impl Parse for FunDecl {
     }
 }
 
-impl TakeVisitor<CoherencyVisitor> for FunParam {
+impl TakeVisitor<CoherencyVisitor> for FunDecl {
     fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
         let ret_ty = self.ret_ty.as_ref().map(|v| v.visit_coherency(visitor));
         visitor.push_scope(ScopeLevel::Function, self.into(), ret_ty.clone());
@@ -426,16 +426,16 @@ impl TakeVisitor<CoherencyVisitor> for TypeAliasDecl {
 #[impl_opaque {
     impl ASTNode {
         fn span(&self) -> &Span:
-            e => e.span();
-        fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode>:
-            e => e.iter_children();
+            ..e => e.span();
+        fn children(&mut self) -> Vec<ASTRef>:
+            ..e => e.children();
         fn eval_ty(&self) -> Ty:
-            e => e.eval_ty();
+            ..e => e.eval_ty();
     }
 
     impl TakeVisitor<CoherencyVisitor> {
         fn take_visitor(&mut self, visitor: &mut CoherencyVisitor):
-            e => e.take_visitor(visitor);
+            ..e => e.take_visitor(visitor);
     }
 }]
 pub enum Item {

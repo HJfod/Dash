@@ -8,7 +8,7 @@ extern crate convert_case;
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{quote, format_ident};
-use syn::{parse_macro_input, Block, ItemFn, ItemStruct, Fields, Field, Error, ItemEnum, Expr, parse::Parse, Token, braced, Signature, Type};
+use syn::{parse_macro_input, Block, ItemFn, ItemStruct, Fields, Field, Error, ItemEnum, Expr, parse::Parse, Token, braced, Signature, Type, Pat, Meta};
 use convert_case::{Case, Casing};
 
 #[proc_macro]
@@ -25,6 +25,12 @@ pub fn ast_node(_args: TokenStream, stream: TokenStream) -> TokenStream {
     match &mut target.fields {
         Fields::Named(named) => {
             for named in &named.named {
+                if named.attrs.iter().any(|a| match a.meta {
+                    Meta::Path(ref p) => p.get_ident() == Some(&format_ident!("ast_skip_child")),
+                    _ => false,
+                }) {
+                    continue;
+                }
                 let name = named.ident.as_ref().unwrap();
                 iter_chains.extend(quote! {
                     .chain(self.#name.to_iter_helper())
@@ -63,9 +69,11 @@ pub fn ast_node(_args: TokenStream, stream: TokenStream) -> TokenStream {
                 &self.span
             }
 
-            fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
+            fn children(&mut self) -> Vec<ASTRef> {
+                use crate::parser::node::ChildIterHelper;
                 std::iter::empty()
                     #iter_chains
+                    .collect()
             }
 
             fn eval_ty(&self) -> Ty {
@@ -95,18 +103,28 @@ pub fn log_fun_io(_: TokenStream, stream: TokenStream) -> TokenStream {
 
 struct OpaqueFnImpl {
     sig: Signature,
-    param: Ident,
-    body: Expr,
+    matchers: Vec<(Pat, Token![=>], Expr)>,
+    rest: (Ident, Token![=>], Expr),
 }
 
 impl Parse for OpaqueFnImpl {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let sig = input.parse()?;
         input.parse::<Token![:]>()?;
-        let param = input.parse()?;
-        input.parse::<Token![=>]>()?;
-        let body = input.parse()?;
-        Ok(Self { sig, param, body })
+        let rest;
+        let mut matchers = vec![];
+        loop {
+            if input.parse::<Token![..]>().is_ok() {
+                rest = (input.parse()?, input.parse()?, input.parse()?);
+                input.parse::<Token![;]>()?;
+                break;
+            }
+            else {
+                matchers.push((Pat::parse_multi(input)?, input.parse()?, input.parse()?));
+                input.parse::<Token![;]>()?;
+            }
+        }
+        Ok(Self { sig, matchers, rest })
     }
 }
 
@@ -121,12 +139,11 @@ impl Parse for OpaqueImpl {
         let name = input.parse()?;
         let content;
         braced!(content in input);
-        Ok(Self {
-            name,
-            fns: content.parse_terminated(OpaqueFnImpl::parse, Token![;])?
-                .into_iter()
-                .collect()
-        })
+        let mut fns = vec![];
+        while !content.is_empty() {
+            fns.push(content.parse()?);
+        }
+        Ok(Self { name, fns })
     }
 }
 
@@ -144,6 +161,19 @@ impl Parse for ManyOpaqueImpls {
     }
 }
 
+fn get_matched_variants(pats: Vec<Pat>) -> Vec<Ident> {
+    let mut res = vec![];
+    for pat in pats {
+        match pat {
+            Pat::Or(or) => res.extend(get_matched_variants(or.cases.into_iter().collect())),
+            Pat::TupleStruct(str) => res.push(str.path.segments.last().unwrap().ident.clone()),
+            Pat::Struct(str) => res.push(str.path.segments.last().unwrap().ident.clone()),
+            _ => (),
+        }
+    }
+    res
+}
+
 #[proc_macro_attribute]
 pub fn impl_opaque(args: TokenStream, stream: TokenStream) -> TokenStream {
     let target = parse_macro_input!(stream as ItemEnum);
@@ -153,11 +183,19 @@ pub fn impl_opaque(args: TokenStream, stream: TokenStream) -> TokenStream {
         let mut impl_res = quote! {};
         for fnc in opaque.fns {
             let sig = fnc.sig;
-            let param = fnc.param;
-            let body = fnc.body;
+            let matched = get_matched_variants(fnc.matchers.iter().map(|(p, _, _)| p).cloned().collect());
             let mut matches = quote! {};
+            for (pat, _, body) in fnc.matchers {
+                matches.extend(quote! {
+                    #pat => #body,
+                });
+            }
             for field in &target.variants {
+                if matched.iter().any(|m| *m == field.ident) {
+                    continue;
+                }
                 let field = &field.ident;
+                let (ref param, _, ref body) = fnc.rest;
                 matches.extend(quote! {
                     Self::#field(#param) => #body,
                 });

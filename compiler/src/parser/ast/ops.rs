@@ -5,7 +5,7 @@ use crate::{
     parser::{
         stream::{TokenStream, Token},
         ast::token::Op,
-        node::{Parse, ASTNode}
+        node::{Parse, ASTNode, ASTRef}
     },
     shared::{logging::{Message, Level}, src::Span},
     compiler::{ty::Ty, visitor::TakeVisitor, coherency::CoherencyVisitor}

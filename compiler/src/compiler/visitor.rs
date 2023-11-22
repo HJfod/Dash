@@ -1,17 +1,20 @@
 
-use crate::parser::node::ASTNode;
+use crate::parser::node::{ASTNode, ASTRef};
 
 pub trait TakeVisitor<V> {
     fn take_visitor(&mut self, visitor: &mut V) {}
 }
 
-pub trait Visit {
-    fn visit<V>(&mut self, visitor: &mut V);
+pub trait Visit<V> {
+    fn visit(&mut self, visitor: &mut V);
 }
 
-impl<V, A: ASTNode + TakeVisitor<V>> Visit for A {
+impl<V, A: ASTNode + TakeVisitor<V>> Visit<V> for A {
     fn visit(&mut self, visitor: &mut V) {
-        self.iter_children().for_each(|c| c.visit(visitor)); 
+        self.children().into_iter().for_each(|c| match c {
+            ASTRef::Ref(c) => unsafe { *c }.visit(visitor),
+            ASTRef::Builtin => ()
+        }); 
         self.take_visitor(visitor);
     }
 }

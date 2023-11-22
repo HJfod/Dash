@@ -5,7 +5,7 @@ use strum::EnumIter;
 use dash_macros::snake_case_ident;
 use crate::{
     parser::{
-        node::{Parse, ASTNode},
+        node::{Parse, ASTNode, ASTRef},
         stream::{TokenStream, Token}
     },
     shared::{logging::{Message, Level}, src::{Span, Spanful}}, compiler::ty::{Ty, self}
@@ -66,7 +66,7 @@ macro_rules! impl_tokenize {
             fn span(&self) -> &Span {
                 &self.span
             }
-            fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
+            fn children(&mut self) -> Vec<ASTRef> {
                 std::iter::empty()
             }
             fn eval_ty(&self) -> Ty {
@@ -100,7 +100,7 @@ macro_rules! impl_tokenize {
             fn span(&self) -> &Span {
                 &self.span
             }
-            fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
+            fn children(&mut self) -> Vec<ASTRef> {
                 std::iter::empty()
             }
             fn eval_ty(&self) -> Ty {
@@ -219,9 +219,9 @@ macro_rules! declare_token {
                     $($(Self::$item(t) => t.span(),)*)*
                 }
             }
-            fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode> {
+            fn children(&mut self) -> Vec<ASTRef> {
                 match self {
-                    $($(Self::$item(t) => t.iter_children(),)*)*
+                    $($(Self::$item(t) => t.children(),)*)*
                 }
             }
             fn eval_ty(&self) -> Ty {

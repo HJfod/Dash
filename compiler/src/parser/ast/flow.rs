@@ -3,11 +3,11 @@ use dash_macros::ast_node;
 
 use crate::{
     parser::{
-        node::{Parse, ASTNode},
+        node::{Parse, ASTNode, ASTRef},
         stream::{TokenStream, Token}
     },
     shared::{logging::Message, src::Span},
-    compiler::{ty::Ty, visitor::TakeVisitor, coherency::{CoherencyVisitor, ScopeLevel, FindScope}}
+    compiler::{ty::Ty, visitor::TakeVisitor, coherency::{CoherencyVisitor, ScopeLevel, FindScope, Scope}}
 };
 use super::{expr::Expr, token::{self, Tokenize}};
 
@@ -17,6 +17,8 @@ pub struct If {
     cond: Box<Expr>,
     truthy: Box<Expr>,
     falsy: Option<Box<Expr>>,
+    #[ast_skip_child]
+    scope: *mut Scope,
 }
 
 impl Parse for If {
@@ -42,7 +44,7 @@ impl Parse for If {
 
 impl TakeVisitor<CoherencyVisitor> for If {
     fn take_visitor(&mut self, visitor: &mut CoherencyVisitor) {
-        visitor.push_scope(ScopeLevel::Opaque, self.into(), None);
+        visitor.enter_scope(&mut self.scope, || (ScopeLevel::Block, self.into(), None));
         let cond_ty = self.cond.visit_coherency(visitor);
         let truthy_ty = self.truthy.visit_coherency(visitor);
         visitor.pop_scope(truthy_ty.clone(), self.into());

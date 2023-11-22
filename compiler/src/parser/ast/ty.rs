@@ -4,7 +4,7 @@ use dash_macros::{ast_node, impl_opaque};
 use crate::{
     parser::{
         stream::{TokenStream, Token},
-        node::{Parse, ASTNode}, ast::token::VoidLit
+        node::{Parse, ASTNode, ASTRef}, ast::token::VoidLit
     },
     shared::{logging::{Message, Level, Note}, src::Span},
     compiler::{ty::Ty, coherency::{CoherencyVisitor, FoundItem}, visitor::TakeVisitor}
@@ -16,11 +16,11 @@ use super::token::{Ident, Tokenize};
 #[impl_opaque {
     impl ASTNode {
         fn span(&self) -> &Span:
-            e => e.span();
-        fn iter_children(&mut self) -> impl Iterator<Item = &mut dyn ASTNode>:
-            e => e.iter_children();
+            ..e => e.span();
+        fn children(&mut self) -> Vec<ASTRef>:
+            ..e => e.children();
         fn eval_ty(&self) -> Ty:
-            e => e.eval_ty()
+            ..e => e.eval_ty();
     }
 }]
 pub enum Type {

@@ -34,7 +34,7 @@ macro_rules! define_ops {
             Ty::$b,
             Ty::$r
         );
-        $res.entities.push(binop.name(), binop);
+        $res.entities.push(binop.name().clone(), binop);
     };
 }
 
@@ -118,7 +118,7 @@ impl Scope {
 
     fn new_top() -> Self {
         let mut res = Self::new(
-            std::ptr::null(),
+            std::ptr::null_mut(),
             ScopeLevel::Block,
             ASTRef::Builtin,
             Return::Void
@@ -213,10 +213,10 @@ pub struct CoherencyVisitor {
 
 impl CoherencyVisitor {
     pub fn new(logger: LoggerRef) -> Self {
-        let root_scope = Scope::new_top();
+        let mut root_scope = Scope::new_top();
         Self {
             logger,
-            current_scope: &root_scope,
+            current_scope: &mut root_scope,
             root_scope,
         }
     }
@@ -252,21 +252,21 @@ impl CoherencyVisitor {
     }
 
     /// Push a scope onto the top of the scope stack
-    pub fn enter_scope<F>(&mut self, scope: &mut *const Scope, or_create: F)
+    pub fn enter_scope<F>(&mut self, scope: &mut *mut Scope, mut or_create: F)
         where F:
             FnMut() -> (ScopeLevel, ASTRef, Return)
     {
         if scope.is_null() {
             let (level, decl, return_type) = or_create();
-            let new_scope = Scope::new(self.current_scope, level, decl, return_type);
+            let mut new_scope = Scope::new(self.current_scope, level, decl, return_type);
             unsafe {
                 (*self.current_scope).children.push(new_scope);
             }
-            self.current_scope = &new_scope;
-            *scope = &new_scope;
+            self.current_scope = &mut new_scope;
+            *scope = &mut new_scope;
         }
         else {
-            self.current_scope = scope;
+            self.current_scope = *scope;
         }
     }
 
