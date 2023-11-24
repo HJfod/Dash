@@ -78,6 +78,30 @@
                 { "equal": ["type", "value"] }
             ]
         },
+        "block": {
+            "layout": {
+                "list": "rule"
+            },
+            "grammar": [
+                {
+                    "match": "{}",
+                    "inner": [
+                        { "match": "#expr-list", "into": "list" }
+                    ]
+                }
+            ]
+        },
+        "expr-list": {
+            "layout": {
+                "list": "list"
+            },
+            "grammar": [
+                {
+                    "match": "#expr",
+                    "into": "list"
+                }
+            ]
+        },
         "expr": {
             "grammar": [
                 {

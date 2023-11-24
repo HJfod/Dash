@@ -3,109 +3,116 @@ use std::collections::{HashSet, HashMap};
 use serde::{Deserialize, Deserializer};
 
 #[derive(Deserialize)]
-struct Keywords {
-    strict: HashSet<String>,
-    reserved: HashSet<String>,
-    contextual: HashSet<String>,
+pub struct Keywords<'g> {
+    #[serde(borrow)]
+    pub strict: HashSet<&'g str>,
+    pub reserved: HashSet<&'g str>,
+    pub contextual: HashSet<&'g str>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "lowercase")]
-enum MemberKind {
+pub enum MemberKind {
     Rule,
     Maybe,
     List,
 }
 
-enum Item {
-    Token(String),
-    Rule(String),
+pub enum Item<'g> {
+    Token(&'g str),
+    Rule(&'g str),
+    Braces,
+    Parentheses,
+    Brackets,
 }
 
-impl<'de> Deserialize<'de> for Item {
+impl<'de: 'g, 'g> Deserialize<'de> for Item<'g> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>
     {
-        let s: &str = Deserialize::deserialize(deserializer)?;
+        let s: &'g str = Deserialize::deserialize(deserializer)?;
         if let Some(rule) = s.strip_prefix('#') {
-            Ok(Item::Rule(rule.to_string()))
+            Ok(Item::Rule(rule))
         }
         else {
-            Ok(Item::Token(s.to_string()))
+            Ok(Item::Token(s))
         }
     }
 }
 
 #[derive(Deserialize)]
-enum Grammar {
+pub enum Grammar<'g> {
     Match {
-        #[serde(rename = "match")]
-        match_: Item,
-        into: Option<String>,
+        #[serde(rename = "match", borrow)]
+        match_: Item<'g>,
+        into: Option<&'g str>,
+        #[serde(default)]
+        inner: Vec<Grammar<'g>>,
     },
     If {
         #[serde(rename = "if")]
-        if_: Box<Grammar>,
-        then: Vec<Grammar>,
+        if_: Box<Grammar<'g>>,
+        then: Vec<Grammar<'g>>,
         #[serde(default)]
         #[serde(rename = "else")]
-        else_: Vec<Grammar>,
+        else_: Vec<Grammar<'g>>,
     },
     While {
         #[serde(rename = "while")]
-        while_: Box<Grammar>,
-        then: Vec<Grammar>,
+        while_: Box<Grammar<'g>>,
+        then: Vec<Grammar<'g>>,
     },
     Return {
-        #[serde(rename = "return")]
-        return_: Item,
+        #[serde(rename = "return", borrow)]
+        return_: Item<'g>,
     },
     Error {
-        error: String,
+        error: &'g str,
     },
 }
 
-enum TypeItem {
-    Member(String),
-    Type(String),
+pub enum TypeItem<'g> {
+    Member(&'g str),
+    Type(&'g str),
 }
 
-impl<'de> Deserialize<'de> for TypeItem {
+impl<'de: 'g, 'g> Deserialize<'de> for TypeItem<'g> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>
     {
-        let s: &str = Deserialize::deserialize(deserializer)?;
+        let s: &'g str = Deserialize::deserialize(deserializer)?;
         if let Some(rule) = s.strip_prefix('@') {
-            Ok(TypeItem::Type(rule.to_string()))
+            Ok(TypeItem::Type(rule))
         }
         else {
-            Ok(TypeItem::Member(s.to_string()))
+            Ok(TypeItem::Member(s))
         }
     }
 }
 
 #[derive(Deserialize)]
-enum Check {
+pub enum Check<'g> {
     Equal {
-        equal: Vec<TypeItem>,
+        #[serde(borrow)]
+        equal: Vec<TypeItem<'g>>,
     }
 }
 
 #[derive(Deserialize)]
-struct Rule {
+pub struct Rule<'g> {
     #[serde(default)]
-    layout: HashMap<String, MemberKind>,
-    grammar: Vec<Grammar>,
+    pub layout: HashMap<String, MemberKind>,
+    #[serde(borrow)]
+    pub grammar: Vec<Grammar<'g>>,
     #[serde(default)]
-    check: Vec<Check>,
+    pub check: Vec<Check<'g>>,
 }
 
 #[derive(Deserialize)]
-struct GrammarFile {
-    keywords: Keywords,
-    rules: HashMap<String, Rule>,
+pub struct GrammarFile<'g> {
+    pub keywords: Keywords<'g>,
+    #[serde(borrow)]
+    pub rules: HashMap<String, Rule<'g>>,
 }
-
-struct Runner {}
