@@ -67,8 +67,8 @@ pub enum Grammar<'g> {
         #[serde(rename = "return", borrow)]
         return_: Item<'g>,
     },
-    Error {
-        error: &'g str,
+    Expected {
+        expected: &'g str,
     },
 }
 

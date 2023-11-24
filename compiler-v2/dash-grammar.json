@@ -113,7 +113,7 @@
                     "then": [{ "return": "#if" }]
                 },
                 {
-                    "error": "Expected expression"
+                    "expected": "expression"
                 }
             ]
         },

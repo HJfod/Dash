@@ -191,4 +191,4 @@ impl Display for Message<'_> {
     }
 }
 
-pub type Logger = Arc<Mutex<dyn FnMut(&Message)>>;
+pub type Logger = Arc<Mutex<dyn FnMut(Message)>>;

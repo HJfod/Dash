@@ -26,27 +26,31 @@ pub enum TokenKind<'s> {
 }
 
 pub struct Token<'s> {
-    kind: TokenKind<'s>,
-    raw: &'s str,
-    span: Span<'s>,
+    pub kind: TokenKind<'s>,
+    pub raw: &'s str,
+    pub span: Span<'s>,
 }
 
-pub struct Parser<'s, 'g> {
-    src: &'s Src,
+pub struct Tokenizer<'s, 'g> {
+    pub(super) src: &'s Src,
     iter: CharIter<'s>,
-    grammar: &'g grammar::GrammarFile<'g>,
-    logger: Logger,
+    pub(super) grammar: &'g grammar::GrammarFile<'g>,
+    pub(super) logger: Logger,
+    // stored for eof errors
+    last_non_ws_pos: usize,
 }
 
-impl<'s, 'g> Parser<'s, 'g> {
+impl<'s, 'g> Tokenizer<'s, 'g> {
     pub fn new(src: &'s Src, grammar: &'g grammar::GrammarFile<'g>, logger: Logger) -> Self {
-        Self { src, iter: src.iter(), grammar, logger, }
+        Self { src, iter: src.iter(), grammar, logger, last_non_ws_pos: 0 }
+    }
+    pub fn last_non_ws_span(&self) -> Span<'s> {
+        Span(self.src, self.last_non_ws_pos..=self.last_non_ws_pos)
     }
 }
 
-impl<'s, 'g> Iterator for Parser<'s, 'g> {
+impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
     type Item = Token<'s>;
-
     fn next(&mut self) -> Option<Self::Item> {
         macro_rules! parse {
             (next $cond: ident $(, $second: ident)? $(,)?) => {
@@ -111,6 +115,8 @@ impl<'s, 'g> Iterator for Parser<'s, 'g> {
                 }
             };
         }
+
+        self.last_non_ws_pos = self.iter.offset();
 
         // Skip whitespace & check for EOF
         skip_ws!();
@@ -186,7 +192,7 @@ impl<'s, 'g> Iterator for Parser<'s, 'g> {
                             Some('\"') => '\"',
                             Some('\'') => '\'',
                             Some(c) => {
-                                self.logger.lock().unwrap()(&Message::new(
+                                self.logger.lock().unwrap()(Message::new(
                                     Level::Warning,
                                     format!("Invalid escape sequence '\\{c}'"),
                                     Span(self.src, self.iter.offset() - 1..=self.iter.offset())
@@ -194,7 +200,7 @@ impl<'s, 'g> Iterator for Parser<'s, 'g> {
                                 c
                             }
                             None => {
-                                self.logger.lock().unwrap()(&Message::new(
+                                self.logger.lock().unwrap()(Message::new(
                                     Level::Warning,
                                     "Expected escape sequence",
                                     Span(self.src, self.iter.offset() - 1..=self.iter.offset())
