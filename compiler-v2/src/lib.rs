@@ -1,6 +1,6 @@
 
 pub mod grammar;
-pub mod parse;
+pub mod tokenizer;
 pub mod char_iter;
 pub mod src;
 pub mod ast;
@@ -8,8 +8,8 @@ pub mod ast;
 use std::collections::HashMap;
 use ast::{Node, Child};
 use grammar::{Rule, GrammarFile, MemberKind, Grammar, Item};
-use parse::Tokenizer;
-use src::{Logger, Message, Level, Span};
+use tokenizer::Tokenizer;
+use src::{Message, Level};
 
 enum Var {
     None,
@@ -43,7 +43,7 @@ impl<'s, 'g> Grammar<'g> {
                 match match_ {
                     Item::Rule(r) => {
                         // todo: rollback if no match
-                        let node = tokenizer.grammar.rules.get(*r)
+                        let node = tokenizer.grammar().rules.get(*r)
                             .expect(
                                 "internal compiler error: unknown rule {r} \
                                 - grammar file is invalid"
@@ -85,8 +85,8 @@ impl<'s, 'g> Grammar<'g> {
                 todo!()
             }
             Grammar::Expected { expected } => {
-                let span = tokenizer.next().map(|t| t.span).unwrap_or(tokenizer.last_non_ws_span());
-                tokenizer.logger.lock().unwrap()(Message::new(Level::Error, *expected, span));
+                let span = tokenizer.next().unwrap_or(tokenizer.last().unwrap()).span;
+                tokenizer.logger().lock().unwrap()(Message::new(Level::Error, *expected, span));
                 false
             }
         }

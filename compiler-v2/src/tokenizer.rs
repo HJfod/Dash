@@ -32,20 +32,24 @@ pub struct Token<'s> {
 }
 
 pub struct Tokenizer<'s, 'g> {
-    pub(super) src: &'s Src,
+    src: &'s Src,
     iter: CharIter<'s>,
-    pub(super) grammar: &'g grammar::GrammarFile<'g>,
-    pub(super) logger: Logger,
-    // stored for eof errors
-    last_non_ws_pos: usize,
+    grammar: &'g grammar::GrammarFile<'g>,
+    logger: Logger,
 }
 
 impl<'s, 'g> Tokenizer<'s, 'g> {
     pub fn new(src: &'s Src, grammar: &'g grammar::GrammarFile<'g>, logger: Logger) -> Self {
-        Self { src, iter: src.iter(), grammar, logger, last_non_ws_pos: 0 }
+        Self { src, iter: src.iter(), grammar, logger }
     }
-    pub fn last_non_ws_span(&self) -> Span<'s> {
-        Span(self.src, self.last_non_ws_pos..=self.last_non_ws_pos)
+    pub fn src(&self) -> &'s Src {
+        self.src
+    }
+    pub fn grammar(&self) -> &'g grammar::GrammarFile<'g> {
+        self.grammar
+    }
+    pub fn logger(&self) -> Logger {
+        self.logger.clone()
     }
 }
 
@@ -115,8 +119,6 @@ impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
                 }
             };
         }
-
-        self.last_non_ws_pos = self.iter.offset();
 
         // Skip whitespace & check for EOF
         skip_ws!();
@@ -262,5 +264,61 @@ impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
 
         let c = self.iter.next().unwrap();
         make_token!(TokenKind::Error(format!("invalid character '{c}'")))
+    }
+}
+
+/// A tokenizer that can be rolled back in case of parsing errors
+pub struct TokenCursor<'s, 'g> {
+    parsed: Vec<Token<'s>>,
+    tokenizer: Tokenizer<'s, 'g>,
+    position: usize,
+}
+
+impl<'s, 'g> TokenCursor<'s, 'g> {
+    pub fn new(src: &'s Src, grammar: &'g grammar::GrammarFile<'g>, logger: Logger) -> Self {
+        Self {
+            parsed: vec![],
+            tokenizer: Tokenizer::new(src, grammar, logger),
+            position: 0,
+        }
+    }
+    pub fn pos(&self) -> usize {
+        self.position
+    }
+    pub fn goto(&mut self, pos: usize) {
+        self.position = pos;
+    }
+    pub fn last(&self) -> Option<&Token<'s>> {
+        self.parsed.last()
+    }
+    pub fn src(&self) -> &'s Src {
+        self.tokenizer.src
+    }
+    pub fn grammar(&self) -> &'g grammar::GrammarFile<'g> {
+        self.tokenizer.grammar
+    }
+    pub fn logger(&self) -> Logger {
+        self.tokenizer.logger.clone()
+    }
+    // Returns references to self so can't be Iterator
+    pub fn next<'c>(&'c mut self) -> Option<&'c Token<'s>> {
+        // Get from cache
+        match self.parsed.get(self.position) {
+            // Advance position if from cached
+            Some(t) => {
+                self.position += 1;
+                Some(t)
+            }
+            // Get next token from stream
+            None => match self.tokenizer.next() {
+                Some(t) => {
+                    self.position += 1;
+                    self.parsed.push(t);
+                    self.parsed.last()
+                }
+                // EOF, don't advance position
+                None => None
+            }
+        }
     }
 }
