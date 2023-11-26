@@ -1,5 +1,5 @@
 
-use std::collections::{HashSet, HashMap};
+use std::{collections::{HashSet, HashMap}, fmt::Display};
 use serde::{Deserialize, Deserializer};
 
 #[derive(Deserialize)]
@@ -18,12 +18,59 @@ pub enum MemberKind {
     List,
 }
 
-pub enum Item<'g> {
+pub enum TokenItem<'g> {
     Token(&'g str),
-    Rule(&'g str),
-    Braces,
+    Ident,
+    Int,
+    Float,
+    String,
     Parentheses,
     Brackets,
+    Braces,
+}
+
+impl Display for TokenItem<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TokenItem::Token(s) => write!(f, "'{}'", s),
+            TokenItem::Ident => write!(f, "identifier"),
+            TokenItem::Int => write!(f, "integer"),
+            TokenItem::Float => write!(f, "float"),
+            TokenItem::String => write!(f, "string"),
+            TokenItem::Parentheses => write!(f, "parenthesized expression"),
+            TokenItem::Brackets => write!(f, "bracketed expression"),
+            TokenItem::Braces => write!(f, "braced expression"),
+        }
+    }
+}
+
+impl<'g> From<&'g str> for TokenItem<'g> {
+    fn from(s: &'g str) -> Self {
+        match s {
+            "ident" => TokenItem::Ident,
+            "int" => TokenItem::Int,
+            "float" => TokenItem::Float,
+            "string" => TokenItem::String,
+            "(...)" => TokenItem::Parentheses,
+            "[...]" => TokenItem::Brackets,
+            "{...}" => TokenItem::Braces,
+            _ => TokenItem::Token(s),
+        }
+    }
+}
+
+impl<'de: 'g, 'g> Deserialize<'de> for TokenItem<'g> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>
+    {
+        Ok(<Self as From<&'g str>>::from(Deserialize::deserialize(deserializer)?))
+    }
+}
+
+pub enum Item<'g> {
+    Token(TokenItem<'g>),
+    Rule(&'g str),
 }
 
 impl<'de: 'g, 'g> Deserialize<'de> for Item<'g> {
@@ -36,12 +83,28 @@ impl<'de: 'g, 'g> Deserialize<'de> for Item<'g> {
             Ok(Item::Rule(rule))
         }
         else {
-            Ok(Item::Token(s))
+            Ok(Item::Token(s.into()))
         }
     }
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[serde(untagged)]
+pub enum IfGrammar<'g> {
+    Match {
+        #[serde(rename = "match")]
+        match_: TokenItem<'g>,
+        into: Option<&'g str>,
+    },
+    Peek {
+        peek: TokenItem<'g>,
+    },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[serde(untagged)]
 pub enum Grammar<'g> {
     Match {
         #[serde(rename = "match", borrow)]
@@ -52,7 +115,7 @@ pub enum Grammar<'g> {
     },
     If {
         #[serde(rename = "if")]
-        if_: Box<Grammar<'g>>,
+        if_: IfGrammar<'g>,
         then: Vec<Grammar<'g>>,
         #[serde(default)]
         #[serde(rename = "else")]
@@ -60,7 +123,7 @@ pub enum Grammar<'g> {
     },
     While {
         #[serde(rename = "while")]
-        while_: Box<Grammar<'g>>,
+        while_: IfGrammar<'g>,
         then: Vec<Grammar<'g>>,
     },
     Return {
@@ -93,6 +156,8 @@ impl<'de: 'g, 'g> Deserialize<'de> for TypeItem<'g> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+#[serde(untagged)]
 pub enum Check<'g> {
     Equal {
         #[serde(borrow)]
@@ -101,6 +166,7 @@ pub enum Check<'g> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct Rule<'g> {
     #[serde(default)]
     pub layout: HashMap<String, MemberKind>,
@@ -111,6 +177,7 @@ pub struct Rule<'g> {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub struct GrammarFile<'g> {
     pub keywords: Keywords<'g>,
     #[serde(borrow)]

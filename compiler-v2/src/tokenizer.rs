@@ -1,5 +1,7 @@
 
-use crate::{grammar, char_iter::CharIter, src::{Src, Logger, Span, Message, Level}};
+use std::fmt::Display;
+
+use crate::{grammar, char_iter::CharIter, src::{Src, Span}, logger::{LoggerRef, Message, Level}};
 use unicode_xid::UnicodeXID;
 
 fn closing_paren(ch: char) -> char {
@@ -31,31 +33,78 @@ pub struct Token<'s> {
     pub span: Span<'s>,
 }
 
+impl Display for Token<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.kind {
+            TokenKind::Keyword => write!(f, "keyword {}", self.raw),
+            TokenKind::Ident => write!(f, "identifier '{}'", self.raw),
+            TokenKind::Punct => write!(f, "'{}'", self.raw),
+            TokenKind::Op => write!(f, "operator '{}'", self.raw),
+            TokenKind::Int(_) => write!(f, "integer"),
+            TokenKind::Float(_) => write!(f, "float"),
+            TokenKind::String(_) => write!(f, "string"),
+            TokenKind::Parentheses(_) => write!(f, "parenthesized expression"),
+            TokenKind::Brackets(_) => write!(f, "bracketed expression"),
+            TokenKind::Braces(_) => write!(f, "braced expression"),
+            TokenKind::Error(err) => write!(f, "invalid token ({err})"),
+        }
+    }
+}
+
 pub struct Tokenizer<'s, 'g> {
     src: &'s Src,
     iter: CharIter<'s>,
-    grammar: &'g grammar::GrammarFile<'g>,
-    logger: Logger,
+    grammar: &'s grammar::GrammarFile<'g>,
+    logger: LoggerRef,
+    peek: Option<Token<'s>>,
 }
 
 impl<'s, 'g> Tokenizer<'s, 'g> {
-    pub fn new(src: &'s Src, grammar: &'g grammar::GrammarFile<'g>, logger: Logger) -> Self {
-        Self { src, iter: src.iter(), grammar, logger }
+    pub fn new(src: &'s Src, grammar: &'s grammar::GrammarFile<'g>, logger: LoggerRef) -> Self {
+        let mut ret = Self {
+            src, iter: src.iter(),
+            grammar, logger, peek: None
+        };
+        ret.peek = ret.produce_next();
+        ret
     }
-    pub fn src(&self) -> &'s Src {
-        self.src
-    }
-    pub fn grammar(&self) -> &'g grammar::GrammarFile<'g> {
+    pub fn grammar(&self) -> &'s grammar::GrammarFile<'g> {
         self.grammar
     }
-    pub fn logger(&self) -> Logger {
+    pub fn logger(&self) -> LoggerRef {
         self.logger.clone()
     }
-}
-
-impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
-    type Item = Token<'s>;
-    fn next(&mut self) -> Option<Self::Item> {
+    pub fn peek(&self) -> Option<&Token<'s>> {
+        self.peek.as_ref()
+    }
+    pub fn start_offset(&mut self) -> usize {
+        loop {
+            // Ignore comments
+            if self.iter.peek().is_some_and(|c| c == '/') &&
+                self.iter.peek1().is_some_and(|c| c == '/')
+            {
+                self.iter.next();
+                self.iter.next();
+                for c in &mut self.iter {
+                    if c == '\n' {
+                        break;
+                    }
+                }
+                continue;
+            }
+            // Continue skipping until we encounter a non-whitespace character
+            if self.iter.peek().is_some_and(|c| c.is_whitespace()) {
+                self.iter.next();
+                continue;
+            }
+            break;
+        }
+        self.offset()
+    }
+    pub fn offset(&self) -> usize {
+        self.iter.offset() - 1
+    }
+    fn produce_next(&mut self) -> Option<Token<'s>> {
         macro_rules! parse {
             (next $cond: ident $(, $second: ident)? $(,)?) => {
                 parse!(peek $cond $(, $second)?).then(|| self.iter.nth(2)).is_some()
@@ -99,45 +148,24 @@ impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
             };
         }
 
-        macro_rules! skip_ws {
-            () => {
-                loop {
-                    // Ignore comments
-                    if parse!(next '/', '/') {
-                        for c in &mut self.iter {
-                            if c == '\n' {
-                                break;
-                            }
-                        }
-                        continue;
-                    }
-                    // Continue skipping until we encounter a non-whitespace character
-                    if parse!(next is_whitespace) {
-                        continue;
-                    }
-                    break;
-                }
-            };
-        }
-
         // Skip whitespace & check for EOF
-        skip_ws!();
+        self.start_offset();
         self.iter.peek()?;
 
         // Store first non-WS position for range of token
-        let start = self.iter.offset();
+        let start = self.offset();
 
         macro_rules! raw {
             () => {
-                &self.iter.src_str()[start..=self.iter.offset()]
+                &self.iter.src_str()[start..self.offset()]
             };
         }
 
         macro_rules! make_token {
             ($kind: expr) => { {
-                let end = self.iter.offset();
-                let raw = &self.iter.src_str()[start..=end];
-                Some(Token { kind: $kind, raw, span: Span(self.src, start..=end) })
+                let end = self.offset();
+                let raw = &self.iter.src_str()[start..end];
+                Some(Token { kind: $kind, raw, span: Span(self.src, start..end) })
             } };
         }
 
@@ -194,18 +222,18 @@ impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
                             Some('\"') => '\"',
                             Some('\'') => '\'',
                             Some(c) => {
-                                self.logger.lock().unwrap()(Message::new(
+                                self.logger.lock().unwrap().log(Message::new(
                                     Level::Warning,
                                     format!("Invalid escape sequence '\\{c}'"),
-                                    Span(self.src, self.iter.offset() - 1..=self.iter.offset())
+                                    Span(self.src, self.offset() - 1..self.offset())
                                 ));
                                 c
                             }
                             None => {
-                                self.logger.lock().unwrap()(Message::new(
+                                self.logger.lock().unwrap().log(Message::new(
                                     Level::Warning,
                                     "Expected escape sequence",
-                                    Span(self.src, self.iter.offset() - 1..=self.iter.offset())
+                                    Span(self.src, self.offset() - 1..self.offset())
                                 ));
                                 '\\'
                             }
@@ -243,7 +271,8 @@ impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
         if parse!(next '(' | '[' | '{') {
             let mut tree = vec![];
             'find_closing: loop {
-                skip_ws!();
+                // skip whitespace
+                self.start_offset();
                 match self.iter.peek() {
                     Some(c @ (')' | ']' | '}')) if c == closing_paren(opening) => {
                         self.iter.next();
@@ -267,58 +296,10 @@ impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
     }
 }
 
-/// A tokenizer that can be rolled back in case of parsing errors
-pub struct TokenCursor<'s, 'g> {
-    parsed: Vec<Token<'s>>,
-    tokenizer: Tokenizer<'s, 'g>,
-    position: usize,
-}
-
-impl<'s, 'g> TokenCursor<'s, 'g> {
-    pub fn new(src: &'s Src, grammar: &'g grammar::GrammarFile<'g>, logger: Logger) -> Self {
-        Self {
-            parsed: vec![],
-            tokenizer: Tokenizer::new(src, grammar, logger),
-            position: 0,
-        }
-    }
-    pub fn pos(&self) -> usize {
-        self.position
-    }
-    pub fn goto(&mut self, pos: usize) {
-        self.position = pos;
-    }
-    pub fn last(&self) -> Option<&Token<'s>> {
-        self.parsed.last()
-    }
-    pub fn src(&self) -> &'s Src {
-        self.tokenizer.src
-    }
-    pub fn grammar(&self) -> &'g grammar::GrammarFile<'g> {
-        self.tokenizer.grammar
-    }
-    pub fn logger(&self) -> Logger {
-        self.tokenizer.logger.clone()
-    }
-    // Returns references to self so can't be Iterator
-    pub fn next<'c>(&'c mut self) -> Option<&'c Token<'s>> {
-        // Get from cache
-        match self.parsed.get(self.position) {
-            // Advance position if from cached
-            Some(t) => {
-                self.position += 1;
-                Some(t)
-            }
-            // Get next token from stream
-            None => match self.tokenizer.next() {
-                Some(t) => {
-                    self.position += 1;
-                    self.parsed.push(t);
-                    self.parsed.last()
-                }
-                // EOF, don't advance position
-                None => None
-            }
-        }
+impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
+    type Item = Token<'s>;
+    fn next(&mut self) -> Option<Self::Item> {
+        let next = self.produce_next();
+        std::mem::replace(&mut self.peek, next)
     }
 }

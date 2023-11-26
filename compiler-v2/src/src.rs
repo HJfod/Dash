@@ -1,19 +1,22 @@
 
-use std::{path::{PathBuf, Path}, sync::{Arc, Mutex}, fs, fmt::{Debug, Display, Write}, ops::RangeInclusive};
+use std::{path::PathBuf, sync::Arc, fs, fmt::{Debug, Display}, ops::Range, ffi::OsStr};
 use line_col::LineColLookup;
 
 use crate::char_iter::CharIter;
 
 #[derive(Debug)]
-pub struct Span<'s>(pub &'s Src, pub RangeInclusive<usize>);
+pub struct Span<'s>(pub &'s Src, pub Range<usize>);
 
 impl Display for Span<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let lookup = LineColLookup::new(self.0.data());
+        let start = lookup.get(self.1.start);
         if self.1.is_empty() {
-            write!(f, "{}:{}", self.0.name(), self.1.start())
+            write!(f, "{}:{}:{}", self.0.name(), start.0, start.1)
         }
         else {
-            write!(f, "{}:{}:{}", self.0.name(), self.1.start(), self.1.end())
+            let end = lookup.get(self.1.end);
+            write!(f, "{}:{}:{}-{}:{}", self.0.name(), start.0, start.1, end.0, end.1)
         }
     }
 }
@@ -31,11 +34,11 @@ impl Src {
         Arc::from(Self::Builtin)
     }
 
-    pub fn from_file(path: &Path) -> Result<Arc<Self>, String> {
+    pub fn from_file<P: Into<PathBuf>>(path: P) -> Result<Arc<Self>, String> {
+        let path = path.into();
         Ok(Arc::from(Src::File {
-            path: path.to_path_buf(),
-            data: fs::read_to_string(path)
-                .map_err(|e| format!("Can't read file: {}", e))?,
+            data: fs::read_to_string(&path).map_err(|e| format!("Can't read file: {}", e))?,
+            path,
         }))
     }
 
@@ -57,13 +60,13 @@ impl Src {
         CharIter::new(self.data())
     }
 
-    pub fn underlined(&self, range: RangeInclusive<usize>) -> String {
+    pub fn underlined(&self, range: Range<usize>) -> String {
         let lookup = LineColLookup::new(self.data());
-        let start = lookup.get(*range.start());
-        let end = lookup.get(*range.end());
+        let start = lookup.get(range.start);
+        let end = lookup.get(range.end);
         let mut lines = self
             .data().lines()
-            .skip(start.0 - 1).take(end.0 - start.0);
+            .skip(start.0 - 1).take(end.0 - start.0 + 1);
         
         if end.0 == start.0 {
             format!(
@@ -113,82 +116,55 @@ impl Display for Src {
     }
 }
 
-#[allow(unused)]
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum Level {
-    Info,
-    Warning,
-    Error,
-}
-
-impl Display for Level {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
 #[derive(Debug)]
-pub struct Note<'s> {
-    info: String,
-    at: Option<Span<'s>>,
+pub struct SrcPool {
+    srcs: Vec<Arc<Src>>,
 }
 
-impl<'s> Note<'s> {
-    pub fn new<S: Into<String>>(info: S) -> Self {
-        Self { info: info.into(), at: None }
+impl SrcPool {
+    pub fn new(files: Vec<PathBuf>) -> Result<Self, String> {
+        Ok(Self {
+            srcs: files.into_iter().map(Src::from_file).collect::<Result<_, _>>()?
+        })
     }
-    pub fn new_at<S: Into<String>>(info: S, span: Span<'s>) -> Self {
-        Self { info: info.into(), at: Some(span) }
-    }
-}
-
-impl Display for Note<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if let Some(ref span) = self.at {
-            f.write_fmt(format_args!(
-                "Note: {}\n{}\n(In {})",
-                self.info, span.0.underlined(span.1.clone()), span
-            ))
-        } else {
-            f.write_fmt(format_args!("Note: {}", self.info))
+    pub fn new_from_dir(dir: PathBuf) -> Result<Self, String> {
+        if !dir.exists() {
+            Err("Directory does not exist".to_string())?;
+        }
+        let srcs = Self::find_src_files(dir);
+        if srcs.is_empty() {
+            Err("Directory is empty".to_string())
+        }
+        else {
+            Self::new(srcs)
         }
     }
-}
-
-#[derive(Debug)]
-pub struct Message<'s> {
-    level: Level,
-    info: String,
-    notes: Vec<Note<'s>>,
-    span: Span<'s>,
-}
-
-impl<'s> Message<'s> {
-    pub fn new<S: Into<String>>(level: Level, info: S, span: Span<'s>) -> Self {
-        Self { level, info: info.into(), notes: vec![], span }
+    fn find_src_files(dir: PathBuf) -> Vec<PathBuf> {
+        let mut res = vec![];
+        if let Ok(entries) = std::fs::read_dir(dir) { 
+            for entry in entries {
+                let file = entry.unwrap();
+                if let Ok(ty) = file.file_type() {
+                    if ty.is_dir() {
+                        res.extend(Self::find_src_files(file.path()));
+                    }
+                    else if file.path().extension() == Some(OsStr::new("dash")) {
+                        res.push(file.path());
+                    }
+                }
+            }
+        }
+        res
     }
-    pub fn note(mut self, note: Note<'s>) -> Self {
-        self.notes.push(note);
-        self
-    }
-}
-
-impl Display for Message<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!(
-            "{} at {}:\n{}{}{}",
-            self.level,
-            self.span,
-            self.span.0.underlined(self.span.1.clone()),
-            self.info,
-            self.notes
-                .iter()
-                .fold(String::new(), |mut acc, note| {
-                    write!(&mut acc, " * {note}").unwrap();
-                    acc
-                })
-        ))
+    pub fn iter(&self) -> impl Iterator<Item = Arc<Src>> + '_ {
+        self.into_iter()
     }
 }
 
-pub type Logger = Arc<Mutex<dyn FnMut(Message)>>;
+impl<'a> IntoIterator for &'a SrcPool {
+    type IntoIter = std::iter::Cloned<<&'a Vec<Arc<Src>> as IntoIterator>::IntoIter>;
+    type Item = Arc<Src>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.srcs.iter().cloned()
+    }
+}
