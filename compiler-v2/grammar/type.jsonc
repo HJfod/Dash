@@ -1,0 +1,16 @@
+{
+    "rules": {
+        "type-expr": {
+            "grammar": [
+                { "if": { "peek": "ident" }, "then": [{ "return": "#type-ident" }] },
+                { "expected": "type expression" }
+            ]
+        },
+        "type-ident": {
+            "members": ["ident"],
+            "grammar": [
+                { "match": "ident", "into": "ident" }
+            ]
+        }
+    }
+}

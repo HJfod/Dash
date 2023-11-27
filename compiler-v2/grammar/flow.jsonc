@@ -1,0 +1,40 @@
+{
+    "rules": {
+        // If statement
+        "if": {
+            "members": ["cond", "then", "?else"],
+            "grammar": [
+                { "match": "if" },
+                { "match": "#expr", "into": "cond" },
+                { "match": "#block", "into": "then" },
+                {
+                    "if": { "match": "else" },
+                    "then": [
+                        {
+                            "if": { "peek": "if" },
+                            "then": [
+                                { "match": "#if", "into": "else" }
+                            ],
+                            "else": [
+                                { "match": "#block", "into": "else" }
+                            ]
+                        }
+                    ]
+                }
+            ],
+            "check": [
+                { "equal": ["cond", "@bool"] },
+                { "equal": ["then", "else"] }
+            ]
+        },
+        // While loop
+        "while": {
+            "members": ["cond", "then"],
+            "grammar": [
+                { "match": "while" },
+                { "match": "expr", "into": "cond" },
+                { "match": "#block", "into": "then" }
+            ]
+        }
+    }
+}

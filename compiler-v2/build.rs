@@ -5,16 +5,20 @@ use serde::{Serialize, Deserialize};
 use serde_json::Value;
 
 
-#[derive(Deserialize, Serialize)]
+#[derive(Default, Deserialize, Serialize)]
 struct Keywords {
+    #[serde(default)]
     pub strict: HashSet<String>,
+    #[serde(default)]
     pub reserved: HashSet<String>,
+    #[serde(default)]
     pub contextual: HashSet<String>,
 }
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 struct GrammarFile {
+    #[serde(default)]
     pub keywords: Keywords,
     pub rules: HashMap<String, Value>,
 }

@@ -39,66 +39,20 @@
         ]
     },
     "rules": {
-        "if": {
-            "layout": {
-                "cond": "rule",
-                "truthy": "rule",
-                "falsy": "maybe"
-            },
+        "ident-path": {
+            "members": ["+parts"],
             "grammar": [
-                { "match": "if" },
-                { "match": "#expr", "into": "cond" },
-                { "match": "#block", "into": "truthy" },
+                { "match": "ident", "into": "parts" },
                 {
-                    "if": { "match": "else" },
+                    "while": { "match": "::" },
                     "then": [
-                        {
-                            "if": { "peek": "if" },
-                            "then": [
-                                { "match": "#if", "into": "falsy" }
-                            ],
-                            "else": [
-                                { "match": "#block", "into": "falsy" }
-                            ]
-                        }
+                        { "match": "ident", "into": "parts" }
                     ]
                 }
-            ],
-            "check": [
-                { "equal": ["cond", "@bool"] },
-                { "equal": ["truthy", "falsy"] }
-            ]
-        },
-        "let": {
-            "layout": {
-                "name": "rule",
-                "type": "maybe",
-                "value": "maybe"
-            },
-            "grammar": [
-                { "match": "let" },
-                { "match": "ident", "into": "name" },
-                {
-                    "if": { "match": ":" },
-                    "then": [
-                        { "match": "#type", "into": "type" }
-                    ]
-                },
-                {
-                    "if": { "match": "=" },
-                    "then": [
-                        { "match": "#expr", "into": "value" }
-                    ]
-                }
-            ],
-            "check": [
-                { "equal": ["type", "value"] }
             ]
         },
         "block": {
-            "layout": {
-                "list": "rule"
-            },
+            "members": ["list"],
             "grammar": [
                 {
                     "match": "{}",
@@ -110,23 +64,21 @@
         },
         "expr": {
             "grammar": [
-                {
-                    "if": { "peek": "let" },
-                    "then": [{ "return": "#let" }]
-                },
-                {
-                    "if": { "peek": "if" },
-                    "then": [{ "return": "#if" }]
-                },
-                {
-                    "expected": "expression"
-                }
+                { "if": { "peek": "let" }, "then": [{ "return": "#let" }] },
+                { "if": { "peek": "fun" }, "then": [{ "return": "#fun-decl" }] },
+                { "if": { "peek": "if" }, "then": [{ "return": "#if" }] },
+                { "if": { "peek": "while" }, "then": [{ "return": "#while" }] },
+                { "if": { "peek": "void" }, "then": [{ "return": "#void-lit" }] },
+                { "if": { "peek": "true" }, "then": [{ "return": "#bool-lit" }] },
+                { "if": { "peek": "false" }, "then": [{ "return": "#bool-lit" }] },
+                { "if": { "peek": "int" }, "then": [{ "return": "#int-lit" }] },
+                { "if": { "peek": "float" }, "then": [{ "return": "#float-lit" }] },
+                { "if": { "peek": "string" }, "then": [{ "return": "#string-lit" }] },
+                { "expected": "expression" }
             ]
         },
         "expr-list": {
-            "layout": {
-                "list": "list"
-            },
+            "members": ["+list"],
             "grammar": [
                 {
                     "while": "not-eof",

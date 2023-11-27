@@ -1,0 +1,91 @@
+{
+    "rules": {
+        "var-decl": {
+            "members": ["name", "?type", "?value"],
+            "grammar": [
+                { "match": "var" },
+                { "match": "ident", "into": "name" },
+                {
+                    "if": { "match": ":" },
+                    "then": [
+                        { "match": "#type", "into": "type" }
+                    ]
+                },
+                {
+                    "if": { "match": "=" },
+                    "then": [
+                        { "match": "#expr", "into": "value" }
+                    ]
+                }
+            ],
+            "check": [
+                { "equal": ["type", "value"] }
+            ]
+        },
+        "const-decl": {
+            "members": ["name", "?type", "?value"],
+            "grammar": [
+                { "match": "let" },
+                { "match": "ident", "into": "name" },
+                {
+                    "if": { "match": ":" },
+                    "then": [
+                        { "match": "#type", "into": "type" }
+                    ]
+                },
+                {
+                    "if": { "match": "=" },
+                    "then": [
+                        { "match": "#expr", "into": "value" }
+                    ]
+                }
+            ],
+            "check": [
+                { "equal": ["type", "value"] }
+            ]
+        },
+        "fun-param": {
+            "members": ["name", "type", "?default-value"],
+            "grammar": [
+                { "match": "ident", "into": "name" },
+                { "match": ":" },
+                { "match": "#type-expr", "into": "type" },
+                {
+                    "if": { "match": "=" },
+                    "then": [
+                        { "match": "#expr", "into": "default-value" }
+                    ]
+                }
+            ]
+        },
+        "fun-decl": {
+            "members": ["?name", "+params", "?return-type", "?body"],
+            "grammar": [
+                { "match": "fun" },
+                // Anonymous functions are permitted
+                { "if": { "match": "ident", "into": "name" }, "then": [] },
+                {
+                    "match": "(...)",
+                    "inner": [
+                        {
+                            "while": "not-eof",
+                            "then": [
+                                { "match": "#fun-param", "into": "params" },
+                                // Allow trailing commas. Expect EOF if no comma provided
+                                { "if": { "match": "," }, "then": [], "else": [{ "match": "eof:)" }] }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "if": { "match": "->" },
+                    "then": [{ "match": "#type-expr", "into": "return-type" }]
+                },
+                {
+                    "if": { "peek": "{...}" },
+                    "then": [{ "match": "#block", "into": "body" }]
+                }
+            ]
+        }
+    }
+}

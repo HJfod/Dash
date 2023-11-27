@@ -50,7 +50,7 @@ impl Var {
 
 impl<'s, 'g> IfGrammar<'g> {
     fn peek(token: &TokenItem<'_>, tokenizer: &Tokenizer<'s, 'g>) -> bool {
-        let Some(tk) = tokenizer.peek() else { return false; };
+        let Some(tk) = tokenizer.peek() else { return matches!(token, TokenItem::Eof(_)); };
         match token {
             TokenItem::Braces => matches!(tk.kind, TokenKind::Braces(_)),
             TokenItem::Brackets => matches!(tk.kind, TokenKind::Brackets(_)),
@@ -60,6 +60,7 @@ impl<'s, 'g> IfGrammar<'g> {
             TokenItem::Float => matches!(tk.kind, TokenKind::Float(_)),
             TokenItem::String => matches!(tk.kind, TokenKind::String(_)),
             TokenItem::Token(s) => tk.raw == *s,
+            TokenItem::Eof(_) => false,
         }
     }
 
@@ -73,14 +74,22 @@ impl<'s, 'g> IfGrammar<'g> {
             IfGrammar::NotEOF => {
                 tokenizer.peek().is_some()
             }
-            IfGrammar::Match { match_: token, into } => {
-                if Self::peek(token, tokenizer) {
+            IfGrammar::Match { match_, into } => {
+                if Self::peek(match_, tokenizer) {
+                    if matches!(match_, TokenItem::Eof(_)) {
+                        if into.is_some() {
+                            panic!("can't use \"into\" with {{ \"match\": \"eof\" }}");
+                        }
+                        return true;
+                    }
                     let token = tokenizer.next().unwrap();
-                    if let Some(into) = into {
-                        vars.get_mut(*into).expect(
-                            "internal compiler error: unknown variable {r} \
-                            - grammar file is invalid"
-                        ).assign(Node::from(token, src));
+                    if !matches!(token.kind, TokenKind::Error(_)) {
+                        if let Some(into) = into {
+                            vars.get_mut(*into).expect(
+                                "internal compiler error: unknown variable {r} \
+                                - grammar file is invalid"
+                            ).assign(Node::from(token, src));
+                        }
                     }
                     true
                 }
@@ -104,8 +113,12 @@ impl<'s, 'g> Item<'g> {
         match self {
             Item::Token(token) => {
                 if IfGrammar::peek(token, tokenizer) {
+                    // can't store EOF
+                    if matches!(token, TokenItem::Eof(_)) {
+                        return None;
+                    }
                     let token = tokenizer.next().unwrap();
-                    Some(Node::from(token, src.clone()))
+                    (!matches!(token.kind, TokenKind::Error(_))).then(|| Node::from(token, src.clone()))
                 }
                 else {
                     Grammar::error_next_token(token, tokenizer);
@@ -196,12 +209,12 @@ impl<'s, 'g> Grammar<'g> {
 
 impl<'s, 'g> Rule<'g> {
     fn exec(&self, src: Arc<Src>, tokenizer: &mut Tokenizer<'s, 'g>) -> Node {
-        let mut vars = self.layout.iter()
-            .map(|(name, kind)| (name.to_owned(), match kind {
-                MemberKind::List  => Var::List(vec![]),
-                MemberKind::Maybe => Var::Maybe(None),
-                MemberKind::Rule  => Var::None,
-            }))
+        let mut vars = self.members.iter()
+            .map(|kind| match kind {
+                MemberKind::List(a)  => (a.to_string(), Var::List(vec![])),
+                MemberKind::Maybe(a) => (a.to_string(), Var::Maybe(None)),
+                MemberKind::Rule(a)  => (a.to_string(), Var::None),
+            })
             .collect::<HashMap<_, _>>();
             
         let start = tokenizer.start_offset();
@@ -212,17 +225,18 @@ impl<'s, 'g> Rule<'g> {
         }
 
         Node::new(vars.into_iter()
-            .map(|(name, value)| {
+            .filter_map(|(name, value)| {
                 let value = match value {
                     Var::Node(node) => Child::Node(node),
                     Var::List(list) => Child::List(list),
                     Var::Maybe(opt) => Child::Maybe(opt),
-                    Var::None => panic!(
-                        "internal compiler error: required child {name} \
-                        was not assigned - grammar file is invalid"
-                    ),
+                    Var::None       => return None,
+                    // Var::None => panic!(
+                    //     "internal compiler error: required child '{name}' \
+                    //     was not assigned - grammar file is invalid"
+                    // ),
                 };
-                (name, value)
+                Some((name, value))
             })
             .collect(),
             ArcSpan(src.clone(), start..tokenizer.last_non_ws)

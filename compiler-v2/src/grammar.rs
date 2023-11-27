@@ -2,20 +2,39 @@
 use std::{collections::{HashSet, HashMap}, fmt::Display};
 use serde::{Deserialize, Deserializer};
 
-#[derive(Debug, Deserialize)]
+#[derive(Default, Debug, Deserialize)]
 pub struct Keywords<'g> {
-    #[serde(borrow)]
+    #[serde(borrow, default)]
     pub strict: HashSet<&'g str>,
+    #[serde(default)]
     pub reserved: HashSet<&'g str>,
+    #[serde(default)]
     pub contextual: HashSet<&'g str>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum MemberKind {
-    Rule,
-    Maybe,
-    List,
+#[derive(Debug)]
+pub enum MemberKind<'g> {
+    Rule(&'g str),
+    Maybe(&'g str),
+    List(&'g str),
+}
+
+impl<'de: 'g, 'g> Deserialize<'de> for MemberKind<'g> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>
+    {
+        let s: &'g str = Deserialize::deserialize(deserializer)?;
+        if let Some(maybe) = s.strip_prefix('?') {
+            Ok(MemberKind::Maybe(maybe))
+        }
+        else if let Some(list) = s.strip_prefix('+') {
+            Ok(MemberKind::List(list))
+        }
+        else {
+            Ok(MemberKind::Rule(s))
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -28,6 +47,7 @@ pub enum TokenItem<'g> {
     Parentheses,
     Brackets,
     Braces,
+    Eof(Option<&'g str>),
 }
 
 impl Display for TokenItem<'_> {
@@ -41,6 +61,7 @@ impl Display for TokenItem<'_> {
             TokenItem::Parentheses => write!(f, "parenthesized expression"),
             TokenItem::Brackets => write!(f, "bracketed expression"),
             TokenItem::Braces => write!(f, "braced expression"),
+            TokenItem::Eof(s) => write!(f, "{}", s.unwrap_or("end-of-file")),
         }
     }
 }
@@ -55,6 +76,7 @@ impl<'g> From<&'g str> for TokenItem<'g> {
             "(...)" => TokenItem::Parentheses,
             "[...]" => TokenItem::Brackets,
             "{...}" => TokenItem::Braces,
+            s if s.starts_with("eof") => TokenItem::Eof(s.strip_prefix("eof:")),
             _ => TokenItem::Token(s),
         }
     }
@@ -175,7 +197,7 @@ pub enum Check<'g> {
 #[serde(rename_all = "kebab-case")]
 pub struct Rule<'g> {
     #[serde(default)]
-    pub layout: HashMap<String, MemberKind>,
+    pub members: Vec<MemberKind<'g>>,
     #[serde(borrow)]
     pub grammar: Vec<Grammar<'g>>,
     #[serde(default)]
@@ -185,6 +207,7 @@ pub struct Rule<'g> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct GrammarFile<'g> {
+    #[serde(default)]
     pub keywords: Keywords<'g>,
     #[serde(borrow)]
     pub rules: HashMap<String, Rule<'g>>,
