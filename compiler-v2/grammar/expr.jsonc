@@ -51,11 +51,15 @@
                 }
             ]
         },
+        "entity": {
+            "members": ["ident"],
+            "grammar": [{ "match": "#ident-path", "into": "ident" }]
+        },
         "block": {
             "members": ["list"],
             "grammar": [
                 {
-                    "match": "{}",
+                    "match": "{...}",
                     "inner": [
                         { "match": "#expr-list", "into": "list" }
                     ]
@@ -64,16 +68,18 @@
         },
         "expr": {
             "grammar": [
-                { "if": { "peek": "var" }, "then": [{ "return": "#var-decl" }] },
-                { "if": { "peek": "let" }, "then": [{ "return": "#const-decl" }] },
-                { "if": { "peek": "fun" }, "then": [{ "return": "#fun-decl" }] },
-                { "if": { "peek": "if" }, "then": [{ "return": "#if" }] },
-                { "if": { "peek": "while" }, "then": [{ "return": "#while" }] },
-                { "if": { "peek": "void" }, "then": [{ "return": "#void-lit" }] },
-                { "if": { "peek": "true" }, "then": [{ "return": "#bool-lit" }] },
-                { "if": { "peek": "false" }, "then": [{ "return": "#bool-lit" }] },
-                { "if": { "peek": "int" }, "then": [{ "return": "#int-lit" }] },
-                { "if": { "peek": "float" }, "then": [{ "return": "#float-lit" }] },
+                { "if": { "peek": "var" },    "then": [{ "return": "#var-decl" }] },
+                { "if": { "peek": "let" },    "then": [{ "return": "#const-decl" }] },
+                { "if": { "peek": "fun" },    "then": [{ "return": "#fun-decl" }] },
+                { "if": { "peek": "if" },     "then": [{ "return": "#if" }] },
+                { "if": { "peek": "while" },  "then": [{ "return": "#while" }] },
+                { "if": { "peek": "ident" },  "then": [{ "return": "#entity" }] },
+                { "if": { "peek": "::" },     "then": [{ "return": "#entity" }] },
+                { "if": { "peek": "void" },   "then": [{ "return": "#void-lit" }] },
+                { "if": { "peek": "true" },   "then": [{ "return": "#bool-lit" }] },
+                { "if": { "peek": "false" },  "then": [{ "return": "#bool-lit" }] },
+                { "if": { "peek": "int" },    "then": [{ "return": "#int-lit" }] },
+                { "if": { "peek": "float" },  "then": [{ "return": "#float-lit" }] },
                 { "if": { "peek": "string" }, "then": [{ "return": "#string-lit" }] },
                 { "expected": "expression" }
             ]

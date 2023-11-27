@@ -128,6 +128,9 @@ impl SrcPool {
         })
     }
     pub fn new_from_dir(dir: PathBuf) -> Result<Self, String> {
+        if dir.is_file() {
+            return Self::new(vec![dir]);
+        }
         if !dir.exists() {
             Err("Directory does not exist".to_string())?;
         }

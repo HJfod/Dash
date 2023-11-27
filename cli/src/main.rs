@@ -32,9 +32,9 @@ fn main() {
     
     if args.debug_tokens {
         for src in &src_pool {
-            println!("Tokens for {src}");
+            println!(":: Tokens for {src} ::");
             for t in tokenize(src.as_ref(), &grammar, logger.clone()) {
-                println!(" . {t:#?}");
+                println!("{t:#?}");
             }
         }
     }

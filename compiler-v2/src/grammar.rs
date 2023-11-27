@@ -2,6 +2,8 @@
 use std::{collections::{HashSet, HashMap}, fmt::Display};
 use serde::{Deserialize, Deserializer};
 
+use crate::tokenizer::IsToken;
+
 #[derive(Default, Debug, Deserialize)]
 pub struct Keywords<'g> {
     #[serde(borrow, default)]
@@ -39,7 +41,9 @@ impl<'de: 'g, 'g> Deserialize<'de> for MemberKind<'g> {
 
 #[derive(Debug)]
 pub enum TokenItem<'g> {
-    Token(&'g str),
+    Keyword(&'g str),
+    Op(&'g str),
+    Punct(&'g str),
     Ident,
     Int,
     Float,
@@ -53,7 +57,9 @@ pub enum TokenItem<'g> {
 impl Display for TokenItem<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TokenItem::Token(s) => write!(f, "'{}'", s),
+            TokenItem::Keyword(s) => write!(f, "keyword {s}"),
+            TokenItem::Op(s) => write!(f, "operator '{s}'"),
+            TokenItem::Punct(s) => write!(f, "'{s}'"),
             TokenItem::Ident => write!(f, "identifier"),
             TokenItem::Int => write!(f, "integer"),
             TokenItem::Float => write!(f, "float"),
@@ -77,7 +83,11 @@ impl<'g> From<&'g str> for TokenItem<'g> {
             "[...]" => TokenItem::Brackets,
             "{...}" => TokenItem::Braces,
             s if s.starts_with("eof") => TokenItem::Eof(s.strip_prefix("eof:")),
-            _ => TokenItem::Token(s),
+            s if s.chars().all(|s| s.is_alphabetic() || s == '_') => TokenItem::Keyword(s),
+            s@("->" | "=>") => TokenItem::Punct(s),
+            s if s.chars().all(|s| s.is_punct_char()) => TokenItem::Punct(s),
+            s if s.chars().all(|s| s.is_op_char()) => TokenItem::Op(s),
+            s => panic!("invalid thing to match '{}'", s),
         }
     }
 }
@@ -154,8 +164,12 @@ pub enum Grammar<'g> {
         then: Vec<Grammar<'g>>,
     },
     Return {
-        #[serde(rename = "return", borrow)]
+        #[serde(rename = "return")]
         return_: Item<'g>,
+    },
+    DebugLog {
+        #[serde(rename = "debug-log")]
+        debug_log: &'g str,
     },
     Expected {
         expected: &'g str,

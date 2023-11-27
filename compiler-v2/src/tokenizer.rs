@@ -1,7 +1,7 @@
 
 use std::fmt::Display;
 
-use crate::{grammar, char_iter::CharIter, src::{Src, Span}, logger::{LoggerRef, Message, Level}};
+use crate::{grammar::{self, GrammarFile}, char_iter::CharIter, src::{Src, Span}, logger::{LoggerRef, Message, Level}};
 use unicode_xid::UnicodeXID;
 
 fn closing_paren(ch: char) -> char {
@@ -10,6 +10,20 @@ fn closing_paren(ch: char) -> char {
         '[' => ']',
         '{' => '}',
         _   => unreachable!(),
+    }
+}
+
+pub trait IsToken {
+    fn is_op_char(&self) -> bool;
+    fn is_punct_char(&self) -> bool;
+}
+
+impl IsToken for char {
+    fn is_op_char(&self) -> bool {
+        matches!(self, '=' | '+' | '-' | '/' | '%' | '&' | '|' | '^' | '*' | '~' | '!' | '?' | '<' | '>' | '#')
+    }
+    fn is_punct_char(&self) -> bool {
+        matches!(self, ',' | ';' | '.' | ':' | '@')
     }
 }
 
@@ -67,8 +81,6 @@ pub struct Tokenizer<'s, 'g> {
     iter: CharIter<'s>,
     grammar: &'s grammar::GrammarFile<'g>,
     logger: LoggerRef,
-    peek: Option<Token<'s>>,
-    pub(crate) last_non_ws: usize,
 }
 
 impl std::fmt::Debug for Tokenizer<'_, '_> {
@@ -79,27 +91,9 @@ impl std::fmt::Debug for Tokenizer<'_, '_> {
 
 impl<'s, 'g> Tokenizer<'s, 'g> {
     pub fn new(src: &'s Src, grammar: &'s grammar::GrammarFile<'g>, logger: LoggerRef) -> Self {
-        let mut ret = Self {
-            src, iter: src.iter(),
-            grammar, logger, peek: None,
-            last_non_ws: 0,
-        };
-        ret.peek = ret.produce_next();
-        ret
+        Self { src, iter: src.iter(), grammar, logger, }
     }
-    pub fn grammar(&self) -> &'s grammar::GrammarFile<'g> {
-        self.grammar
-    }
-    pub fn logger(&self) -> LoggerRef {
-        self.logger.clone()
-    }
-    pub fn peek(&self) -> Option<&Token<'s>> {
-        self.peek.as_ref()
-    }
-    pub fn eof_span(&self) -> Span<'s> {
-        Span(self.src, self.last_non_ws..self.last_non_ws + 1)
-    }
-    pub fn start_offset(&mut self) -> usize {
+    fn skip_ws(&mut self) {
         loop {
             // Ignore comments
             if self.iter.peek().is_some_and(|c| c == '/') &&
@@ -121,12 +115,15 @@ impl<'s, 'g> Tokenizer<'s, 'g> {
             }
             break;
         }
-        self.offset()
     }
-    pub fn offset(&self) -> usize {
+    fn offset(&self) -> usize {
         self.iter.offset() - 1
     }
-    fn produce_next(&mut self) -> Option<Token<'s>> {
+}
+
+impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
+    type Item = Token<'s>;
+    fn next(&mut self) -> Option<Self::Item> {
         macro_rules! nothing {
             ($($tokens: tt)*) => {};
         }
@@ -186,9 +183,8 @@ impl<'s, 'g> Tokenizer<'s, 'g> {
             };
         }
 
-        // Store position for spans, skip whitespace & check for EOF
-        self.last_non_ws = self.iter.offset();
-        self.start_offset();
+        // Skip whitespace & check for EOF
+        self.skip_ws();
         self.iter.peek()?;
 
         // Store first non-WS position for range of token
@@ -301,7 +297,7 @@ impl<'s, 'g> Tokenizer<'s, 'g> {
         }
 
         // Operators
-        if parse!(next_while '=' | '+' | '-' | '/' | '%' | '&' | '|' | '^' | '*' | '~' | '!' | '?' | '<' | '>' | '#') {
+        if parse!(next_while is_op_char) {
             return make_token!(TokenKind::Op);
         }
 
@@ -311,7 +307,7 @@ impl<'s, 'g> Tokenizer<'s, 'g> {
             let mut tree = vec![];
             'find_closing: loop {
                 // skip whitespace
-                self.start_offset();
+                self.skip_ws();
                 match self.iter.peek() {
                     Some(c @ (')' | ']' | '}')) if c == closing_paren(opening) => {
                         self.iter.next();
@@ -320,7 +316,7 @@ impl<'s, 'g> Tokenizer<'s, 'g> {
                     Some(_) => {}
                     None => return make_token!(TokenKind::Error("unclosed parenthesis".to_string())),
                 }
-                tree.push(self.produce_next().unwrap());
+                tree.push(self.next().unwrap());
             }
             return make_token!(match opening {
                 '(' => TokenKind::Parentheses(tree),
@@ -335,10 +331,56 @@ impl<'s, 'g> Tokenizer<'s, 'g> {
     }
 }
 
-impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
+pub struct TokenIterator<'s, 'g, I: Iterator<Item = Token<'s>>> {
+    src: &'s Src,
+    grammar: &'s GrammarFile<'g>,
+    iter: I,
+    peek: Option<Token<'s>>,
+    start_of_last_token: usize,
+    logger: LoggerRef,
+}
+
+impl<'s, 'g, I: Iterator<Item = Token<'s>>> TokenIterator<'s, 'g, I> {
+    pub fn new(src: &'s Src, grammar: &'s GrammarFile<'g>,  logger: LoggerRef, mut iter: I) -> Self {
+        let peek = iter.next();
+        Self { src, grammar, logger, iter, peek, start_of_last_token: 0 }
+    }
+    pub fn fork<O: Iterator<Item = Token<'s>>>(&self, iter: O) -> TokenIterator<'s, 'g, O> {
+        TokenIterator::new(self.src, self.grammar, self.logger.clone(), iter)
+    }
+    pub fn peek(&self) -> Option<&Token<'s>> {
+        self.peek.as_ref()
+    }
+    pub fn start_offset(&self) -> usize {
+        self.peek.as_ref().map(|t| t.span.1.start).unwrap_or(self.src.data().len())
+    }
+    pub fn end_offset(&self) -> usize {
+        self.start_of_last_token
+    }
+    pub fn eof_span(&self) -> Span<'s> {
+        Span(self.src, self.start_of_last_token..self.start_of_last_token + 1)
+    }
+    pub fn grammar(&self) -> &'s grammar::GrammarFile<'g> {
+        self.grammar
+    }
+    pub fn logger(&self) -> LoggerRef {
+        self.logger.clone()
+    }
+}
+
+impl<'s, 'g, I: Iterator<Item = Token<'s>>> Iterator for TokenIterator<'s, 'g, I> {
     type Item = Token<'s>;
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.produce_next();
+        let next = self.iter.next();
+        self.start_of_last_token = next.as_ref()
+            .map(|t| t.span.1.start)
+            .unwrap_or(self.src.data().len());
         std::mem::replace(&mut self.peek, next)
+    }
+}
+
+impl<'s, 'g> From<Tokenizer<'s, 'g>> for TokenIterator<'s, 'g, Tokenizer<'s, 'g>> {
+    fn from(value: Tokenizer<'s, 'g>) -> Self {
+        Self::new(value.src, value.grammar, value.logger.clone(), value)
     }
 }

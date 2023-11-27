@@ -12,7 +12,7 @@ pub mod ast;
 mod parse;
 pub mod logger;
 
-pub(crate) static mut DEBUG_LOG_INDENT: usize = 0;
+// pub(crate) static mut DEBUG_LOG_INDENT: usize = 0;
 
 static DEFAULT_GRAMMAR: &str = include_str!("../grammar/__combined.json");
 

@@ -32,11 +32,14 @@ pub struct Node {
 }
 
 impl Node {
+    pub fn new_empty(span: ArcSpan) -> Self {
+        Self { children: vec![], value: None, span }
+    }
     pub fn new(children: Vec<(String, Child)>, span: ArcSpan) -> Self {
         Self { children, value: None, span }
     }
-    pub fn new_with_value(value: Option<Value>, span: ArcSpan) -> Self {
-        Self { children: vec![], value, span }
+    pub fn new_with_value(value: Value, span: ArcSpan) -> Self {
+        Self { children: vec![], value: Some(value), span }
     }
     pub fn span(&self) -> ArcSpan {
         self.span.clone()
