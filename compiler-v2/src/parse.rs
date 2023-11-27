@@ -70,6 +70,9 @@ impl<'s, 'g> IfGrammar<'g> {
         vars: &mut HashMap<String, Var>
     ) -> bool {
         match self {
+            IfGrammar::NotEOF => {
+                tokenizer.peek().is_some()
+            }
             IfGrammar::Match { match_: token, into } => {
                 if Self::peek(token, tokenizer) {
                     let token = tokenizer.next().unwrap();

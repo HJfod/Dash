@@ -77,7 +77,7 @@ fn combine_grammar_jsons(dir: PathBuf) -> String {
     for json in iter {
         merge_grammar_files(&mut res, json);
     }
-    serde_json::to_string(&res).unwrap()
+    serde_json::to_string_pretty(&res).unwrap()
 }
 
 fn main() {

@@ -92,13 +92,16 @@ impl<'de: 'g, 'g> Deserialize<'de> for Item<'g> {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-#[serde(untagged)]
 pub enum IfGrammar<'g> {
+    #[serde(rename = "not-eof")]
+    NotEOF,
+    #[serde(untagged)]
     Match {
         #[serde(rename = "match")]
         match_: TokenItem<'g>,
         into: Option<&'g str>,
     },
+    #[serde(untagged)]
     Peek {
         peek: TokenItem<'g>,
     },

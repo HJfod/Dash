@@ -129,8 +129,13 @@
             },
             "grammar": [
                 {
-                    "match": "#expr",
-                    "into": "list"
+                    "while": "not-eof",
+                    "then": [
+                        { "match": "#expr", "into": "list" },
+                        // Semicolons are optional because I cba to figure out a proper 
+                        // way to match them in a reasonable way
+                        { "while": { "match": ";" }, "then": [] }
+                    ]
                 }
             ]
         },
