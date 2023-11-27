@@ -57,13 +57,21 @@ pub struct Tokenizer<'s, 'g> {
     grammar: &'s grammar::GrammarFile<'g>,
     logger: LoggerRef,
     peek: Option<Token<'s>>,
+    pub(crate) last_non_ws: usize,
+}
+
+impl std::fmt::Debug for Tokenizer<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Tokenizer")
+    }
 }
 
 impl<'s, 'g> Tokenizer<'s, 'g> {
     pub fn new(src: &'s Src, grammar: &'s grammar::GrammarFile<'g>, logger: LoggerRef) -> Self {
         let mut ret = Self {
             src, iter: src.iter(),
-            grammar, logger, peek: None
+            grammar, logger, peek: None,
+            last_non_ws: 0,
         };
         ret.peek = ret.produce_next();
         ret
@@ -76,6 +84,9 @@ impl<'s, 'g> Tokenizer<'s, 'g> {
     }
     pub fn peek(&self) -> Option<&Token<'s>> {
         self.peek.as_ref()
+    }
+    pub fn eof_span(&self) -> Span<'s> {
+        Span(self.src, self.last_non_ws..self.last_non_ws + 1)
     }
     pub fn start_offset(&mut self) -> usize {
         loop {
@@ -148,7 +159,8 @@ impl<'s, 'g> Tokenizer<'s, 'g> {
             };
         }
 
-        // Skip whitespace & check for EOF
+        // Store position for spans, skip whitespace & check for EOF
+        self.last_non_ws = self.iter.offset();
         self.start_offset();
         self.iter.peek()?;
 

@@ -2,7 +2,7 @@
 use std::{collections::{HashSet, HashMap}, fmt::Display};
 use serde::{Deserialize, Deserializer};
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Keywords<'g> {
     #[serde(borrow)]
     pub strict: HashSet<&'g str>,
@@ -10,7 +10,7 @@ pub struct Keywords<'g> {
     pub contextual: HashSet<&'g str>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MemberKind {
     Rule,
@@ -18,6 +18,7 @@ pub enum MemberKind {
     List,
 }
 
+#[derive(Debug)]
 pub enum TokenItem<'g> {
     Token(&'g str),
     Ident,
@@ -68,6 +69,7 @@ impl<'de: 'g, 'g> Deserialize<'de> for TokenItem<'g> {
     }
 }
 
+#[derive(Debug)]
 pub enum Item<'g> {
     Token(TokenItem<'g>),
     Rule(&'g str),
@@ -88,7 +90,7 @@ impl<'de: 'g, 'g> Deserialize<'de> for Item<'g> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(untagged)]
 pub enum IfGrammar<'g> {
@@ -102,7 +104,7 @@ pub enum IfGrammar<'g> {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(untagged)]
 pub enum Grammar<'g> {
@@ -135,6 +137,7 @@ pub enum Grammar<'g> {
     },
 }
 
+#[derive(Debug)]
 pub enum TypeItem<'g> {
     Member(&'g str),
     Type(&'g str),
@@ -155,7 +158,7 @@ impl<'de: 'g, 'g> Deserialize<'de> for TypeItem<'g> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(untagged)]
 pub enum Check<'g> {
@@ -165,7 +168,7 @@ pub enum Check<'g> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct Rule<'g> {
     #[serde(default)]
@@ -176,7 +179,7 @@ pub struct Rule<'g> {
     pub check: Vec<Check<'g>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct GrammarFile<'g> {
     pub keywords: Keywords<'g>,

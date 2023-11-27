@@ -108,6 +108,21 @@
                 }
             ]
         },
+        "expr": {
+            "grammar": [
+                {
+                    "if": { "peek": "let" },
+                    "then": [{ "return": "#let" }]
+                },
+                {
+                    "if": { "peek": "if" },
+                    "then": [{ "return": "#if" }]
+                },
+                {
+                    "expected": "expression"
+                }
+            ]
+        },
         "expr-list": {
             "layout": {
                 "list": "list"
@@ -119,23 +134,8 @@
                 }
             ]
         },
-        "expr": {
-            "grammar": [
-                {
-                    "if": { "peek": "let" },
-                    "then": [{ "return": "#expr" }]
-                },
-                {
-                    "if": { "peek": "if" },
-                    "then": [{ "return": "#if" }]
-                },
-                {
-                    "expected": "expression"
-                }
-            ]
-        },
         "main": {
-            "grammar": [{ "return": "#expr" }]
+            "grammar": [{ "return": "#expr-list" }]
         }
     }
 }

@@ -87,6 +87,12 @@ pub struct Logger {
     warn_count: usize,
 }
 
+impl std::fmt::Debug for Logger {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Logger")
+    }
+}
+
 impl Logger {
     pub fn new<F: FnMut(Message) + 'static>(logger: F) -> LoggerRef {
         Arc::from(Mutex::from(Self {

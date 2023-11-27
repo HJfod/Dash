@@ -1,5 +1,4 @@
 
-use std::ops::RangeBounds;
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 use crate::logger::LoggerRef;
 
@@ -27,6 +26,7 @@ impl Node {
     }
 }
 
+#[derive(Debug)]
 enum Var {
     None,
     Node(Node),
@@ -123,19 +123,20 @@ impl<'s, 'g> Item<'g> {
 
 impl<'s, 'g> Grammar<'g> {
     fn error_next_token<F: Display>(expected: F, tokenizer: &mut Tokenizer<'s, 'g>) {
-        let (token, eof) = tokenizer.next()
-            .map(|t| (t, false))
-            .unwrap_or((tokenizer.last().unwrap(), true));
-        tokenizer.logger().lock().unwrap().log(Message::new(
-            Level::Error,
-            if eof {
-                format!("Expected {expected}, got end-of-file")
-            }
-            else {
-                format!("Expected {expected}, got {token}")
-            },
-            token.span
-        ));
+        if let Some(token) = tokenizer.next() {
+            tokenizer.logger().lock().unwrap().log(Message::new(
+                Level::Error,
+                format!("Expected {expected}, got {token}"),
+                token.span
+            ));
+        }
+        else {
+            tokenizer.logger().lock().unwrap().log(Message::new(
+                Level::Error,
+                format!("Expected {expected}, got end-of-file"),
+                tokenizer.eof_span()
+            ));
+        }
     }
 
     fn exec(
@@ -202,7 +203,9 @@ impl<'s, 'g> Rule<'g> {
             
         let start = tokenizer.start_offset();
         for stmt in &self.grammar {
-            stmt.exec(src.clone(), tokenizer, &mut vars);
+            if let Some(ret) = stmt.exec(src.clone(), tokenizer, &mut vars) {
+                return ret;
+            }
         }
 
         Node::new(vars.into_iter()
@@ -219,12 +222,7 @@ impl<'s, 'g> Rule<'g> {
                 (name, value)
             })
             .collect(),
-            ArcSpan(
-                src.clone(),
-                start..tokenizer.last()
-                    .map(|t| t.span.1.end)
-                    .unwrap_or(0usize)
-            )
+            ArcSpan(src.clone(), start..tokenizer.last_non_ws)
         )
     }
 }

@@ -109,23 +109,11 @@ dependencies = [
 name = "dash-compiler-v2"
 version = "0.1.0"
 dependencies = [
- "dash-macros",
+ "json_comments",
  "line-col",
  "serde",
  "serde_json",
  "unicode-xid",
-]
-
-[[package]]
-name = "dash-macros"
-version = "0.1.0"
-dependencies = [
- "json_comments",
- "proc-macro2",
- "quote",
- "serde",
- "serde_json",
- "syn",
 ]
 
 [[package]]

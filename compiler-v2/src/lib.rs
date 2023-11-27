@@ -1,5 +1,4 @@
 
-use dash_macros::include_grammar_jsons;
 use grammar::GrammarFile;
 use logger::LoggerRef;
 use src::Src;
@@ -13,7 +12,9 @@ pub mod ast;
 mod parse;
 pub mod logger;
 
-static DEFAULT_GRAMMAR: &str = include_grammar_jsons!("../grammar");
+pub(crate) static mut DEBUG_LOG_INDENT: usize = 0;
+
+static DEFAULT_GRAMMAR: &str = include_str!("../grammar/__combined.json");
 
 pub fn default_grammar() -> GrammarFile<'static> {
     serde_json::from_str(DEFAULT_GRAMMAR).expect("Unable to parse built-in grammar")
