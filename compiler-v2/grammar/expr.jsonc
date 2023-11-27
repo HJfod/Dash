@@ -64,7 +64,8 @@
         },
         "expr": {
             "grammar": [
-                { "if": { "peek": "let" }, "then": [{ "return": "#let" }] },
+                { "if": { "peek": "var" }, "then": [{ "return": "#var-decl" }] },
+                { "if": { "peek": "let" }, "then": [{ "return": "#const-decl" }] },
                 { "if": { "peek": "fun" }, "then": [{ "return": "#fun-decl" }] },
                 { "if": { "peek": "if" }, "then": [{ "return": "#if" }] },
                 { "if": { "peek": "while" }, "then": [{ "return": "#while" }] },

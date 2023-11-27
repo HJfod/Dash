@@ -127,10 +127,10 @@ impl<'s, 'g> Item<'g> {
             }
             Item::Rule(r) => Some(
                 tokenizer.grammar().rules.get(*r)
-                    .expect(
+                    .unwrap_or_else(|| panic!(
                         "internal compiler error: unknown rule {r} \
                         - grammar file is invalid"
-                    )
+                    ))
                     .exec(src.clone(), tokenizer)
             )
         }

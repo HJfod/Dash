@@ -51,6 +51,17 @@ impl Display for Token<'_> {
     }
 }
 
+impl std::fmt::Debug for Token<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self, f)?;
+        if let TokenKind::Parentheses(p) | TokenKind::Brackets(p) | TokenKind::Braces(p) = &self.kind {
+            f.debug_list().entries(p.iter()).finish()?;
+        }
+        write!(f, " ({}..{})", self.span.1.start, self.span.1.end)?;
+        Ok(())
+    }
+}
+
 pub struct Tokenizer<'s, 'g> {
     src: &'s Src,
     iter: CharIter<'s>,
@@ -116,18 +127,34 @@ impl<'s, 'g> Tokenizer<'s, 'g> {
         self.iter.offset() - 1
     }
     fn produce_next(&mut self) -> Option<Token<'s>> {
+        macro_rules! nothing {
+            ($($tokens: tt)*) => {};
+        }
+
         macro_rules! parse {
             (next $cond: ident $(, $second: ident)? $(,)?) => {
-                parse!(peek $cond $(, $second)?).then(|| self.iter.nth(2)).is_some()
+                parse!(peek $cond $(, $second)?).then(|| {
+                    self.iter.next();
+                    $( self.iter.next(); nothing!($second); )?
+                }).is_some()
             };
             (next $cond: ident $(, $second: pat)? $(,)?) => {
-                parse!(peek $cond $(, $second)?).then(|| self.iter.nth(2)).is_some()
+                parse!(peek $cond $(, $second)?).then(|| {
+                    self.iter.next();
+                    $( self.iter.next(); nothing!($second); )?
+                }).is_some()
             };
             (next $cond: pat $(, $second: ident)? $(,)?) => {
-                parse!(peek $cond $(, $second)?).then(|| self.iter.nth(2)).is_some()
+                parse!(peek $cond $(, $second)?).then(|| {
+                    self.iter.next();
+                    $( self.iter.next(); nothing!($second); )?
+                }).is_some()
             };
             (next $cond: pat $(, $second: pat)? $(,)?) => {
-                parse!(peek $cond $(, $second)?).then(|| self.iter.nth(2)).is_some()
+                parse!(peek $cond $(, $second)?).then(|| {
+                    self.iter.next();
+                    $( self.iter.next(); nothing!($second); )?
+                }).is_some()
             };
             (next_while $cond: ident) => { {
                 let mut some = false;
@@ -293,7 +320,7 @@ impl<'s, 'g> Tokenizer<'s, 'g> {
                     Some(_) => {}
                     None => return make_token!(TokenKind::Error("unclosed parenthesis".to_string())),
                 }
-                tree.push(self.next().unwrap());
+                tree.push(self.produce_next().unwrap());
             }
             return make_token!(match opening {
                 '(' => TokenKind::Parentheses(tree),

@@ -9,7 +9,7 @@
         "type-ident": {
             "members": ["ident"],
             "grammar": [
-                { "match": "ident", "into": "ident" }
+                { "match": "#ident-path", "into": "ident" }
             ]
         }
     }

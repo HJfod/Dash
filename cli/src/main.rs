@@ -15,6 +15,9 @@ struct Args {
     debug_tokens: bool,
 
     #[clap(long)]
+    no_ast: bool,
+
+    #[clap(long)]
     debug_ast: bool,
 }
 
@@ -31,9 +34,12 @@ fn main() {
         for src in &src_pool {
             println!("Tokens for {src}");
             for t in tokenize(src.as_ref(), &grammar, logger.clone()) {
-                println!("+ {t}");
+                println!(" . {t:#?}");
             }
         }
+    }
+    if args.no_ast {
+        return;
     }
     let ast_pool = ASTPool::parse_src_pool(&src_pool, &grammar, logger.clone());
 
