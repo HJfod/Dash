@@ -9,44 +9,24 @@ use super::tokenizer::{Tokenizer, TokenKind, Token};
 use super::src::Src;
 use super::logger::{Message, Level};
 
-enum ParseResult<'s> {
-    None,
-    Node(Node),
-    NodeAndInner(Node, Vec<Token<'s>>),
-}
-
-impl<'s> ParseResult<'s> {
-    fn node(self) -> Option<Node> {
-        match self {
-            Self::None => None,
-            Self::Node(n) | Self::NodeAndInner(n, _) => Some(n)
-        }
-    }
-    fn both(self) -> (Option<Node>, Option<Vec<Token<'s>>>) {
-        match self {
-            Self::None => (None, None),
-            Self::Node(n) => (Some(n), None),
-            Self::NodeAndInner(n, i) => (Some(n), Some(i)),
-        }
-    }
-}
-
 impl Node {
-    fn new_node_and_inner(token: Token, src: Arc<Src>) -> ParseResult {
+    fn from(token: Token, src: Arc<Src>) -> Node {
         let span = ArcSpan(src, token.span.1);
         match token.kind {
             TokenKind::Keyword |
             TokenKind::Op |
             TokenKind::Punct |
-            TokenKind::Ident => ParseResult::Node(Node::new_empty(span)),
-            TokenKind::Parentheses(i) |
-            TokenKind::Braces(i) |
-            TokenKind::Brackets(i) => ParseResult::NodeAndInner(Node::new_empty(span), i),
-            TokenKind::Int(n) => ParseResult::Node(Node::new_with_value(Value::Int(n), span)),
-            TokenKind::Float(n) => ParseResult::Node(Node::new_with_value(Value::Float(n), span)),
-            TokenKind::String(s) => ParseResult::Node(Node::new_with_value(Value::String(s), span)),
+            TokenKind::Ident |
+            TokenKind::Parentheses(_) |
+            TokenKind::Braces(_) |
+            TokenKind::Brackets(_) => None,
+            TokenKind::Int(n) => Some(Value::Int(n)),
+            TokenKind::Float(n) => Some(Value::Float(n)),
+            TokenKind::String(s) => Some(Value::String(s)),
             TokenKind::Error(_) => unreachable!("errors should never be matched")
         }
+            .map(|v| Node::new_with_value(v, span))
+            .unwrap_or_else(|| Node::new_empty(span))
     }
 }
 
@@ -137,7 +117,7 @@ impl<'s, 'g> Item<'g> {
         &self,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
-    ) -> ParseResult<'s>
+    ) -> Option<Node>
         where I: Iterator<Item = Token<'s>>
     {
         match self {
@@ -145,20 +125,20 @@ impl<'s, 'g> Item<'g> {
                 if IfGrammar::peek(token, tokenizer) {
                     // can't store EOF
                     if matches!(token, TokenItem::Eof(_)) {
-                        return ParseResult::None;
+                        return None;
                     }
                     let token = tokenizer.next().unwrap();
                     if matches!(token.kind, TokenKind::Error(_)) {
-                        return ParseResult::None;
+                        return None;
                     }
-                    Node::new_node_and_inner(token, src.clone())
+                    Some(Node::from(token, src.clone()))
                 }
                 else {
                     Grammar::error_next_token(token, tokenizer);
-                    ParseResult::None
+                    None
                 }
             }
-            Item::Rule(r) => ParseResult::Node(
+            Item::Rule(r) => Some(
                 tokenizer.grammar().rules.get(*r)
                     .unwrap_or_else(|| panic!(
                         "internal compiler error: unknown rule {r} \
@@ -201,7 +181,7 @@ impl<'s, 'g> Grammar<'g> {
     {
         match self {
             Grammar::Match { match_, into, inner } => {
-                let (node, inner_tokens) = match_.parse(src.clone(), tokenizer).both();
+                let node = match_.parse(src.clone(), tokenizer);
                 if let (Some(into), Some(node)) = (into, node) {
                     vars.get_mut(*into).expect(
                         "internal compiler error: unknown variable {r} \
