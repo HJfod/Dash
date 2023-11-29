@@ -11,7 +11,6 @@ use super::logger::{Message, Level};
 
 impl Node {
     fn from(token: Token, src: Arc<Src>) -> Node {
-        let span = ArcSpan(src, token.span.1);
         match token.kind {
             TokenKind::Keyword |
             TokenKind::Op |
@@ -25,8 +24,8 @@ impl Node {
             TokenKind::String(s) => Some(Value::String(s)),
             TokenKind::Error(_) => unreachable!("errors should never be matched")
         }
-            .map(|v| Node::new_with_value(v, span))
-            .unwrap_or_else(|| Node::new_empty(span))
+            .map(|v| Node::new_with_value(v, ArcSpan(src.clone(), token.span.1.clone())))
+            .unwrap_or_else(|| Node::new_empty(ArcSpan(src, token.span.1)))
     }
 }
 
@@ -96,7 +95,7 @@ impl<'s, 'g> IfGrammar<'g> {
                             vars.get_mut(*into).expect(
                                 "internal compiler error: unknown variable {r} \
                                 - grammar file is invalid"
-                            ).assign(Node::new_node_and_inner(token, src).node().unwrap());
+                            ).assign(Node::from(token, src));
                         }
                     }
                     true
@@ -112,12 +111,14 @@ impl<'s, 'g> IfGrammar<'g> {
     }
 }
 
+struct InvalidToken;
+
 impl<'s, 'g> Item<'g> {
     fn parse<I>(
         &self,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
-    ) -> Option<Node>
+    ) -> Result<(Node, Option<Vec<Token<'s>>>), InvalidToken>
         where I: Iterator<Item = Token<'s>>
     {
         match self {
@@ -125,27 +126,29 @@ impl<'s, 'g> Item<'g> {
                 if IfGrammar::peek(token, tokenizer) {
                     // can't store EOF
                     if matches!(token, TokenItem::Eof(_)) {
-                        return None;
+                        return Err(InvalidToken);
                     }
-                    let token = tokenizer.next().unwrap();
+                    let mut token = tokenizer.next().unwrap();
                     if matches!(token.kind, TokenKind::Error(_)) {
-                        return None;
+                        return Err(InvalidToken);
                     }
-                    Some(Node::from(token, src.clone()))
+                    let inner = token.kind.take_inner();
+                    Ok((Node::from(token, src.clone()), inner))
                 }
                 else {
                     Grammar::error_next_token(token, tokenizer);
-                    None
+                    Err(InvalidToken)
                 }
             }
-            Item::Rule(r) => Some(
+            Item::Rule(r) => Ok((
                 tokenizer.grammar().rules.get(*r)
                     .unwrap_or_else(|| panic!(
                         "internal compiler error: unknown rule {r} \
                         - grammar file is invalid"
                     ))
-                    .exec(src.clone(), tokenizer)
-            )
+                    .exec(src.clone(), tokenizer),
+                None
+            ))
         }
     }
 }
@@ -181,27 +184,28 @@ impl<'s, 'g> Grammar<'g> {
     {
         match self {
             Grammar::Match { match_, into, inner } => {
-                let node = match_.parse(src.clone(), tokenizer);
-                if let (Some(into), Some(node)) = (into, node) {
-                    vars.get_mut(*into).expect(
-                        "internal compiler error: unknown variable {r} \
-                        - grammar file is invalid"
-                    ).assign(node);
-                }
-                if !inner.is_empty() {
-                    if let Some(inner_tokens) = inner_tokens {
-                        let mut iter = tokenizer.fork(inner_tokens.into_iter());
-                        for g in inner {
-                            if let Some(ret) = g.exec(src.clone(), &mut iter, vars) {
-                                return Some(ret);
+                if let Ok((node, inner_tokens)) = match_.parse(src.clone(), tokenizer) {
+                    if let Some(into) = into {
+                        vars.get_mut(*into).expect(
+                            "internal compiler error: unknown variable {r} \
+                            - grammar file is invalid"
+                        ).assign(node);
+                    }
+                    if !inner.is_empty() {
+                        if let Some(inner_tokens) = inner_tokens {
+                            let mut iter = tokenizer.fork(inner_tokens.into_iter());
+                            for g in inner {
+                                if let Some(ret) = g.exec(src.clone(), &mut iter, vars) {
+                                    return Some(ret);
+                                }
                             }
                         }
-                    }
-                    else {
-                        panic!(
-                            "internal compiler error: attempted to use \"inner\" \
-                            on a node without inner contents - grammar file is invalid"
-                        );
+                        else {
+                            panic!(
+                                "internal compiler error: attempted to use \"inner\" \
+                                on a node without inner contents - grammar file is invalid"
+                            );
+                        }
                     }
                 }
                 None
@@ -234,7 +238,7 @@ impl<'s, 'g> Grammar<'g> {
                 None
             }
             Grammar::Return { return_ } => {
-                return_.parse(src, tokenizer).node()
+                return_.parse(src, tokenizer).ok().map(|n| n.0)
             }
             Grammar::DebugLog { debug_log } => {
                 println!("{debug_log}; peek: {:?}", tokenizer.peek());

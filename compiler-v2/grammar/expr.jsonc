@@ -58,8 +58,8 @@
         "block": {
             "members": ["list"],
             "grammar": [
+                { "debug-log": "bruh" },
                 {
-                    "match": "{...}",
                     "inner": [
                         { "match": "#expr-list", "into": "list" }
                     ]

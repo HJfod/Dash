@@ -41,6 +41,16 @@ pub enum TokenKind<'s> {
     Error(String),
 }
 
+impl<'s> TokenKind<'s> {
+    pub fn take_inner(&mut self) -> Option<Vec<Token<'s>>> {
+        match self {
+            Self::Braces(p) | Self::Brackets(p) | Self::Parentheses(p) => Some(std::mem::take(p)),
+            Self::Keyword | Self::Ident | Self::Punct | Self::Op |
+            Self::Int(_) | Self::Float(_) | Self::String(_) | Self::Error(_) => None
+        }
+    }
+}
+
 pub struct Token<'s> {
     pub kind: TokenKind<'s>,
     pub raw: &'s str,
