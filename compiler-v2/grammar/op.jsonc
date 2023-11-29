@@ -6,5 +6,69 @@
             { "match": ["+", "-"], "into": "op" },
             { "match": "expr", "into": "rhs" }
         ]
+    },
+    "binop-prec-unary": {
+        "members": ["lhs", "op", "rhs"],
+        "grammar": [
+            { "match": "#expr", "into": "lhs" },
+            { "match": ["!"], "into": "op" },
+            { "match": "#expr", "into": "rhs" }
+        ]
+    },
+    "binop-prec-muldiv": {
+        "members": ["lhs", "op", "rhs"],
+        "grammar": [
+            { "match": "#binop-prec-unary", "into": "lhs" },
+            { "match": ["*", "/", "%"], "into": "op" },
+            { "match": "#binop-prec-unary", "into": "rhs" }
+        ]
+    },
+    "binop-prec-addsub": {
+        "members": ["lhs", "op", "rhs"],
+        "grammar": [
+            { "match": "#binop-prec-muldiv", "into": "lhs" },
+            { "match": ["+", "-"], "into": "op" },
+            { "match": "#binop-prec-muldiv", "into": "rhs" }
+        ]
+    },
+    "binop-prec-ord": {
+        "members": ["lhs", "op", "rhs"],
+        "grammar": [
+            { "match": "#binop-prec-addsub", "into": "lhs" },
+            { "match": ["<", ">", "<=", ">="], "into": "op" },
+            { "match": "#binop-prec-addsub", "into": "rhs" }
+        ]
+    },
+    "binop-prec-eq": {
+        "members": ["lhs", "op", "rhs"],
+        "grammar": [
+            { "match": "#binop-prec-ord", "into": "lhs" },
+            { "match": ["==", "!="], "into": "op" },
+            { "match": "#binop-prec-ord", "into": "rhs" }
+        ]
+    },
+    "binop-prec-and": {
+        "members": ["lhs", "op", "rhs"],
+        "grammar": [
+            { "match": "#binop-prec-eq", "into": "lhs" },
+            { "match": ["&&"], "into": "op" },
+            { "match": "#binop-prec-eq", "into": "rhs" }
+        ]
+    },
+    "binop-prec-or": {
+        "members": ["lhs", "op", "rhs"],
+        "grammar": [
+            { "match": "#binop-prec-and", "into": "lhs" },
+            { "match": ["||"], "into": "op" },
+            { "match": "#binop-prec-and", "into": "rhs" }
+        ]
+    },
+    "binop-prec-seq": {
+        "members": ["lhs", "op", "rhs"],
+        "grammar": [
+            { "match": "#binop-prec-or", "into": "lhs" },
+            { "match": ["=", "+=", "-=", "*=", "/=", "%="], "into": "op" },
+            { "match": "#binop-prec-or", "into": "rhs" }
+        ]
     }
 }
