@@ -1,0 +1,38 @@
+{
+    "strict": [
+        // Literals
+        "void", "true", "false", "none",
+        // Constants & special variables
+        "this", "super",
+        // Declarations
+        "var", "let", "fun", "struct", "enum", "using",
+        "macro", "extends", "module", "type",
+        // Prepositions
+        "in", "is", "as", "where", "from",
+        // Loops & conditionals
+        "if", "else", "for", "while",
+        // Control flow
+        "try", "return", "break", "continue",
+        // Visibility
+        "extern", "public", "private",
+        // Types
+        "typeof", "const",
+        // Other
+        "codegen", "compiler_intrinsic"
+    ],
+    "contextual": [
+        "get", "set", "assert", "default"
+    ],
+    "reserved": [
+        // Declarations
+        "trait", "class", "interface",
+        // Control flow
+        "unwrap", "yield", "match", "switch",
+        // Visibility
+        "export", "import",
+        // Reactivity
+        "depends", "required",
+        // Other
+        "mut", "mutable", "new", "null"
+    ]
+}

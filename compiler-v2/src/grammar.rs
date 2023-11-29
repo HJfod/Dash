@@ -1,6 +1,6 @@
 
 use std::{collections::{HashSet, HashMap}, fmt::Display};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, de::Visitor};
 
 use crate::tokenizer::IsToken;
 
@@ -105,6 +105,39 @@ impl<'de: 'g, 'g> Deserialize<'de> for TokenItem<'g> {
 pub enum Item<'g> {
     Token(TokenItem<'g>),
     Rule(&'g str),
+    OneOf(Vec<TokenItem<'g>>),
+}
+
+pub struct ItemVisitor;
+impl<'g> Visitor<'g> for ItemVisitor {
+    type Value = Item<'g>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("token, rule, or list of tokens to match")
+    }
+
+    fn visit_borrowed_str<E>(self, v: &'g str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error
+    {
+        if let Some(rule) = v.strip_prefix('#') {
+            Ok(Item::Rule(rule))
+        }
+        else {
+            Ok(Item::Token(v.into()))
+        }
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'g>
+    {
+        let mut items = Vec::new();
+        while let Some(item) = seq.next_element()? {
+            items.push(item);
+        }
+        Ok(Item::OneOf(items))
+    }
 }
 
 impl<'de: 'g, 'g> Deserialize<'de> for Item<'g> {
@@ -112,13 +145,7 @@ impl<'de: 'g, 'g> Deserialize<'de> for Item<'g> {
         where
             D: Deserializer<'de>
     {
-        let s: &'g str = Deserialize::deserialize(deserializer)?;
-        if let Some(rule) = s.strip_prefix('#') {
-            Ok(Item::Rule(rule))
-        }
-        else {
-            Ok(Item::Token(s.into()))
-        }
+        deserializer.deserialize_any(ItemVisitor)
     }
 }
 

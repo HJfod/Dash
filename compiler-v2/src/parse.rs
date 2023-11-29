@@ -114,6 +114,25 @@ impl<'s, 'g> IfGrammar<'g> {
 struct InvalidToken;
 
 impl<'s, 'g> Item<'g> {
+    fn next<I>(
+        token: &TokenItem<'s>,
+        src: Arc<Src>,
+        tokenizer: &mut TokenIterator<'s, 'g, I>,
+    ) -> Result<(Node, Option<Vec<Token<'s>>>), InvalidToken>
+        where I: Iterator<Item = Token<'s>>
+    {
+        // can't store EOF
+        if matches!(token, TokenItem::Eof(_)) {
+            return Err(InvalidToken);
+        }
+        let mut token = tokenizer.next().unwrap();
+        if matches!(token.kind, TokenKind::Error(_)) {
+            return Err(InvalidToken);
+        }
+        let inner = token.kind.take_inner();
+        Ok((Node::from(token, src.clone()), inner))
+    } 
+
     fn parse<I>(
         &self,
         src: Arc<Src>,
@@ -124,16 +143,7 @@ impl<'s, 'g> Item<'g> {
         match self {
             Item::Token(token) => {
                 if IfGrammar::peek(token, tokenizer) {
-                    // can't store EOF
-                    if matches!(token, TokenItem::Eof(_)) {
-                        return Err(InvalidToken);
-                    }
-                    let mut token = tokenizer.next().unwrap();
-                    if matches!(token.kind, TokenKind::Error(_)) {
-                        return Err(InvalidToken);
-                    }
-                    let inner = token.kind.take_inner();
-                    Ok((Node::from(token, src.clone()), inner))
+                    Self::next(token, src, tokenizer)
                 }
                 else {
                     Grammar::error_next_token(token, tokenizer);
@@ -148,7 +158,19 @@ impl<'s, 'g> Item<'g> {
                     ))
                     .exec(src.clone(), tokenizer),
                 None
-            ))
+            )),
+            Item::OneOf(tokens) => {
+                for token in tokens {
+                    if IfGrammar::peek(token, tokenizer) {
+                        return Self::next(token, src, tokenizer);
+                    }
+                }
+                Grammar::error_next_token(
+                    format!("one of {}", tokens.iter().map(|t| format!("'{t}'")).collect::<Vec<_>>().join(", ")),
+                    tokenizer
+                );
+                Err(InvalidToken)
+            }
         }
     }
 }

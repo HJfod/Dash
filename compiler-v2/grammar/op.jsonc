@@ -1,3 +1,10 @@
 {
-    
+    "binop": {
+        "members": ["lhs", "op", "rhs"],
+        "grammar": [
+            { "match": "#expr", "into": "lhs" },
+            { "match": ["+", "-"], "into": "op" },
+            { "match": "expr", "into": "rhs" }
+        ]
+    }
 }
