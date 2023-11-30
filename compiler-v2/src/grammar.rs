@@ -27,14 +27,25 @@ impl<'de: 'g, 'g> Deserialize<'de> for MemberKind<'g> {
             D: Deserializer<'de>
     {
         let s: &'g str = Deserialize::deserialize(deserializer)?;
+        let verify_str = |s: &'g str| -> Result<&'g str, D::Error> {
+            if s.chars().all(|c| c.is_alphabetic() || c == '-') {
+                Ok(s)
+            }
+            else {
+                Err(serde::de::Error::invalid_value(
+                    serde::de::Unexpected::Str(s),
+                    &"kebab-case identifier"
+                ))
+            }
+        };
         if let Some(maybe) = s.strip_prefix('?') {
-            Ok(MemberKind::Maybe(maybe))
+            Ok(MemberKind::Maybe(verify_str(maybe)?))
         }
         else if let Some(list) = s.strip_prefix('+') {
-            Ok(MemberKind::List(list))
+            Ok(MemberKind::List(verify_str(list)?))
         }
         else {
-            Ok(MemberKind::Rule(s))
+            Ok(MemberKind::Rule(verify_str(s)?))
         }
     }
 }
