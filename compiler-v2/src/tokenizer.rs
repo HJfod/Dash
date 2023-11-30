@@ -351,18 +351,24 @@ pub struct TokenIterator<'s, 'g, I: Iterator<Item = Token<'s>>> {
 }
 
 impl<'s, 'g, I: Iterator<Item = Token<'s>>> TokenIterator<'s, 'g, I> {
-    pub fn new(src: &'s Src, grammar: &'s GrammarFile<'g>,  logger: LoggerRef, mut iter: I) -> Self {
+    pub fn new(
+        src: &'s Src,
+        grammar: &'s GrammarFile<'g>,
+        start_offset: usize,
+        logger: LoggerRef,
+        mut iter: I,
+    ) -> Self {
         let peek = iter.next();
-        Self { src, grammar, logger, iter, peek, start_of_last_token: 0 }
+        Self { src, grammar, logger, iter, peek, start_of_last_token: start_offset }
     }
     pub fn fork<O: Iterator<Item = Token<'s>>>(&self, iter: O) -> TokenIterator<'s, 'g, O> {
-        TokenIterator::new(self.src, self.grammar, self.logger.clone(), iter)
+        TokenIterator::new(self.src, self.grammar, self.start_of_last_token, self.logger.clone(), iter)
     }
     pub fn peek(&self) -> Option<&Token<'s>> {
         self.peek.as_ref()
     }
     pub fn start_offset(&self) -> usize {
-        self.peek.as_ref().map(|t| t.span.1.start).unwrap_or(self.src.data().len())
+        self.peek.as_ref().map(|t| t.span.1.start).unwrap_or(0)
     }
     pub fn end_offset(&self) -> usize {
         self.start_of_last_token
@@ -382,15 +388,15 @@ impl<'s, 'g, I: Iterator<Item = Token<'s>>> Iterator for TokenIterator<'s, 'g, I
     type Item = Token<'s>;
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.iter.next();
-        self.start_of_last_token = next.as_ref()
-            .map(|t| t.span.1.start)
-            .unwrap_or(self.src.data().len());
+        if let Some(offset) = self.peek.as_ref().map(|t| t.span.1.end) {
+            self.start_of_last_token = offset;
+        }
         std::mem::replace(&mut self.peek, next)
     }
 }
 
 impl<'s, 'g> From<Tokenizer<'s, 'g>> for TokenIterator<'s, 'g, Tokenizer<'s, 'g>> {
     fn from(value: Tokenizer<'s, 'g>) -> Self {
-        Self::new(value.src, value.grammar, value.logger.clone(), value)
+        Self::new(value.src, value.grammar, value.offset(), value.logger.clone(), value)
     }
 }

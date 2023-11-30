@@ -7,7 +7,7 @@
             { "if": { "peek": "fun" },    "then": [{ "return": "#fun-decl" }] },
             { "if": { "peek": "if" },     "then": [{ "return": "#if" }] },
             { "if": { "peek": "while" },  "then": [{ "return": "#while" }] },
-            { "if": { "peek": "return" },  "then": [{ "return": "#return" }] },
+            { "if": { "peek": "return" }, "then": [{ "return": "#return" }] },
             { "if": { "peek": "ident" },  "then": [{ "return": "#entity" }] },
             { "if": { "peek": "::" },     "then": [{ "return": "#entity" }] },
             { "if": { "peek": "void" },   "then": [{ "return": "#void-lit" }] },

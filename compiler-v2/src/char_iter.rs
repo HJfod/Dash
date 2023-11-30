@@ -47,7 +47,10 @@ impl<'s> CharIndicesWithOffset<'s> {
 impl<'s> Iterator for CharIndicesWithOffset<'s> {
     type Item = char;
     fn next(&mut self) -> Option<Self::Item> {
-        let (i, n) = self.iter.next()?;
+        let Some((i, n)) = self.iter.next() else {
+            self.offset = self.src.len();
+            return None;
+        };
         self.offset = i;
         Some(n)
     }
