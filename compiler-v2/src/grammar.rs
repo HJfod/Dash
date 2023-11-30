@@ -297,6 +297,9 @@ pub enum Grammar<'g> {
     Expected {
         expected: &'g str,
     },
+    Error {
+        error: &'g str,
+    },
 }
 
 #[derive(Debug)]

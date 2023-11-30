@@ -44,5 +44,12 @@
                 "then": [{ "match": "#expr", "into": "value" }]
             }
         ]
+    },
+    "using-path": {
+        "members": ["path"],
+        "grammar": [
+            { "match": "using" },
+            { "match": "#ident-path", "into": "path" }
+        ]
     }
 }

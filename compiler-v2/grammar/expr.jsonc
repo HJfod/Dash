@@ -1,14 +1,24 @@
 
 {
+    "decorator-ident": {
+        "members": ["value"],
+        "grammar": [
+            { "match": "@" },
+            { "match": "ident", "into": "value" }
+        ]
+    },
     "ident-path": {
         "members": ["+parts"],
         "grammar": [
             { "match": "ident", "into": "parts" },
             {
                 "while": { "match": "::" },
-                "then": [
-                    { "match": "ident", "into": "parts" }
-                ]
+                "then": [{
+                    // Decorators
+                    "if": { "peek": "@" },
+                    "then": [{ "match": "#decorator-ident", "into": "parts" }],
+                    "else": [{ "match": "ident", "into": "parts" }]
+                }]
             }
         ]
     },

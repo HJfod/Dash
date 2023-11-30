@@ -1,7 +1,31 @@
 {
-    "var-decl": {
-        "members": ["name", "?type", "?value"],
+    "public-visibility": {
+        "grammar": [{ "match": "public" }]
+    },
+    "private-visibility": {
+        "grammar": [{ "match": "private" }]
+    },
+    "visibility-qualifier": {
         "grammar": [
+            { "if": { "peek": "public" },  "then": [{ "return": "#public-visibility" }] },
+            { "if": { "peek": "private" }, "then": [{ "return": "#private-visibility" }] },
+            { "expected": "visibility qualifier" }
+        ]
+    },
+    "qualifiers": {
+        "members": ["?extern", "?visibility"],
+        "grammar": [
+            {
+                "if": { "peek": ["public", "private"] },
+                "then": [{ "match": "#visibility-qualifier", "into": "visibility" }]
+            },
+            { "if": { "match": "extern", "into": "extern" }, "then": [] }
+        ]
+    },
+    "var-decl": {
+        "members": ["qualifiers", "name", "?type", "?value"],
+        "grammar": [
+            { "match": "#qualifiers", "into": "qualifiers" },
             { "match": "var" },
             { "match": "ident", "into": "name" },
             {
@@ -22,8 +46,9 @@
         ]
     },
     "const-decl": {
-        "members": ["name", "?type", "?value"],
+        "members": ["qualifiers", "name", "?type", "?value"],
         "grammar": [
+            { "match": "#qualifiers", "into": "qualifiers" },
             { "match": "let" },
             { "match": "ident", "into": "name" },
             {
@@ -58,8 +83,9 @@
         ]
     },
     "fun-decl": {
-        "members": ["?name", "+params", "?return-type", "?body"],
+        "members": ["qualifiers", "?name", "+params", "?return-type", "?body"],
         "grammar": [
+            { "match": "#qualifiers", "into": "qualifiers" },
             { "match": "fun" },
             // Anonymous functions are permitted
             { "if": { "match": "ident", "into": "name" }, "then": [] },
@@ -81,6 +107,84 @@
             {
                 "if": { "peek": "{...}" },
                 "then": [{ "match": "#block", "into": "body" }]
+            }
+        ]
+    },
+    "getter-decl": {
+        "members": ["body"],
+        "grammar": [
+            { "match": "get" },
+            { "match": "=>" },
+            { "match": "#expr", "into": "body" }
+        ]
+    },
+    "setter-decl": {
+        "members": ["param", "body"],
+        "grammar": [
+            { "match": "set" },
+            {
+                "match": "(...)",
+                "inner": [
+                    { "match": "ident", "into": "param" },
+                    { "if": { "peek": ":" }, "then": [{ "error": "Setters may not have explicit types" }] },
+                    { "if": { "match": "," }, "then": [] },
+                    { "match": "eof:)" }
+                ]
+            },
+            { "match": "=>" },
+            { "match": "#expr", "into": "body" }
+        ]
+    },
+    "struct-field": {
+        "members": ["name", "type", "+accessors", "?value"],
+        "grammar": [
+            { "match": "ident", "into": "name" },
+            { "match": ":" },
+            { "match": "#type-expr", "into": "type" },
+            {
+                "if": { "peek": "{...}" },
+                "then": [{
+                    "match": "{...}",
+                    "inner": [
+                        {
+                            "while": { "peek": ["get", "set"] },
+                            "then": [
+                                {
+                                    "if": { "peek": "get" },
+                                    "then": [{ "match": "#getter-decl", "into": "accessors" }]
+                                },
+                                {
+                                    "if": { "peek": "set" },
+                                    "then": [{ "match": "#setter-decl", "into": "accessors" }]
+                                }
+                            ]
+                        },
+                        { "match": "eof:}" }
+                    ]
+                }],
+                "else": [
+                    {
+                        "if": { "match": "=" },
+                        "then": [{ "match": "#expr", "into": "value" }]
+                    },
+                    // Match semicolon
+                    { "match": ";" }
+                ]
+            }
+        ]
+    },
+    "struct-decl": {
+        "members": ["qualifiers", "name", "+fields"],
+        "grammar": [
+            { "match": "#qualifiers", "into": "qualifiers" },
+            { "match": "struct" },
+            { "match": "ident", "into": "name" },
+            {
+                "match": "{...}",
+                "inner": [{
+                    "while": { "not": { "peek": "eof" } },
+                    "then": [{ "match": "#struct-field", "into": "fields" }]
+                }]
             }
         ]
     }

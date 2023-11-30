@@ -67,7 +67,11 @@ impl<'s, 'g> IfGrammar<'g> {
             TokenItem::Int => matches!(tk.kind, TokenKind::Int(_)),
             TokenItem::Float => matches!(tk.kind, TokenKind::Float(_)),
             TokenItem::String => matches!(tk.kind, TokenKind::String(_)),
-            TokenItem::Keyword(s) => matches!(tk.kind, TokenKind::Keyword) && *s == tk.raw,
+            TokenItem::Keyword(s) => match tk.kind {
+                TokenKind::Keyword => *s == tk.raw,
+                TokenKind::Ident => *s == tk.raw && tokenizer.grammar().keywords.contextual.contains(s),
+                _ => false,
+            },
             TokenItem::Punct(s) => matches!(tk.kind, TokenKind::Punct) && *s == tk.raw,
             TokenItem::Op(s) => matches!(tk.kind, TokenKind::Op) && !s.is_some_and(|s| s != tk.raw),
             TokenItem::Eof(_) => false,
@@ -172,7 +176,7 @@ impl<'s, 'g> Item<'g> {
                     Self::next(rule_name, token, src, tokenizer)
                 }
                 else {
-                    Grammar::error_next_token(token, tokenizer);
+                    Grammar::expected_next_token(token, tokenizer);
                     Err(InvalidToken)
                 }
             }
@@ -190,23 +194,33 @@ impl<'s, 'g> Item<'g> {
 }
 
 impl<'s, 'g> Grammar<'g> {
-    fn error_next_token<I, F>(expected: F, tokenizer: &mut TokenIterator<'s, 'g, I>)
-        where I: Iterator<Item = Token<'s>>, F: Display
+    fn error_next_token<I, S>(error: S, tokenizer: &mut TokenIterator<'s, 'g, I>)
+        where I: Iterator<Item = Token<'s>>, S: Into<String>
     {
         if let Some(token) = tokenizer.next() {
             tokenizer.logger().lock().unwrap().log(Message::new(
-                Level::Error,
-                format!("Expected {expected}, got {token}"),
-                token.span
+                Level::Error, error, token.span
             ));
         }
         else {
             tokenizer.logger().lock().unwrap().log(Message::new(
-                Level::Error,
-                format!("Expected {expected}, got end-of-file"),
-                tokenizer.eof_span()
+                Level::Error, error, tokenizer.eof_span()
             ));
         }
+    }
+
+    fn expected_next_token<I, F>(expected: F, tokenizer: &mut TokenIterator<'s, 'g, I>)
+        where I: Iterator<Item = Token<'s>>, F: Display
+    {
+        Self::error_next_token(
+            if let Some(token) = tokenizer.peek() {
+                format!("Expected {expected}, got {token}")
+            }
+            else {
+                format!("Expected {expected}, got end-of-file")
+            },
+            tokenizer
+        )
     }
 
     #[must_use]
@@ -236,10 +250,10 @@ impl<'s, 'g> Grammar<'g> {
                     )).collect())
                 ) {
                     if let Some(into) = into {
-                        vars.get_mut(*into).expect(
-                            "internal compiler error: unknown variable {r} \
+                        vars.get_mut(*into).unwrap_or_else(|| panic!(
+                            "internal compiler error: unknown variable {into} \
                             - grammar file is invalid"
-                        ).assign(node);
+                        )).assign(node);
                     }
                     if !inner.is_empty() {
                         if let Some(inner_tokens) = inner_tokens {
@@ -252,13 +266,13 @@ impl<'s, 'g> Grammar<'g> {
                                     return Some(ret);
                                 }
                             }
-                            let leftover = iter.count();
-                            if leftover > 0 {
-                                panic!(
-                                    "internal compiler error: inner contents were not \
-                                    exhaustively matched, {leftover} tokens were unaccounted for"
-                                );
-                            }
+                            // let leftover = iter.count();
+                            // if leftover > 0 {
+                            //     panic!(
+                            //         "internal compiler error: inner contents were not \
+                            //         exhaustively matched, {leftover} tokens were unaccounted for"
+                            //     );
+                            // }
                         }
                         else {
                             panic!(
@@ -317,7 +331,11 @@ impl<'s, 'g> Grammar<'g> {
                 None
             }
             Grammar::Expected { expected } => {
-                Self::error_next_token(expected, tokenizer);
+                Self::expected_next_token(expected, tokenizer);
+                None
+            }
+            Grammar::Error { error } => {
+                Self::error_next_token(*error, tokenizer);
                 None
             }
         }

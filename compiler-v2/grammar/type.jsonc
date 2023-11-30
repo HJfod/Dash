@@ -2,13 +2,52 @@
     "type-expr": {
         "grammar": [
             { "if": { "peek": "ident" }, "then": [{ "return": "#type-ident" }] },
+            { "if": { "peek": "void" },  "then": [{ "return": "#void-type" }] },
+            { "if": { "peek": "&" },     "then": [{ "return": "#ref-type" }] },
             { "expected": "type expression" }
         ]
     },
     "type-ident": {
         "members": ["ident"],
+        "grammar": [{ "match": "#ident-path", "into": "ident" }]
+    },
+    "void-type": {
+        "grammar": [{ "match": "void" }]
+    },
+    "ref-type": {
+        "members": ["?mutable", "type"],
         "grammar": [
-            { "match": "#ident-path", "into": "ident" }
+            { "match": "&" },
+            { "if": { "match": "var", "into": "mutable" }, "then": [] },
+            { "match": "#type-expr", "into": "type" }
         ]
-    }
+    },
+    "optional-type": {
+        "members": ["type"],
+        "grammar": [
+            { "match": "" }
+        ]
+    },
+    "--match-type-suffix-expr": {
+        "members": ["--temp"],
+        "grammar": [
+            { "match": "#base-expr", "into": "--temp" },
+            {
+                "while": { "peek": "?" },
+                "then": [
+                    {
+                        "if": { "peek": "?" },
+                        "then": [{
+                            "match": "#callop",
+                            "with": {
+                                "target": "--temp"
+                            },
+                            "into": "--temp"
+                        }]
+                    }
+                ]
+            },
+            { "return": ":--temp" }
+        ]
+    },
 }
