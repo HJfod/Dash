@@ -56,7 +56,7 @@
             }
         ]
     },
-    "--match-unop-expr": {
+    "--match-suffix-expr": {
         "members": ["--temp"],
         "grammar": [
             { "match": "#base-expr", "into": "--temp" },
@@ -88,10 +88,29 @@
             { "return": ":--temp" }
         ]
     },
+    "--match-unop-token": {
+        "grammar": [{ "return": ["+", "-", "!"] }]
+    },
     "unop": {
         "members": ["op", "target"],
         "grammar": [
-            { "while": { "match": ["+", "-", "!"], "into": "op" }, "then": [] }
+            {
+                "if": { "not": { "set": "op" } },
+                "then": [{ "match": "#--match-unop-token", "into": "op" }]
+            },
+            { "match": "#--match-unop", "into": "target" }
+        ]
+    },
+    "--match-unop": {
+        "members": ["--temp"],
+        "grammar": [
+            {
+                "if": { "peek": "#--match-unop-token" },
+                "then": [{
+                    "match": "#unop",
+                    "into": "--temp"
+                }]
+            }
         ]
     },
     "binop": {
