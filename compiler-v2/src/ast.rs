@@ -1,15 +1,43 @@
 
-use std::{sync::Arc, ops::Range};
-use crate::{src::{Src, SrcPool}, logger::LoggerRef, grammar::GrammarFile};
+use std::{sync::Arc, ops::Range, fmt::Debug};
+use crate::{src::{Src, SrcPool, Span}, logger::LoggerRef, grammar::GrammarFile, parse::ParseOptions};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ArcSpan(pub Arc<Src>, pub Range<usize>);
 
-#[derive(Debug)]
+impl Debug for ArcSpan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_ref())
+    }
+}
+
+impl ArcSpan {
+    pub fn as_ref(&self) -> Span {
+        Span(self.0.as_ref(), self.1.clone())
+    }
+}
+
 pub enum Child {
     Node(Node),
     Maybe(Option<Node>),
     List(Vec<Node>),
+}
+
+impl Debug for Child {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Node(n) => Debug::fmt(n, f),
+            Self::Maybe(n) => if let Some(n) = n {
+                Debug::fmt(n, f)
+            }
+            else {
+                write!(f, "<none>")
+            },
+            Self::List(list) => f.debug_list()
+                .entries(list)
+                .finish()
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -20,8 +48,8 @@ pub enum Value {
     String(String),
 }
 
-#[derive(Debug)]
 pub struct Node {
+    name: String,
     // not a HashMap because ast nodes have at most like 7 children
     // in the future this could be replaced by a stack-allocated max-size
     // arrayvector if the performance benefit becomes necessary
@@ -31,15 +59,32 @@ pub struct Node {
     span: ArcSpan,
 }
 
+impl Debug for Node {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut dbg = f.debug_struct(&self.name);
+        for child in &self.children {
+            dbg.field(&child.0, &child.1);
+        }
+        if let Some(value) = &self.value {
+            dbg.field("value", value);
+        }
+        dbg.field("span", &self.span);
+        dbg.finish()
+    }
+}
+
 impl Node {
-    pub fn new_empty(span: ArcSpan) -> Self {
-        Self { children: vec![], value: None, span }
+    pub fn new_empty<S: Into<String>>(name: S, span: ArcSpan) -> Self {
+        Self { name: name.into(), children: vec![], value: None, span }
     }
-    pub fn new(children: Vec<(String, Child)>, span: ArcSpan) -> Self {
-        Self { children, value: None, span }
+    pub fn new<S: Into<String>>(name: S, children: Vec<(String, Child)>, span: ArcSpan) -> Self {
+        Self { name: name.into(), children, value: None, span }
     }
-    pub fn new_with_value(value: Value, span: ArcSpan) -> Self {
-        Self { children: vec![], value: Some(value), span }
+    pub fn new_with_value<S: Into<String>>(name: S, value: Value, span: ArcSpan) -> Self {
+        Self { name: name.into(), children: vec![], value: Some(value), span }
+    }
+    pub fn name(&self) -> &str {
+        &self.name
     }
     pub fn span(&self) -> ArcSpan {
         self.span.clone()
@@ -51,10 +96,15 @@ pub struct ASTPool {
 }
 
 impl ASTPool {
-    pub fn parse_src_pool(pool: &SrcPool, grammar: &GrammarFile, logger: LoggerRef) -> Self {
+    pub fn parse_src_pool(
+        pool: &SrcPool,
+        grammar: &GrammarFile,
+        logger: LoggerRef,
+        options: ParseOptions
+    ) -> Self {
         Self {
             asts: pool.iter()
-                .map(|src| grammar.exec(src.clone(), logger.clone()))
+                .map(|src| grammar.exec(src.clone(), logger.clone(), options.clone()))
                 .collect()
         }
     }

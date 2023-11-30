@@ -9,7 +9,7 @@ mod tokenizer;
 mod char_iter;
 pub mod src;
 pub mod ast;
-mod parse;
+pub mod parse;
 pub mod logger;
 
 // pub(crate) static mut DEBUG_LOG_INDENT: usize = 0;

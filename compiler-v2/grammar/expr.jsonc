@@ -28,7 +28,7 @@
         ]
     },
     "expr": {
-        "grammar": [{ "return": "#binop" }]
+        "grammar": [{ "return": "#--match-expr" }]
     },
     "expr-list": {
         "members": ["+list"],

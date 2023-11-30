@@ -1,7 +1,6 @@
 
 use std::{collections::{HashSet, HashMap}, fmt::Display};
 use serde::{Deserialize, Deserializer, de::Visitor};
-
 use crate::tokenizer::IsToken;
 
 #[derive(Default, Debug, Deserialize)]
@@ -53,7 +52,7 @@ impl<'de: 'g, 'g> Deserialize<'de> for MemberKind<'g> {
 #[derive(Debug)]
 pub enum TokenItem<'g> {
     Keyword(&'g str),
-    Op(&'g str),
+    Op(Option<&'g str>),
     Punct(&'g str),
     Ident,
     Int,
@@ -63,13 +62,14 @@ pub enum TokenItem<'g> {
     Brackets,
     Braces,
     Eof(Option<&'g str>),
+    OneOf(Vec<TokenItem<'g>>),
 }
 
 impl Display for TokenItem<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             TokenItem::Keyword(s) => write!(f, "keyword {s}"),
-            TokenItem::Op(s) => write!(f, "operator '{s}'"),
+            TokenItem::Op(s) => write!(f, "operator{}", s.map(|s| format!(" '{s}'")).unwrap_or(String::new())),
             TokenItem::Punct(s) => write!(f, "'{s}'"),
             TokenItem::Ident => write!(f, "identifier"),
             TokenItem::Int => write!(f, "integer"),
@@ -79,6 +79,13 @@ impl Display for TokenItem<'_> {
             TokenItem::Brackets => write!(f, "bracketed expression"),
             TokenItem::Braces => write!(f, "braced expression"),
             TokenItem::Eof(s) => write!(f, "{}", s.unwrap_or("end-of-file")),
+            TokenItem::OneOf(s) => write!(
+                f, "one of {}",
+                s.iter()
+                    .map(|s| format!("'{s}'"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         }
     }
 }
@@ -90,16 +97,44 @@ impl<'g> From<&'g str> for TokenItem<'g> {
             "int" => TokenItem::Int,
             "float" => TokenItem::Float,
             "string" => TokenItem::String,
+            "op" => TokenItem::Op(None),
             "(...)" => TokenItem::Parentheses,
             "[...]" => TokenItem::Brackets,
             "{...}" => TokenItem::Braces,
             s if s.starts_with("eof") => TokenItem::Eof(s.strip_prefix("eof:")),
-            s if s.chars().all(|s| s.is_alphabetic() || s == '_') => TokenItem::Keyword(s),
             s@("->" | "=>") => TokenItem::Punct(s),
             s if s.chars().all(|s| s.is_punct_char()) => TokenItem::Punct(s),
-            s if s.chars().all(|s| s.is_op_char()) => TokenItem::Op(s),
+            s if s.chars().all(|s| s.is_op_char()) => TokenItem::Op(Some(s)),
+            s if s.chars().all(|s| s.is_alphabetic() || s == '_') => TokenItem::Keyword(s),
             s => panic!("invalid thing to match '{}'", s),
         }
+    }
+}
+
+pub struct TokenItemVisitor;
+impl<'g> Visitor<'g> for TokenItemVisitor {
+    type Value = TokenItem<'g>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("token or list of tokens to match")
+    }
+
+    fn visit_borrowed_str<E>(self, v: &'g str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error
+    {
+        Ok(TokenItem::from(v))
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'g>
+    {
+        let mut items = Vec::new();
+        while let Some(item) = seq.next_element()? {
+            items.push(item);
+        }
+        Ok(TokenItem::OneOf(items))
     }
 }
 
@@ -108,7 +143,7 @@ impl<'de: 'g, 'g> Deserialize<'de> for TokenItem<'g> {
         where
             D: Deserializer<'de>
     {
-        Ok(<Self as From<&'g str>>::from(Deserialize::deserialize(deserializer)?))
+        deserializer.deserialize_any(TokenItemVisitor)
     }
 }
 
@@ -116,7 +151,6 @@ impl<'de: 'g, 'g> Deserialize<'de> for TokenItem<'g> {
 pub enum Item<'g> {
     Token(TokenItem<'g>),
     Rule(&'g str),
-    OneOf(Vec<TokenItem<'g>>),
 }
 
 pub struct ItemVisitor;
@@ -139,22 +173,17 @@ impl<'g> Visitor<'g> for ItemVisitor {
         }
     }
 
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
         where
             A: serde::de::SeqAccess<'g>
     {
-        let mut items = Vec::new();
-        while let Some(item) = seq.next_element()? {
-            items.push(item);
-        }
-        Ok(Item::OneOf(items))
+        Ok(Item::Token(TokenItemVisitor.visit_seq(seq)?))
     }
 }
 
 impl<'de: 'g, 'g> Deserialize<'de> for Item<'g> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'de>
+        where D: Deserializer<'de>
     {
         deserializer.deserialize_any(ItemVisitor)
     }
@@ -166,18 +195,40 @@ pub enum ItemOrMember<'g> {
     Member(&'g str),
 }
 
+pub struct ItemOrMemberVisitor;
+impl<'g> Visitor<'g> for ItemOrMemberVisitor {
+    type Value = ItemOrMember<'g>;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("token, rule, member, or list of tokens to match")
+    }
+
+    fn visit_borrowed_str<E>(self, v: &'g str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error
+    {
+        if let Some(s) = v.strip_prefix(':') {
+            Ok(ItemOrMember::Member(s))
+        }
+        else {
+            Ok(ItemOrMember::Item(ItemVisitor.visit_borrowed_str(v)?))
+        }
+    }
+
+    fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'g>
+    {
+        Ok(ItemOrMember::Item(ItemVisitor.visit_seq(seq)?))
+    }
+}
+
 impl<'de: 'g, 'g> Deserialize<'de> for ItemOrMember<'g> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>
     {
-        let s: &'g str = Deserialize::deserialize(deserializer)?;
-        if let Some(s) = s.strip_prefix(':') {
-            Ok(ItemOrMember::Member(s))
-        }
-        else {
-            ItemVisitor.visit_borrowed_str(s).map(ItemOrMember::Item)
-        }
+        deserializer.deserialize_any(ItemOrMemberVisitor)
     }
 }
 
@@ -194,10 +245,13 @@ pub enum IfGrammar<'g> {
         peek: TokenItem<'g>,
     },
     Set {
-        member: &'g str,
+        set: &'g str,
     },
     Not {
-        cond: Box<IfGrammar<'g>>,
+        not: Box<IfGrammar<'g>>,
+    },
+    Either {
+        either: Vec<IfGrammar<'g>>,
     },
 }
 
@@ -280,6 +334,8 @@ pub enum Check<'g> {
 #[serde(rename_all = "kebab-case")]
 pub struct Rule<'g> {
     #[serde(default)]
+    pub name: &'g str,
+    #[serde(default)]
     pub members: Vec<MemberKind<'g>>,
     #[serde(borrow)]
     pub grammar: Vec<Grammar<'g>>,
@@ -292,6 +348,16 @@ pub struct Rule<'g> {
 pub struct GrammarFile<'g> {
     #[serde(default)]
     pub keywords: Keywords<'g>,
-    #[serde(borrow)]
-    pub rules: HashMap<String, Rule<'g>>,
+    #[serde(borrow, deserialize_with = "deserialize_rules")]
+    pub rules: HashMap<&'g str, Rule<'g>>,
+}
+
+fn deserialize_rules<'g, D>(deserializer: D) -> Result<HashMap<&'g str, Rule<'g>>, D::Error>
+    where D: Deserializer<'g>
+{
+    let mut res = HashMap::<&'g str, Rule<'g>>::deserialize(deserializer)?;
+    for (name, rule) in &mut res {
+        rule.name = name;
+    }
+    Ok(res)
 }

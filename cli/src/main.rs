@@ -1,6 +1,6 @@
 
 use clap::Parser;
-use dash_compiler_v2::{logger::Logger, src::SrcPool, default_grammar, tokenize, ast::ASTPool};
+use dash_compiler_v2::{logger::Logger, src::SrcPool, default_grammar, tokenize, ast::ASTPool, parse::ParseOptions};
 use normalize_path::NormalizePath;
 use std::path::PathBuf;
 
@@ -19,6 +19,9 @@ struct Args {
 
     #[clap(long)]
     debug_ast: bool,
+
+    #[clap(long)]
+    debug_log_matches: bool,
 }
 
 fn main() {
@@ -41,7 +44,11 @@ fn main() {
     if args.no_ast {
         return;
     }
-    let ast_pool = ASTPool::parse_src_pool(&src_pool, &grammar, logger.clone());
+    let ast_pool = ASTPool::parse_src_pool(
+        &src_pool, &grammar, logger.clone(), ParseOptions {
+            debug_log_matches: args.debug_log_matches
+        }
+    );
 
     if args.debug_ast {
         for ast in &ast_pool {

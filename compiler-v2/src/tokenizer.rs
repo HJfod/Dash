@@ -368,7 +368,7 @@ impl<'s, 'g, I: Iterator<Item = Token<'s>>> TokenIterator<'s, 'g, I> {
         self.start_of_last_token
     }
     pub fn eof_span(&self) -> Span<'s> {
-        Span(self.src, self.start_of_last_token..self.start_of_last_token + 1)
+        Span(self.src, self.start_of_last_token - 1..self.start_of_last_token)
     }
     pub fn grammar(&self) -> &'s grammar::GrammarFile<'g> {
         self.grammar

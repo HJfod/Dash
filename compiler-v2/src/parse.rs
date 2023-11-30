@@ -2,6 +2,7 @@
 use std::{collections::HashMap, fmt::Display, sync::Arc};
 use crate::grammar::ItemOrMember;
 use crate::logger::LoggerRef;
+use crate::src::Span;
 use crate::tokenizer::TokenIterator;
 
 use super::ast::{Node, Child, Value, ArcSpan};
@@ -11,7 +12,7 @@ use super::src::Src;
 use super::logger::{Message, Level};
 
 impl Node {
-    fn from(token: Token, src: Arc<Src>) -> Node {
+    fn from(name: &str, token: Token, src: Arc<Src>) -> Node {
         match token.kind {
             TokenKind::Keyword |
             TokenKind::Op |
@@ -25,8 +26,8 @@ impl Node {
             TokenKind::String(s) => Some(Value::String(s)),
             TokenKind::Error(_) => unreachable!("errors should never be matched")
         }
-            .map(|v| Node::new_with_value(v, ArcSpan(src.clone(), token.span.1.clone())))
-            .unwrap_or_else(|| Node::new_empty(ArcSpan(src, token.span.1)))
+            .map(|v| Node::new_with_value(name, v, ArcSpan(src.clone(), token.span.1.clone())))
+            .unwrap_or_else(|| Node::new_empty(name, ArcSpan(src, token.span.1)))
     }
 }
 
@@ -66,13 +67,17 @@ impl<'s, 'g> IfGrammar<'g> {
             TokenItem::Int => matches!(tk.kind, TokenKind::Int(_)),
             TokenItem::Float => matches!(tk.kind, TokenKind::Float(_)),
             TokenItem::String => matches!(tk.kind, TokenKind::String(_)),
-            TokenItem::Keyword(s) | TokenItem::Op(s) | TokenItem::Punct(s) => tk.raw == *s,
+            TokenItem::Keyword(s) => matches!(tk.kind, TokenKind::Keyword) && *s == tk.raw,
+            TokenItem::Punct(s) => matches!(tk.kind, TokenKind::Punct) && *s == tk.raw,
+            TokenItem::Op(s) => matches!(tk.kind, TokenKind::Op) && !s.is_some_and(|s| s != tk.raw),
             TokenItem::Eof(_) => false,
+            TokenItem::OneOf(tokens) => tokens.iter().any(|t| Self::peek(t, tokenizer)),
         }
     }
 
     fn exec<I>(
         &self,
+        rule_name: &str,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
         vars: &mut HashMap<String, Var>
@@ -94,7 +99,7 @@ impl<'s, 'g> IfGrammar<'g> {
                             vars.get_mut(*into).expect(
                                 "internal compiler error: unknown variable {r} \
                                 - grammar file is invalid"
-                            ).assign(Node::from(token, src));
+                            ).assign(Node::from(rule_name, token, src));
                         }
                     }
                     true
@@ -106,14 +111,17 @@ impl<'s, 'g> IfGrammar<'g> {
             IfGrammar::Peek { peek } => {
                 Self::peek(peek, tokenizer)
             }
-            IfGrammar::Set { member } => {
-                !matches!(vars.get(*member).expect(
+            IfGrammar::Set { set } => {
+                !matches!(vars.get(*set).expect(
                     "internal compiler error: unknown variable {r} for \"set\" \
                     - grammar file is invalid"
                 ), Var::None)
             }
-            IfGrammar::Not { cond } => {
-                !cond.exec(src, tokenizer, vars)
+            IfGrammar::Not { not } => {
+                !not.exec(rule_name, src, tokenizer, vars)
+            }
+            IfGrammar::Either { either } => {
+                either.iter().any(|e| e.exec(rule_name, src.clone(), tokenizer, vars))
             }
         }
     }
@@ -123,6 +131,7 @@ struct InvalidToken;
 
 impl<'s, 'g> Item<'g> {
     fn next<I>(
+        rule_name: &str, 
         token: &TokenItem<'s>,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
@@ -138,13 +147,15 @@ impl<'s, 'g> Item<'g> {
             return Err(InvalidToken);
         }
         let inner = token.kind.take_inner();
-        Ok((Node::from(token, src.clone()), inner))
+        Ok((Node::from(rule_name, token, src.clone()), inner))
     } 
 
     fn parse<I>(
         &self,
+        rule_name: &str, 
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
+        options: ParseOptions,
         with: Option<HashMap<String, Var>>,
     ) -> Result<(Node, Option<Vec<Token<'s>>>), InvalidToken>
         where I: Iterator<Item = Token<'s>>
@@ -158,7 +169,7 @@ impl<'s, 'g> Item<'g> {
                     );
                 }
                 if IfGrammar::peek(token, tokenizer) {
-                    Self::next(token, src, tokenizer)
+                    Self::next(rule_name, token, src, tokenizer)
                 }
                 else {
                     Grammar::error_next_token(token, tokenizer);
@@ -171,27 +182,9 @@ impl<'s, 'g> Item<'g> {
                         "internal compiler error: unknown rule {r} \
                         - grammar file is invalid"
                     ))
-                    .exec(src.clone(), tokenizer, with),
+                    .exec(src.clone(), tokenizer, options, with),
                 None
-            )),
-            Item::OneOf(tokens) => {
-                if with.is_some() {
-                    panic!(
-                        "internal compiler error: attempted to use \"with\" \
-                        on one-of-tokens - grammar file is invalid"
-                    );
-                }
-                for token in tokens {
-                    if IfGrammar::peek(token, tokenizer) {
-                        return Self::next(token, src, tokenizer);
-                    }
-                }
-                Grammar::error_next_token(
-                    format!("one of {}", tokens.iter().map(|t| format!("'{t}'")).collect::<Vec<_>>().join(", ")),
-                    tokenizer
-                );
-                Err(InvalidToken)
-            }
+            ))
         }
     }
 }
@@ -219,17 +212,21 @@ impl<'s, 'g> Grammar<'g> {
     #[must_use]
     fn exec<I>(
         &self,
+        rule_name: &str, 
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
-        vars: &mut HashMap<String, Var>
+        vars: &mut HashMap<String, Var>,
+        options: ParseOptions,
     ) -> Option<Node>
         where I: Iterator<Item = Token<'s>>
     {
         match self {
             Grammar::Match { match_, into, inner, with } => {
                 if let Ok((node, inner_tokens)) = match_.parse(
+                    rule_name, 
                     src.clone(),
                     tokenizer,
+                    options.clone(),
                     with.as_ref().map(|w| w.iter().map(|s| (
                         s.0.to_string(),
                         std::mem::take(vars.get_mut(*s.1).expect(
@@ -248,7 +245,10 @@ impl<'s, 'g> Grammar<'g> {
                         if let Some(inner_tokens) = inner_tokens {
                             let mut iter = tokenizer.fork(inner_tokens.into_iter());
                             for g in inner {
-                                if let Some(ret) = g.exec(src.clone(), &mut iter, vars) {
+                                if let Some(ret) = g.exec(
+                                    rule_name, src.clone(),
+                                    &mut iter, vars, options.clone()
+                                ) {
                                     return Some(ret);
                                 }
                             }
@@ -271,16 +271,16 @@ impl<'s, 'g> Grammar<'g> {
                 None
             }
             Grammar::If { if_, then, else_ } => {
-                if if_.exec(src.clone(), tokenizer, vars) {
+                if if_.exec(rule_name, src.clone(), tokenizer, vars) {
                     for g in then {
-                        if let Some(ret) = g.exec(src.clone(), tokenizer, vars) {
+                        if let Some(ret) = g.exec(rule_name, src.clone(), tokenizer, vars, options.clone()) {
                             return Some(ret);
                         }
                     }
                 }
                 else {
                     for g in else_ {
-                        if let Some(ret) = g.exec(src.clone(), tokenizer, vars) {
+                        if let Some(ret) = g.exec(rule_name, src.clone(), tokenizer, vars, options.clone()) {
                             return Some(ret);
                         }
                     }
@@ -288,9 +288,9 @@ impl<'s, 'g> Grammar<'g> {
                 None
             }
             Grammar::While { while_, then } => {
-                while while_.exec(src.clone(), tokenizer, vars) {
+                while while_.exec(rule_name, src.clone(), tokenizer, vars) {
                     for g in then {
-                        if let Some(ret) = g.exec(src.clone(), tokenizer, vars) {
+                        if let Some(ret) = g.exec(rule_name, src.clone(), tokenizer, vars, options.clone()) {
                             return Some(ret);
                         }
                     }
@@ -299,7 +299,7 @@ impl<'s, 'g> Grammar<'g> {
             }
             Grammar::Return { return_ } => {
                 match return_ {
-                    ItemOrMember::Item(i) => i.parse(src, tokenizer, None).ok().map(|n| n.0),
+                    ItemOrMember::Item(i) => i.parse(rule_name, src, tokenizer, options, None).ok().map(|n| n.0),
                     ItemOrMember::Member(m) => match std::mem::take(vars.get_mut(*m).expect(
                         "internal compiler error: unknown variable {m} \
                         in \"return\" - grammar file is invalid"
@@ -329,10 +329,20 @@ impl<'s, 'g> Rule<'g> {
         &self,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
+        options: ParseOptions,
         with: Option<HashMap<String, Var>>,
     ) -> Node
         where I: Iterator<Item = Token<'s>>
     {
+        if options.debug_log_matches {
+            let o = tokenizer.start_offset();
+            tokenizer.logger().lock().unwrap().log(Message::new(
+                Level::Info,
+                format!("Matching rule {}", self.name),
+                Span(src.as_ref(), o..o)
+            ))
+        }
+
         let mut vars = self.members.iter()
             .map(|kind| match kind {
                 MemberKind::List(a)  => (a.to_string(), Var::List(vec![])),
@@ -352,37 +362,53 @@ impl<'s, 'g> Rule<'g> {
             
         let start = tokenizer.start_offset();
         for stmt in &self.grammar {
-            if let Some(ret) = stmt.exec(src.clone(), tokenizer, &mut vars) {
+            if let Some(ret) = stmt.exec(self.name, src.clone(), tokenizer, &mut vars, options.clone()) {
+                if options.debug_log_matches {
+                    tokenizer.logger().lock().unwrap().log(Message::new(
+                        Level::Info,
+                        format!("Returned rule {}", ret.name()),
+                        ret.span().as_ref()
+                    ));
+                }
                 return ret;
             }
         }
 
-        Node::new(vars.into_iter()
-            .filter_map(|(name, value)| {
-                let value = match value {
-                    Var::Node(node) => Child::Node(node),
-                    Var::List(list) => Child::List(list),
-                    Var::Maybe(opt) => Child::Maybe(opt),
-                    Var::None       => return None,
-                    // Var::None => panic!(
-                    //     "internal compiler error: required child '{name}' \
-                    //     was not assigned - grammar file is invalid"
-                    // ),
-                };
-                Some((name, value))
-            })
-            .collect(),
+        if options.debug_log_matches {
+            tokenizer.logger().lock().unwrap().log(Message::new(
+                Level::Info,
+                format!("Matched rule {}", self.name),
+                Span(src.as_ref(), start..tokenizer.end_offset())
+            ));
+        }
+        Node::new(
+            self.name,
+            vars.into_iter()
+                .filter_map(|(name, value)| {
+                    let value = match value {
+                        Var::Node(node) => Child::Node(node),
+                        Var::List(list) => Child::List(list),
+                        Var::Maybe(opt) => Child::Maybe(opt),
+                        Var::None       => return None,
+                        // Var::None => panic!(
+                        //     "internal compiler error: required child '{name}' \
+                        //     was not assigned - grammar file is invalid"
+                        // ),
+                    };
+                    Some((name, value))
+                })
+                .collect(),
             ArcSpan(src.clone(), start..tokenizer.end_offset())
         )
     }
 }
 
 impl<'g> GrammarFile<'g> {
-    pub(super) fn exec(&self, src: Arc<Src>, logger: LoggerRef) -> Node {
+    pub(super) fn exec(&self, src: Arc<Src>, logger: LoggerRef, options: ParseOptions) -> Node {
         let mut tokenizer = Tokenizer::new(src.as_ref(), self, logger).into();
         let ast = self.rules.get("main")
             .expect("internal compiler error: no 'main' rule provide - grammar file is invalid")
-            .exec(src.clone(), &mut tokenizer, None);
+            .exec(src.clone(), &mut tokenizer, options, None);
 
         let leftover = tokenizer.count();
         if leftover > 0 {
@@ -393,4 +419,9 @@ impl<'g> GrammarFile<'g> {
         }
         ast
     }
+}
+
+#[derive(Default, Clone)]
+pub struct ParseOptions {
+    pub debug_log_matches: bool,
 }
