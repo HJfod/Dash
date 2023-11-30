@@ -1,74 +1,137 @@
 {
+    "base-expr": {
+        "grammar": [
+            { "if": { "peek": "var" },    "then": [{ "return": "#var-decl" }] },
+            { "if": { "peek": "let" },    "then": [{ "return": "#const-decl" }] },
+            { "if": { "peek": "fun" },    "then": [{ "return": "#fun-decl" }] },
+            { "if": { "peek": "if" },     "then": [{ "return": "#if" }] },
+            { "if": { "peek": "while" },  "then": [{ "return": "#while" }] },
+            { "if": { "peek": "ident" },  "then": [{ "return": "#entity" }] },
+            { "if": { "peek": "::" },     "then": [{ "return": "#entity" }] },
+            { "if": { "peek": "void" },   "then": [{ "return": "#void-lit" }] },
+            { "if": { "peek": "true" },   "then": [{ "return": "#bool-lit" }] },
+            { "if": { "peek": "false" },  "then": [{ "return": "#bool-lit" }] },
+            { "if": { "peek": "int" },    "then": [{ "return": "#int-lit" }] },
+            { "if": { "peek": "float" },  "then": [{ "return": "#float-lit" }] },
+            { "if": { "peek": "string" }, "then": [{ "return": "#string-lit" }] },
+            { "expected": "expression" }
+        ]
+    },
+    "callop": {
+        "members": ["target", "+args"],
+        "grammar": [
+            {
+                "if": { "not": { "set": "target" } },
+                "then": [{ "match": "#base-expr", "into": "target" }]
+            },
+            {
+                "match": "(...)",
+                "inner": [{
+                    "while": { "not": { "peek": "eof" } },
+                    "then": [
+                        { "match": "#expr", "into": "args" },
+                        // Allow trailing commas. Expect EOF if no comma provided
+                        { "if": { "match": "," }, "then": [], "else": [{ "match": "eof:)" }] }
+                    ]
+                }]
+            }
+        ]
+    },
+    "indexop": {
+        "members": ["target", "index"],
+        "grammar": [
+            {
+                "if": { "not": { "set": "target" } },
+                "then": [{ "match": "#base-expr", "into": "target" }]
+            },
+            {
+                "match": "[...]",
+                "inner": [
+                    { "match": "#expr", "into": "index" },
+                    // Allow trailing comma
+                    { "if": { "match": "," }, "then": [] },
+                    // Expect EOF
+                    { "match": "eof:]" }
+                ]
+            }
+        ]
+    },
+    "--match-unop-expr": {
+        "members": ["--temp"],
+        "grammar": [
+            { "match": "#base-expr", "into": "--temp" },
+            {
+                "while": { "not": { "peek": "eof" } },
+                "then": [
+                    {
+                        "if": { "peek": "(...)" },
+                        "then": [{
+                            "match": "#callop",
+                            "with": {
+                                "target": "--temp"
+                            },
+                            "into": "--temp"
+                        }]
+                    },
+                    {
+                        "if": { "peek": "[...]" },
+                        "then": [{
+                            "match": "#indexop",
+                            "with": {
+                                "target": "--temp"
+                            },
+                            "into": "--temp"
+                        }]
+                    }
+                ]
+            },
+            { "return": ":--temp" }
+        ]
+    },
+    "unop": {
+        "members": ["op", "target"],
+        "grammar": [
+            { "while": { "match": ["+", "-", "!"], "into": "op" }, "then": [] }
+        ]
+    },
     "binop": {
         "members": ["lhs", "op", "rhs"],
-        "grammar": [
-            { "match": "#expr", "into": "lhs" },
-            { "match": ["+", "-"], "into": "op" },
-            { "match": "expr", "into": "rhs" }
-        ]
-    },
-    "binop-prec-unary": {
-        "members": ["lhs", "op", "rhs"],
-        "grammar": [
-            { "match": "#expr", "into": "lhs" },
-            { "match": ["!"], "into": "op" },
-            { "match": "#expr", "into": "rhs" }
-        ]
-    },
-    "binop-prec-muldiv": {
-        "members": ["lhs", "op", "rhs"],
-        "grammar": [
-            { "match": "#binop-prec-unary", "into": "lhs" },
-            { "match": ["*", "/", "%"], "into": "op" },
-            { "match": "#binop-prec-unary", "into": "rhs" }
-        ]
-    },
-    "binop-prec-addsub": {
-        "members": ["lhs", "op", "rhs"],
-        "grammar": [
-            { "match": "#binop-prec-muldiv", "into": "lhs" },
-            { "match": ["+", "-"], "into": "op" },
-            { "match": "#binop-prec-muldiv", "into": "rhs" }
-        ]
-    },
-    "binop-prec-ord": {
-        "members": ["lhs", "op", "rhs"],
-        "grammar": [
-            { "match": "#binop-prec-addsub", "into": "lhs" },
-            { "match": ["<", ">", "<=", ">="], "into": "op" },
-            { "match": "#binop-prec-addsub", "into": "rhs" }
-        ]
-    },
-    "binop-prec-eq": {
-        "members": ["lhs", "op", "rhs"],
-        "grammar": [
-            { "match": "#binop-prec-ord", "into": "lhs" },
-            { "match": ["==", "!="], "into": "op" },
-            { "match": "#binop-prec-ord", "into": "rhs" }
-        ]
-    },
-    "binop-prec-and": {
-        "members": ["lhs", "op", "rhs"],
-        "grammar": [
-            { "match": "#binop-prec-eq", "into": "lhs" },
-            { "match": ["&&"], "into": "op" },
-            { "match": "#binop-prec-eq", "into": "rhs" }
-        ]
-    },
-    "binop-prec-or": {
-        "members": ["lhs", "op", "rhs"],
-        "grammar": [
-            { "match": "#binop-prec-and", "into": "lhs" },
-            { "match": ["||"], "into": "op" },
-            { "match": "#binop-prec-and", "into": "rhs" }
-        ]
-    },
-    "binop-prec-seq": {
-        "members": ["lhs", "op", "rhs"],
-        "grammar": [
-            { "match": "#binop-prec-or", "into": "lhs" },
-            { "match": ["=", "+=", "-=", "*=", "/=", "%="], "into": "op" },
-            { "match": "#binop-prec-or", "into": "rhs" }
-        ]
+        "grammar": {
+            "muldiv": [
+                { "match": "#unop", "into": "lhs" },
+                { "match": ["*", "/", "%"], "into": "op" },
+                { "match": "#unop", "into": "rhs" }
+            ],
+            "addsub": [
+                { "match": "#binop:muldiv", "into": "lhs" },
+                { "match": ["+", "-"], "into": "op" },
+                { "match": "#binop:muldiv", "into": "rhs" }
+            ],
+            "ord": [
+                { "match": "#binop:addsub", "into": "lhs" },
+                { "match": ["<", ">", "<=", ">="], "into": "op" },
+                { "match": "#binop:addsub", "into": "rhs" }
+            ],
+            "eq": [
+                { "match": "#binop:ord", "into": "lhs" },
+                { "match": ["==", "!="], "into": "op" },
+                { "match": "#binop:ord", "into": "rhs" }
+            ],
+            "and": [
+                { "match": "#binop:eq", "into": "lhs" },
+                { "match": ["&&"], "into": "op" },
+                { "match": "#binop:eq", "into": "rhs" }
+            ],
+            "or": [
+                { "match": "#binop:and", "into": "lhs" },
+                { "match": ["||"], "into": "op" },
+                { "match": "#binop:and", "into": "rhs" }
+            ],
+            "seq": [
+                { "match": "#binop:or", "into": "lhs" },
+                { "match": ["=", "+=", "-=", "*=", "/=", "%="], "into": "op" },
+                { "match": "#binop:or", "into": "rhs" }
+            ]
+        }
     }
 }

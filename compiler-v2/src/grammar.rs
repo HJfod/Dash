@@ -160,20 +160,44 @@ impl<'de: 'g, 'g> Deserialize<'de> for Item<'g> {
     }
 }
 
+#[derive(Debug)]
+pub enum ItemOrMember<'g> {
+    Item(Item<'g>),
+    Member(&'g str),
+}
+
+impl<'de: 'g, 'g> Deserialize<'de> for ItemOrMember<'g> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>
+    {
+        let s: &'g str = Deserialize::deserialize(deserializer)?;
+        if let Some(s) = s.strip_prefix(':') {
+            Ok(ItemOrMember::Member(s))
+        }
+        else {
+            ItemVisitor.visit_borrowed_str(s).map(ItemOrMember::Item)
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[serde(untagged)]
 pub enum IfGrammar<'g> {
-    #[serde(rename = "not-eof")]
-    NotEOF,
-    #[serde(untagged)]
     Match {
         #[serde(rename = "match")]
         match_: TokenItem<'g>,
         into: Option<&'g str>,
     },
-    #[serde(untagged)]
     Peek {
         peek: TokenItem<'g>,
+    },
+    Set {
+        member: &'g str,
+    },
+    Not {
+        cond: Box<IfGrammar<'g>>,
     },
 }
 
@@ -182,11 +206,18 @@ pub enum IfGrammar<'g> {
 #[serde(untagged)]
 pub enum Grammar<'g> {
     Match {
+        /// Item to match
         #[serde(rename = "match", borrow)]
         match_: Item<'g>,
+        /// Member to store the matched result into
         into: Option<&'g str>,
+        /// If the matched token has inner contents (parentheses), this specifies 
+        /// how to match that
         #[serde(default)]
         inner: Vec<Grammar<'g>>,
+        /// A list of members to initialize with values. The values are moved 
+        /// to the members and left to unassigned
+        with: Option<HashMap<&'g str, &'g str>>,
     },
     If {
         #[serde(rename = "if")]
@@ -203,7 +234,7 @@ pub enum Grammar<'g> {
     },
     Return {
         #[serde(rename = "return")]
-        return_: Item<'g>,
+        return_: ItemOrMember<'g>,
     },
     DebugLog {
         #[serde(rename = "debug-log")]

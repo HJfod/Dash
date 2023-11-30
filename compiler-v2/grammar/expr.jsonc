@@ -28,28 +28,13 @@
         ]
     },
     "expr": {
-        "grammar": [
-            { "if": { "peek": "var" },    "then": [{ "return": "#var-decl" }] },
-            { "if": { "peek": "let" },    "then": [{ "return": "#const-decl" }] },
-            { "if": { "peek": "fun" },    "then": [{ "return": "#fun-decl" }] },
-            { "if": { "peek": "if" },     "then": [{ "return": "#if" }] },
-            { "if": { "peek": "while" },  "then": [{ "return": "#while" }] },
-            { "if": { "peek": "ident" },  "then": [{ "return": "#entity" }] },
-            { "if": { "peek": "::" },     "then": [{ "return": "#entity" }] },
-            { "if": { "peek": "void" },   "then": [{ "return": "#void-lit" }] },
-            { "if": { "peek": "true" },   "then": [{ "return": "#bool-lit" }] },
-            { "if": { "peek": "false" },  "then": [{ "return": "#bool-lit" }] },
-            { "if": { "peek": "int" },    "then": [{ "return": "#int-lit" }] },
-            { "if": { "peek": "float" },  "then": [{ "return": "#float-lit" }] },
-            { "if": { "peek": "string" }, "then": [{ "return": "#string-lit" }] },
-            { "expected": "expression" }
-        ]
+        "grammar": [{ "return": "#binop" }]
     },
     "expr-list": {
         "members": ["+list"],
         "grammar": [
             {
-                "while": "not-eof",
+                "while": { "not": { "peek": "eof" } },
                 "then": [
                     { "match": "#expr", "into": "list" },
                     // Semicolons are optional because I cba to figure out a proper 

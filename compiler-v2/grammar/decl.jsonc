@@ -65,16 +65,14 @@
             { "if": { "match": "ident", "into": "name" }, "then": [] },
             {
                 "match": "(...)",
-                "inner": [
-                    {
-                        "while": "not-eof",
-                        "then": [
-                            { "match": "#fun-param", "into": "params" },
-                            // Allow trailing commas. Expect EOF if no comma provided
-                            { "if": { "match": "," }, "then": [], "else": [{ "match": "eof:)" }] }
-                        ]
-                    }
-                ]
+                "inner": [{
+                    "while": { "not": { "peek": "eof" } },
+                    "then": [
+                        { "match": "#fun-param", "into": "params" },
+                        // Allow trailing commas. Expect EOF if no comma provided
+                        { "if": { "match": "," }, "then": [], "else": [{ "match": "eof:)" }] }
+                    ]
+                }]
             },
             {
                 "if": { "match": "->" },
