@@ -1,23 +1,33 @@
 {
     // Base expression without any unary operators or index accesses
-    "base-expr": {
+    "--match-base-expr": {
+        "members": ["--temp"],
         "grammar": [
-            { "if": { "peek": "var" },    "then": [{ "return": "#var-decl" }] },
-            { "if": { "peek": "let" },    "then": [{ "return": "#const-decl" }] },
-            { "if": { "peek": "fun" },    "then": [{ "return": "#fun-decl" }] },
-            { "if": { "peek": "struct" }, "then": [{ "return": "#struct-decl" }] },
-            { "if": { "peek": "if" },     "then": [{ "return": "#if" }] },
-            { "if": { "peek": "while" },  "then": [{ "return": "#while" }] },
-            { "if": { "peek": "return" }, "then": [{ "return": "#return" }] },
-            { "if": { "peek": "using" },  "then": [{ "return": "#using-path" }] },
-            { "if": { "peek": "ident" },  "then": [{ "return": "#entity" }] },
-            { "if": { "peek": "::" },     "then": [{ "return": "#entity" }] },
-            { "if": { "peek": "void" },   "then": [{ "return": "#void-lit" }] },
-            { "if": { "peek": "true" },   "then": [{ "return": "#bool-lit" }] },
-            { "if": { "peek": "false" },  "then": [{ "return": "#bool-lit" }] },
-            { "if": { "peek": "int" },    "then": [{ "return": "#int-lit" }] },
-            { "if": { "peek": "float" },  "then": [{ "return": "#float-lit" }] },
-            { "if": { "peek": "string" }, "then": [{ "return": "#string-lit" }] },
+            {
+                "if": { "peek": "(...)" },
+                "then": [{
+                    "match": "(...)",
+                    "inner": [
+                        { "match": "#expr", "into": "--temp" },
+                        { "match": "eof:)" },
+                        { "return": ":--temp" }
+                    ]
+                }]
+            },
+            { "if": { "peek": "var" },              "then": [{ "return": "#var-decl" }] },
+            { "if": { "peek": "let" },              "then": [{ "return": "#const-decl" }] },
+            { "if": { "peek": "fun" },              "then": [{ "return": "#fun-decl" }] },
+            { "if": { "peek": "struct" },           "then": [{ "return": "#struct-decl" }] },
+            { "if": { "peek": "if" },               "then": [{ "return": "#if" }] },
+            { "if": { "peek": "while" },            "then": [{ "return": "#while" }] },
+            { "if": { "peek": "return" },           "then": [{ "return": "#return" }] },
+            { "if": { "peek": "using" },            "then": [{ "return": "#using-path" }] },
+            { "if": { "peek": ["ident", "::"] },    "then": [{ "return": "#entity" }] },
+            { "if": { "peek": "void" },             "then": [{ "return": "#void-lit" }] },
+            { "if": { "peek": ["true", "false"] },  "then": [{ "return": "#bool-lit" }] },
+            { "if": { "peek": "int" },              "then": [{ "return": "#int-lit" }] },
+            { "if": { "peek": "float" },            "then": [{ "return": "#float-lit" }] },
+            { "if": { "peek": "string" },           "then": [{ "return": "#string-lit" }] },
             { "expected": "expression" }
         ]
     },
@@ -27,7 +37,7 @@
         "grammar": [
             {
                 "if": { "not": { "set": "target" } },
-                "then": [{ "match": "#base-expr", "into": "target" }]
+                "then": [{ "match": "#--match-base-expr", "into": "target" }]
             },
             {
                 "match": "(...)",
@@ -48,7 +58,7 @@
         "grammar": [
             {
                 "if": { "not": { "set": "target" } },
-                "then": [{ "match": "#base-expr", "into": "target" }]
+                "then": [{ "match": "#--match-base-expr", "into": "target" }]
             },
             {
                 "match": "[...]",
@@ -67,7 +77,7 @@
     "--match-suffix-expr": {
         "members": ["--temp"],
         "grammar": [
-            { "match": "#base-expr", "into": "--temp" },
+            { "match": "#--match-base-expr", "into": "--temp" },
             {
                 "while": { "peek": ["(...)", "[...]"] },
                 "then": [

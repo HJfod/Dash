@@ -31,7 +31,7 @@
     "--match-type-suffix-expr": {
         "members": ["--temp"],
         "grammar": [
-            { "match": "#base-expr", "into": "--temp" },
+            { "match": "#--match-base-expr", "into": "--temp" },
             {
                 "while": { "peek": "?" },
                 "then": [
