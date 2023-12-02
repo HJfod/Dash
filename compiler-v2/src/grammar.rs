@@ -3,6 +3,18 @@ use std::{collections::{HashSet, HashMap}, fmt::Display};
 use serde::{Deserialize, Deserializer, de::Visitor};
 use crate::tokenizer::IsToken;
 
+fn verify_str<'de: 'g, 'g, D: Deserializer<'de>>(s: &'g str) -> Result<&'g str, D::Error> {
+    if s.chars().all(|c| c.is_alphabetic() || c == '-') {
+        Ok(s)
+    }
+    else {
+        Err(serde::de::Error::invalid_value(
+            serde::de::Unexpected::Str(s),
+            &"kebab-case identifier"
+        ))
+    }
+}
+
 #[derive(Default, Debug, Deserialize)]
 pub struct Keywords<'g> {
     #[serde(borrow, default)]
@@ -26,25 +38,14 @@ impl<'de: 'g, 'g> Deserialize<'de> for MemberKind<'g> {
             D: Deserializer<'de>
     {
         let s: &'g str = Deserialize::deserialize(deserializer)?;
-        let verify_str = |s: &'g str| -> Result<&'g str, D::Error> {
-            if s.chars().all(|c| c.is_alphabetic() || c == '-') {
-                Ok(s)
-            }
-            else {
-                Err(serde::de::Error::invalid_value(
-                    serde::de::Unexpected::Str(s),
-                    &"kebab-case identifier"
-                ))
-            }
-        };
         if let Some(maybe) = s.strip_prefix('?') {
-            Ok(MemberKind::Maybe(verify_str(maybe)?))
+            Ok(MemberKind::Maybe(verify_str::<D>(maybe)?))
         }
         else if let Some(list) = s.strip_prefix('+') {
-            Ok(MemberKind::List(verify_str(list)?))
+            Ok(MemberKind::List(verify_str::<D>(list)?))
         }
         else {
-            Ok(MemberKind::Rule(verify_str(s)?))
+            Ok(MemberKind::Rule(verify_str::<D>(s)?))
         }
     }
 }
@@ -63,6 +64,7 @@ pub enum TokenItem<'g> {
     Braces,
     Eof(Option<&'g str>),
     OneOf(Vec<TokenItem<'g>>),
+    NamedTokenList(&'g str),
 }
 
 impl Display for TokenItem<'_> {
@@ -86,6 +88,7 @@ impl Display for TokenItem<'_> {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
+            TokenItem::NamedTokenList(s) => write!(f, "[{s}]"),
         }
     }
 }
@@ -101,6 +104,7 @@ impl<'g> From<&'g str> for TokenItem<'g> {
             "(...)" => TokenItem::Parentheses,
             "[...]" => TokenItem::Brackets,
             "{...}" => TokenItem::Braces,
+            s if s.starts_with('$') => TokenItem::NamedTokenList(s.strip_prefix('$').unwrap()),
             s if s.starts_with("eof") => TokenItem::Eof(s.strip_prefix("eof:")),
             s@("->" | "=>") => TokenItem::Punct(s),
             s if s.chars().all(|s| s.is_punct_char()) => TokenItem::Punct(s),
@@ -289,6 +293,9 @@ pub enum Grammar<'g> {
     Return {
         #[serde(rename = "return")]
         return_: ItemOrMember<'g>,
+        /// A list of members to initialize with values. The values are moved 
+        /// to the members and left to unassigned
+        with: Option<HashMap<&'g str, &'g str>>,
     },
     DebugLog {
         #[serde(rename = "debug-log")]
@@ -349,10 +356,11 @@ pub struct Rule<'g> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub struct GrammarFile<'g> {
-    #[serde(default)]
+    #[serde(borrow, default)]
     pub keywords: Keywords<'g>,
-    #[serde(borrow, deserialize_with = "deserialize_rules")]
+    #[serde(deserialize_with = "deserialize_rules")]
     pub rules: HashMap<&'g str, Rule<'g>>,
+    pub named_token_lists: HashMap<&'g str, Vec<TokenItem<'g>>>,
 }
 
 fn deserialize_rules<'g, D>(deserializer: D) -> Result<HashMap<&'g str, Rule<'g>>, D::Error>
@@ -360,7 +368,7 @@ fn deserialize_rules<'g, D>(deserializer: D) -> Result<HashMap<&'g str, Rule<'g>
 {
     let mut res = HashMap::<&'g str, Rule<'g>>::deserialize(deserializer)?;
     for (name, rule) in &mut res {
-        rule.name = name;
+        rule.name = verify_str::<D>(name)?;
     }
     Ok(res)
 }

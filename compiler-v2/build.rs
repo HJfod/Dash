@@ -15,9 +15,7 @@ struct Keywords {
     pub contextual: HashSet<String>,
 }
 
-#[derive(Default, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
-struct Rules(HashMap<String, Value>);
+pub type Rules = HashMap<String, Value>;
 
 enum InputFile {
     Keywords(Keywords),
@@ -30,6 +28,7 @@ struct OutputGrammarFile {
     #[serde(default)]
     pub keywords: Keywords,
     pub rules: Rules,
+    pub named_token_lists: HashMap<String, Vec<String>>,
 }
 
 fn merge_hashset<T: Eq + Hash + Display>(into: &mut HashSet<T>, from: HashSet<T>, what: &str) {
@@ -48,11 +47,25 @@ fn merge_keyword_file(into: &mut OutputGrammarFile, from: Keywords) {
 }
 
 fn merge_grammar_file(into: &mut OutputGrammarFile, from: Rules) {
-    for (rule, value) in from.0 {
-        if into.rules.0.contains_key(&rule) {
-            panic!("rule '{}' defined in multiple grammar files", rule);
+    for (rule, value) in from {
+        if let Some(key) = rule.strip_prefix('#') {
+            if into.rules.contains_key(key) {
+                panic!("rule '{}' defined in multiple grammar files", key);
+            }
+            into.rules.insert(key.to_string(), value);
         }
-        into.rules.0.insert(rule, value);
+        else if let Some(key) = rule.strip_prefix('$') {
+            if into.named_token_lists.contains_key(key) {
+                panic!("named token list '{}' defined in multiple grammar files", key);
+            }
+            into.named_token_lists.insert(
+                key.to_string(),
+                value.as_array().unwrap().iter().map(|v| v.as_str().unwrap().to_string()).collect()
+            );
+        }
+        else {
+            panic!("found item in rule file named '{rule}' which is neither a #rule or a $named-token-list");
+        }
     }
 }
 

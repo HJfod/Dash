@@ -1,13 +1,14 @@
 
 {
-    "decorator-ident": {
+    "#decorator-ident": {
         "members": ["value"],
         "grammar": [
             { "match": "@" },
             { "match": "ident", "into": "value" }
         ]
     },
-    "ident-path": {
+    "$ident-token": ["ident", "@", "::"],
+    "#ident-path": {
         "members": ["+parts"],
         "grammar": [
             { "match": "ident", "into": "parts" },
@@ -22,11 +23,11 @@
             }
         ]
     },
-    "entity": {
+    "#entity": {
         "members": ["ident"],
         "grammar": [{ "match": "#ident-path", "into": "ident" }]
     },
-    "block": {
+    "#block": {
         "members": ["list"],
         "grammar": [
             {
@@ -37,10 +38,10 @@
             }
         ]
     },
-    "expr": {
+    "#expr": {
         "grammar": [{ "return": "#--match-expr" }]
     },
-    "expr-list": {
+    "#expr-list": {
         "members": ["+list"],
         "grammar": [
             {
@@ -54,7 +55,7 @@
             }
         ]
     },
-    "main": {
+    "#main": {
         "grammar": [{ "return": "#expr-list" }]
     }
 }

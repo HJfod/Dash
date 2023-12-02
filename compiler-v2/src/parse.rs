@@ -76,6 +76,11 @@ impl<'s, 'g> IfGrammar<'g> {
             TokenItem::Op(s) => matches!(tk.kind, TokenKind::Op) && !s.is_some_and(|s| s != tk.raw),
             TokenItem::Eof(_) => false,
             TokenItem::OneOf(tokens) => tokens.iter().any(|t| Self::peek(t, tokenizer)),
+            TokenItem::NamedTokenList(list) => tokenizer.grammar()
+                .named_token_lists.get(list).unwrap_or_else(|| panic!(
+                    "internal compiler error: unknown named token list [{list}] \
+                    - grammar file is invalid"
+                )).iter().any(|t| Self::peek(t, tokenizer))
         }
     }
 
@@ -311,9 +316,18 @@ impl<'s, 'g> Grammar<'g> {
                 }
                 None
             }
-            Grammar::Return { return_ } => {
+            Grammar::Return { return_, with } => {
                 match return_ {
-                    ItemOrMember::Item(i) => i.parse(rule_name, src, tokenizer, options, None).ok().map(|n| n.0),
+                    ItemOrMember::Item(i) => i.parse(
+                        rule_name, src, tokenizer, options, 
+                        with.as_ref().map(|w| w.iter().map(|s| (
+                            s.0.to_string(),
+                            std::mem::take(vars.get_mut(*s.1).expect(
+                                "internal compiler error: unknown variable {r} \
+                                - grammar file is invalid"
+                            ))
+                        )).collect())
+                    ).ok().map(|n| n.0),
                     ItemOrMember::Member(m) => match std::mem::take(vars.get_mut(*m).expect(
                         "internal compiler error: unknown variable {m} \
                         in \"return\" - grammar file is invalid"

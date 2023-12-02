@@ -1,18 +1,21 @@
 {
-    "public-visibility": {
+    "$visibility-token": ["public", "private"],
+    "$qualifier-token": ["$visibility-token", "extern"],
+    "$item-decl-token": ["$qualifier-token", "var", "fun", "let", "struct"],
+    "#public-visibility": {
         "grammar": [{ "match": "public" }]
     },
-    "private-visibility": {
+    "#private-visibility": {
         "grammar": [{ "match": "private" }]
     },
-    "visibility-qualifier": {
+    "#visibility-qualifier": {
         "grammar": [
             { "if": { "peek": "public" },  "then": [{ "return": "#public-visibility" }] },
             { "if": { "peek": "private" }, "then": [{ "return": "#private-visibility" }] },
             { "expected": "visibility qualifier" }
         ]
     },
-    "qualifiers": {
+    "#qualifiers": {
         "members": ["?extern", "?visibility"],
         "grammar": [
             {
@@ -22,10 +25,13 @@
             { "if": { "match": "extern", "into": "extern" }, "then": [] }
         ]
     },
-    "var-decl": {
+    "#var-decl": {
         "members": ["qualifiers", "name", "?type", "?value"],
         "grammar": [
-            { "match": "#qualifiers", "into": "qualifiers" },
+            {
+                "if": { "not": { "set": "qualifiers" } },
+                "then": [{ "match": "#qualifiers", "into": "qualifiers" }]
+            },
             { "match": "var" },
             { "match": "ident", "into": "name" },
             {
@@ -45,10 +51,13 @@
             { "equal": ["type", "value"] }
         ]
     },
-    "const-decl": {
+    "#const-decl": {
         "members": ["qualifiers", "name", "?type", "?value"],
         "grammar": [
-            { "match": "#qualifiers", "into": "qualifiers" },
+            {
+                "if": { "not": { "set": "qualifiers" } },
+                "then": [{ "match": "#qualifiers", "into": "qualifiers" }]
+            },
             { "match": "let" },
             { "match": "ident", "into": "name" },
             {
@@ -68,7 +77,22 @@
             { "equal": ["type", "value"] }
         ]
     },
-    "fun-param": {
+    // `this` parameter in a function
+    "#fun-receiver-param": {
+        "members": ["?type"],
+        "grammar": [
+            { "match": "this" },
+            {
+                "if": { "match": ":" },
+                "then": [{ "match": "#type-expr", "into": "type" }]
+            },
+            {
+                "if": { "match": "=" },
+                "then": [{ "error": "The `this` parameter may not have a default value" }]
+            }
+        ]
+    },
+    "#fun-param": {
         "members": ["name", "type", "?default-value"],
         "grammar": [
             { "match": "ident", "into": "name" },
@@ -82,19 +106,29 @@
             }
         ]
     },
-    "fun-decl": {
+    "#fun-decl": {
         "members": ["qualifiers", "?name", "+params", "?return-type", "?body"],
         "grammar": [
-            { "match": "#qualifiers", "into": "qualifiers" },
+            {
+                "if": { "not": { "set": "qualifiers" } },
+                "then": [{ "match": "#qualifiers", "into": "qualifiers" }]
+            },
             { "match": "fun" },
             // Anonymous functions are permitted
-            { "if": { "match": "ident", "into": "name" }, "then": [] },
+            {
+                "if": { "peek": "$ident-token" },
+                "then": [{ "match": "#ident-path", "into": "name" }]
+            },
             {
                 "match": "(...)",
                 "inner": [{
                     "while": { "not": { "peek": "eof" } },
                     "then": [
-                        { "match": "#fun-param", "into": "params" },
+                        {
+                            "if": { "peek": "this" },
+                            "then": [{ "match": "#fun-receiver-param", "into": "params" }],
+                            "else": [{ "match": "#fun-param", "into": "params" }]
+                        },
                         // Allow trailing commas. Expect EOF if no comma provided
                         { "if": { "match": "," }, "then": [], "else": [{ "match": "eof:)" }] }
                     ]
@@ -110,7 +144,7 @@
             }
         ]
     },
-    "getter-decl": {
+    "#getter-decl": {
         "members": ["body"],
         "grammar": [
             { "match": "get" },
@@ -118,7 +152,7 @@
             { "match": "#expr", "into": "body" }
         ]
     },
-    "setter-decl": {
+    "#setter-decl": {
         "members": ["param", "body"],
         "grammar": [
             { "match": "set" },
@@ -135,7 +169,7 @@
             { "match": "#expr", "into": "body" }
         ]
     },
-    "struct-field": {
+    "#struct-field": {
         "members": ["name", "type", "+accessors", "?value"],
         "grammar": [
             { "match": "ident", "into": "name" },
@@ -173,10 +207,13 @@
             }
         ]
     },
-    "struct-decl": {
+    "#struct-decl": {
         "members": ["qualifiers", "name", "+fields"],
         "grammar": [
-            { "match": "#qualifiers", "into": "qualifiers" },
+            {
+                "if": { "not": { "set": "qualifiers" } },
+                "then": [{ "match": "#qualifiers", "into": "qualifiers" }]
+            },
             { "match": "struct" },
             { "match": "ident", "into": "name" },
             {
@@ -186,6 +223,20 @@
                     "then": [{ "match": "#struct-field", "into": "fields" }]
                 }]
             }
+        ]
+    },
+    "#--match-item": {
+        "members": ["--qualifiers"],
+        "grammar": [
+            {
+                "if": { "peek": "$qualifier-token" },
+                "then": [{ "match": "#qualifiers", "into": "--qualifiers" }]
+            },
+            { "if": { "peek": "var" },    "then": [{ "return": "#var-decl", "with": { "qualifiers": "--qualifiers" } }] },
+            { "if": { "peek": "let" },    "then": [{ "return": "#const-decl", "with": { "qualifiers": "--qualifiers" } }] },
+            { "if": { "peek": "fun" },    "then": [{ "return": "#fun-decl", "with": { "qualifiers": "--qualifiers" } }] },
+            { "if": { "peek": "struct" }, "then": [{ "return": "#struct-decl", "with": { "qualifiers": "--qualifiers" } }] },
+            { "expected": "item declaration" }
         ]
     }
 }

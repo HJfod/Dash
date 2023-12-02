@@ -1,6 +1,6 @@
 {
     // If statement
-    "if": {
+    "#if": {
         "members": ["cond", "then", "?else"],
         "grammar": [
             { "match": "if" },
@@ -27,7 +27,7 @@
         ]
     },
     // While loop
-    "while": {
+    "#while": {
         "members": ["cond", "then"],
         "grammar": [
             { "match": "while" },
@@ -35,7 +35,7 @@
             { "match": "#block", "into": "then" }
         ]
     },
-    "return": {
+    "#return": {
         "members": ["?value"],
         "grammar": [
             { "match": "return" },
@@ -45,7 +45,7 @@
             }
         ]
     },
-    "using-path": {
+    "#using-path": {
         "members": ["path"],
         "grammar": [
             { "match": "using" },

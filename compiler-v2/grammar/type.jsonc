@@ -1,17 +1,17 @@
 {
-    "type-expr": {
+    "#type-expr": {
         "grammar": [{ "match": "#--match-type-expr" }]
     },
-    "--match-type-expr": {
+    "#--match-type-expr": {
         "grammar": [{ "return": "#--match-type-prefix-or-suffix" }]
     },
-    "--match-type-prefix-or-suffix": {
+    "#--match-type-prefix-or-suffix": {
         "grammar": [
             { "if": { "peek": "&" }, "then": [{ "return": "#ref-type" }] },
             { "return": "#--match-suffix-expr" }
         ]
     },
-    "--match-type-suffix-expr": {
+    "#--match-type-suffix-expr": {
         "members": ["--temp"],
         "grammar": [
             { "match": "#--match-base-expr", "into": "--temp" },
@@ -33,7 +33,7 @@
             { "return": ":--temp" }
         ]
     },
-    "--match-base-type-expr": {
+    "#--match-base-type-expr": {
         "grammar": [
             {
                 "if": { "peek": "(...)" },
@@ -51,14 +51,14 @@
             { "expected": "type expression" }
         ]
     },
-    "type-ident": {
+    "#type-ident": {
         "members": ["ident"],
         "grammar": [{ "match": "#ident-path", "into": "ident" }]
     },
-    "void-type": {
+    "#void-type": {
         "grammar": [{ "match": "void" }]
     },
-    "ref-type": {
+    "#ref-type": {
         "members": ["?mutable", "type"],
         "grammar": [
             { "match": "&" },
@@ -66,7 +66,7 @@
             { "match": "#--match-type-prefix-or-suffix", "into": "type" }
         ]
     },
-    "optional-type": {
+    "#optional-type": {
         "members": ["type"],
         "grammar": [
             {

@@ -1,6 +1,6 @@
 {
     // Base expression without any unary operators or index accesses
-    "--match-base-expr": {
+    "#--match-base-expr": {
         "members": ["--temp"],
         "grammar": [
             {
@@ -14,15 +14,12 @@
                     ]
                 }]
             },
-            { "if": { "peek": "var" },              "then": [{ "return": "#var-decl" }] },
-            { "if": { "peek": "let" },              "then": [{ "return": "#const-decl" }] },
-            { "if": { "peek": "fun" },              "then": [{ "return": "#fun-decl" }] },
-            { "if": { "peek": "struct" },           "then": [{ "return": "#struct-decl" }] },
+            { "if": { "peek": "$item-decl-token" }, "then": [{ "return": "#--match-item" }] },
             { "if": { "peek": "if" },               "then": [{ "return": "#if" }] },
             { "if": { "peek": "while" },            "then": [{ "return": "#while" }] },
             { "if": { "peek": "return" },           "then": [{ "return": "#return" }] },
             { "if": { "peek": "using" },            "then": [{ "return": "#using-path" }] },
-            { "if": { "peek": ["ident", "::"] },    "then": [{ "return": "#entity" }] },
+            { "if": { "peek": "$ident-token" },    "then": [{ "return": "#entity" }] },
             { "if": { "peek": "void" },             "then": [{ "return": "#void-lit" }] },
             { "if": { "peek": ["true", "false"] },  "then": [{ "return": "#bool-lit" }] },
             { "if": { "peek": "int" },              "then": [{ "return": "#int-lit" }] },
@@ -32,7 +29,7 @@
         ]
     },
     // Function call like `target(a, b)`
-    "callop": {
+    "#callop": {
         "members": ["target", "+args"],
         "grammar": [
             {
@@ -53,7 +50,7 @@
         ]
     },
     // Index access like `a[0]`
-    "indexop": {
+    "#indexop": {
         "members": ["target", "index"],
         "grammar": [
             {
@@ -74,7 +71,7 @@
     },
     // Match a chain of suffix unary operators, like calls, indexes, and member 
     // accesses
-    "--match-suffix-expr": {
+    "#--match-suffix-expr": {
         "members": ["--temp"],
         "grammar": [
             { "match": "#--match-base-expr", "into": "--temp" },
@@ -107,7 +104,7 @@
         ]
     },
     // Unary operation like `+a`
-    "unop": {
+    "#unop": {
         "members": ["op", "target"],
         "grammar": [
             { "match": ["+", "-", "!"], "into": "op" },
@@ -115,14 +112,14 @@
         ]
     },
     // Match a bunch of unary operators or a suffixed expression
-    "--match-unop-or-suffix": {
+    "#--match-unop-or-suffix": {
         "grammar": [{
             "if": { "peek": "op" },
             "then": [{ "return": "#unop" }],
             "else": [{ "return": "#--match-suffix-expr" }]
         }]
     },
-    "--match-binop-prec-muldiv": {
+    "#--match-binop-prec-muldiv": {
         "members": ["--temp-rhs", "--temp-op", "--temp-lhs"],
         "grammar": [
             { "match": "#--match-unop-or-suffix", "into": "--temp-lhs" },
@@ -147,7 +144,7 @@
             { "return": ":--temp-lhs" }
         ]
     },
-    "--match-binop-prec-addsub": {
+    "#--match-binop-prec-addsub": {
         "members": ["--temp-rhs", "--temp-op", "--temp-lhs"],
         "grammar": [
             { "match": "#--match-binop-prec-muldiv", "into": "--temp-lhs" },
@@ -172,7 +169,7 @@
             { "return": ":--temp-lhs" }
         ]
     },
-    "--match-binop-prec-ord": {
+    "#--match-binop-prec-ord": {
         "members": ["--temp-rhs", "--temp-op", "--temp-lhs"],
         "grammar": [
             { "match": "#--match-binop-prec-addsub", "into": "--temp-lhs" },
@@ -197,7 +194,7 @@
             { "return": ":--temp-lhs" }
         ]
     },
-    "--match-binop-prec-eq": {
+    "#--match-binop-prec-eq": {
         "members": ["--temp-rhs", "--temp-op", "--temp-lhs"],
         "grammar": [
             { "match": "#--match-binop-prec-ord", "into": "--temp-lhs" },
@@ -222,7 +219,7 @@
             { "return": ":--temp-lhs" }
         ]
     },
-    "--match-binop-prec-andor": {
+    "#--match-binop-prec-andor": {
         "members": ["--temp-rhs", "--temp-op", "--temp-lhs"],
         "grammar": [
             { "match": "#--match-binop-prec-eq", "into": "--temp-lhs" },
@@ -247,7 +244,7 @@
             { "return": ":--temp-lhs" }
         ]
     },
-    "--match-binop-prec-seq": {
+    "#--match-binop-prec-seq": {
         "members": ["--temp-rhs", "--temp-op", "--temp-lhs"],
         "grammar": [
             { "match": "#--match-binop-prec-andor", "into": "--temp-lhs" },
@@ -273,13 +270,13 @@
             { "return": ":--temp-lhs" }
         ]
     },
-    "--match-expr": {
+    "#--match-expr": {
         "grammar": [{ "return": "#--match-binop-prec-seq" }]
     },
     // Binary operation like `a + b`
     // Can not be matched directly as this has no grammar; instead, use the 
     // `--match-expr` rule
-    "binop": {
+    "#binop": {
         "members": ["lhs", "op", "rhs"],
         "grammar": []
     }
