@@ -22,8 +22,8 @@
             }
         ],
         "check": [
-            { "equal": ["cond", "@bool"] },
-            { "equal": ["then", "else"] }
+            { "equal": [":cond", "bool"] },
+            { "equal": [":then", ":else"] }
         ]
     },
     // While loop

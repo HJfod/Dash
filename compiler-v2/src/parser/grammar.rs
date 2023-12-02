@@ -321,11 +321,11 @@ impl<'de: 'g, 'g> Deserialize<'de> for TypeItem<'g> {
             D: Deserializer<'de>
     {
         let s: &'g str = Deserialize::deserialize(deserializer)?;
-        if let Some(rule) = s.strip_prefix('@') {
-            Ok(TypeItem::Type(rule))
+        if let Some(s) = s.strip_prefix(':') {
+            Ok(TypeItem::Member(s))
         }
         else {
-            Ok(TypeItem::Member(s))
+            Ok(TypeItem::Type(s))
         }
     }
 }
@@ -333,11 +333,19 @@ impl<'de: 'g, 'g> Deserialize<'de> for TypeItem<'g> {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(untagged)]
-pub enum Check<'g> {
+pub enum Test<'g> {
     Equal {
         #[serde(borrow)]
-        equal: Vec<TypeItem<'g>>,
-    }
+        equal: (TypeItem<'g>, TypeItem<'g>),
+    },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub struct Check<'g> {
+    #[serde(borrow)]
+    pub result: TypeItem<'g>,
+    pub tests: Vec<Test<'g>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -349,8 +357,7 @@ pub struct Rule<'g> {
     pub members: Vec<MemberKind<'g>>,
     #[serde(borrow)]
     pub grammar: Vec<Grammar<'g>>,
-    #[serde(default)]
-    pub check: Vec<Check<'g>>,
+    pub check: Option<Check<'g>>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -92,7 +92,7 @@ impl std::fmt::Debug for Token<'_> {
 pub struct Tokenizer<'s, 'g> {
     src: &'s Src,
     iter: CharIter<'s>,
-    grammar: &'s grammar::GrammarFile<'g>,
+    grammar: &'g grammar::GrammarFile<'g>,
     logger: LoggerRef,
 }
 
@@ -103,7 +103,7 @@ impl std::fmt::Debug for Tokenizer<'_, '_> {
 }
 
 impl<'s, 'g> Tokenizer<'s, 'g> {
-    pub fn new(src: &'s Src, grammar: &'s grammar::GrammarFile<'g>, logger: LoggerRef) -> Self {
+    pub fn new(src: &'s Src, grammar: &'g grammar::GrammarFile<'g>, logger: LoggerRef) -> Self {
         Self { src, iter: src.iter(), grammar, logger, }
     }
     fn skip_ws(&mut self) {
@@ -346,7 +346,7 @@ impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
 
 pub struct TokenIterator<'s, 'g, I: Iterator<Item = Token<'s>>> {
     src: &'s Src,
-    grammar: &'s GrammarFile<'g>,
+    grammar: &'g GrammarFile<'g>,
     iter: I,
     peek: Option<Token<'s>>,
     start_of_last_token: usize,
@@ -356,7 +356,7 @@ pub struct TokenIterator<'s, 'g, I: Iterator<Item = Token<'s>>> {
 impl<'s, 'g, I: Iterator<Item = Token<'s>>> TokenIterator<'s, 'g, I> {
     pub fn new(
         src: &'s Src,
-        grammar: &'s GrammarFile<'g>,
+        grammar: &'g GrammarFile<'g>,
         start_offset: usize,
         logger: LoggerRef,
         mut iter: I,
@@ -379,7 +379,7 @@ impl<'s, 'g, I: Iterator<Item = Token<'s>>> TokenIterator<'s, 'g, I> {
     pub fn eof_span(&self) -> Span<'s> {
         Span(self.src, self.start_of_last_token - 1..self.start_of_last_token)
     }
-    pub fn grammar(&self) -> &'s grammar::GrammarFile<'g> {
+    pub fn grammar(&self) -> &'g grammar::GrammarFile<'g> {
         self.grammar
     }
     pub fn logger(&self) -> LoggerRef {

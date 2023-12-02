@@ -13,8 +13,8 @@ use crate::shared::logger::{Message, Level};
 
 use super::ParseOptions;
 
-impl Node {
-    fn from(name: &str, token: Token, src: Arc<Src>) -> Node {
+impl<'n, 'g> Node<'n, 'g> {
+    fn from(name: &'g str, token: Token, src: Arc<Src>) -> Node<'n, 'g> {
         match token.kind {
             TokenKind::Keyword |
             TokenKind::Op |
@@ -34,16 +34,16 @@ impl Node {
 }
 
 #[derive(Default, Debug)]
-enum Var {
+enum Var<'n, 'g> {
     #[default]
     None,
-    Node(Node),
-    List(Vec<Node>),
-    Maybe(Option<Node>),
+    Node(Node<'n, 'g>),
+    List(Vec<Node<'n, 'g>>),
+    Maybe(Option<Node<'n, 'g>>),
 }
 
-impl Var {
-    fn assign(&mut self, node: Node) {
+impl<'n, 'g> Var<'n, 'g> {
+    fn assign(&mut self, node: Node<'n, 'g>) {
         match self {
             Var::None => *self = Var::Node(node),
             Var::Node(_) => panic!(
@@ -56,7 +56,7 @@ impl Var {
     }
 }
 
-impl<'s, 'g> IfGrammar<'g> {
+impl<'n, 's, 'g> IfGrammar<'g> {
     fn peek<I>(token: &TokenItem<'_>, tokenizer: &TokenIterator<'s, 'g, I>) -> bool
         where I: Iterator<Item = Token<'s>>
     {
@@ -88,10 +88,10 @@ impl<'s, 'g> IfGrammar<'g> {
 
     fn exec<I>(
         &self,
-        rule_name: &str,
+        rule_name: &'g str,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
-        vars: &mut HashMap<String, Var>
+        vars: &mut HashMap<String, Var<'n, 'g>>
     ) -> bool
         where I: Iterator<Item = Token<'s>>
     {
@@ -140,13 +140,13 @@ impl<'s, 'g> IfGrammar<'g> {
 
 struct InvalidToken;
 
-impl<'s, 'g> Item<'g> {
+impl<'n: 'g, 's, 'g: 's> Item<'g> {
     fn next<I>(
-        rule_name: &str, 
+        rule_name: &'g str, 
         token: &TokenItem<'s>,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
-    ) -> Result<(Node, Option<Vec<Token<'s>>>), InvalidToken>
+    ) -> Result<(Node<'n, 'g>, Option<Vec<Token<'s>>>), InvalidToken>
         where I: Iterator<Item = Token<'s>>
     {
         // can't store EOF
@@ -162,13 +162,13 @@ impl<'s, 'g> Item<'g> {
     } 
 
     fn parse<I>(
-        &self,
-        rule_name: &str, 
+        &'g self,
+        rule_name: &'g str, 
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
         options: ParseOptions,
-        with: Option<HashMap<String, Var>>,
-    ) -> Result<(Node, Option<Vec<Token<'s>>>), InvalidToken>
+        with: Option<HashMap<String, Var<'n, 'g>>>,
+    ) -> Result<(Node<'n, 'g>, Option<Vec<Token<'s>>>), InvalidToken>
         where I: Iterator<Item = Token<'s>>
     {
         match self {
@@ -200,7 +200,7 @@ impl<'s, 'g> Item<'g> {
     }
 }
 
-impl<'s, 'g> Grammar<'g> {
+impl<'n: 'g, 's, 'g: 's> Grammar<'g> {
     fn error_next_token<I, S>(error: S, tokenizer: &mut TokenIterator<'s, 'g, I>)
         where I: Iterator<Item = Token<'s>>, S: Into<String>
     {
@@ -232,13 +232,13 @@ impl<'s, 'g> Grammar<'g> {
 
     #[must_use]
     fn exec<I>(
-        &self,
-        rule_name: &str, 
+        &'g self,
+        rule_name: &'g str, 
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
-        vars: &mut HashMap<String, Var>,
+        vars: &mut HashMap<String, Var<'n, 'g>>,
         options: ParseOptions,
-    ) -> Option<Node>
+    ) -> Option<Node<'n, 'g>>
         where I: Iterator<Item = Token<'s>>
     {
         match self {
@@ -358,14 +358,14 @@ impl<'s, 'g> Grammar<'g> {
     }
 }
 
-impl<'s, 'g> Rule<'g> {
+impl<'n: 'g, 's, 'g: 's> Rule<'g> {
     fn exec<I>(
-        &self,
+        &'g self,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
         options: ParseOptions,
-        with: Option<HashMap<String, Var>>,
-    ) -> Node
+        with: Option<HashMap<String, Var<'n, 'g>>>,
+    ) -> Node<'n, 'g>
         where I: Iterator<Item = Token<'s>>
     {
         if options.debug_log_matches {
@@ -396,7 +396,8 @@ impl<'s, 'g> Rule<'g> {
             
         let start = tokenizer.start_offset();
         for stmt in &self.grammar {
-            if let Some(ret) = stmt.exec(self.name, src.clone(), tokenizer, &mut vars, options.clone()) {
+            let o: Option<Node<'_, 'g>> = stmt.exec(self.name, src.clone(), tokenizer, &mut vars, options.clone());
+            if let Some(ret) = o {
                 if options.debug_log_matches {
                     tokenizer.logger().lock().unwrap().log(Message::new(
                         Level::Info,
@@ -432,13 +433,14 @@ impl<'s, 'g> Rule<'g> {
                     Some((name, value))
                 })
                 .collect(),
-            ArcSpan(src.clone(), start..tokenizer.end_offset())
+            ArcSpan(src.clone(), start..tokenizer.end_offset()),
+            self.check.as_ref()
         )
     }
 }
 
 impl<'g> GrammarFile<'g> {
-    pub(crate) fn exec(&self, src: Arc<Src>, logger: LoggerRef, options: ParseOptions) -> Node {
+    pub(crate) fn exec(&'g self, src: Arc<Src>, logger: LoggerRef, options: ParseOptions) -> Node<'_, 'g> {
         let mut tokenizer = Tokenizer::new(src.as_ref(), self, logger).into();
         let ast = self.rules.get("main")
             .expect("internal compiler error: no 'main' rule provide - grammar file is invalid")

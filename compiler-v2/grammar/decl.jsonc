@@ -48,7 +48,7 @@
             }
         ],
         "check": [
-            { "equal": ["type", "value"] }
+            { "equal": [":type", ":value"] }
         ]
     },
     "#const-decl": {
@@ -74,7 +74,7 @@
             }
         ],
         "check": [
-            { "equal": ["type", "value"] }
+            { "equal": [":type", ":value"] }
         ]
     },
     // `this` parameter in a function
