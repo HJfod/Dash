@@ -2,7 +2,7 @@
 use std::{path::PathBuf, sync::Arc, fs, fmt::{Debug, Display}, ops::Range, ffi::OsStr};
 use line_col::LineColLookup;
 
-use crate::char_iter::CharIter;
+use crate::shared::char_iter::CharIter;
 
 #[derive(Debug)]
 pub struct Span<'s>(pub &'s Src, pub Range<usize>);

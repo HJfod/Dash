@@ -1,6 +1,9 @@
 
 use std::{sync::Arc, ops::Range, fmt::Debug};
-use crate::{src::{Src, SrcPool, Span}, logger::LoggerRef, grammar::GrammarFile, parse::ParseOptions};
+use crate::shared::src::{Src, SrcPool, Span};
+use crate::shared::logger::LoggerRef;
+use crate::parser::grammar::GrammarFile;
+use crate::parser::ParseOptions;
 
 #[derive(Clone)]
 pub struct ArcSpan(pub Arc<Src>, pub Range<usize>);

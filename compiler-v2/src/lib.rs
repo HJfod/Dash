@@ -1,16 +1,12 @@
 
-use grammar::GrammarFile;
-use logger::LoggerRef;
-use src::Src;
-use tokenizer::{Tokenizer, Token};
+use parser::grammar::GrammarFile;
+use parser::tokenizer::{Tokenizer, Token};
+use shared::logger::LoggerRef;
+use shared::src::Src;
 
-mod grammar;
-mod tokenizer;
-mod char_iter;
-pub mod src;
-pub mod ast;
-pub mod parse;
-pub mod logger;
+pub mod parser;
+pub mod shared;
+pub mod checker;
 
 // pub(crate) static mut DEBUG_LOG_INDENT: usize = 0;
 

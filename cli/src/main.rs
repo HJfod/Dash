@@ -1,6 +1,13 @@
 
 use clap::Parser;
-use dash_compiler_v2::{logger::Logger, src::SrcPool, default_grammar, tokenize, ast::ASTPool, parse::ParseOptions};
+use dash_compiler_v2::{
+    shared::logger::Logger,
+    shared::src::SrcPool,
+    default_grammar,
+    tokenize,
+    checker::ast::ASTPool,
+    parser::ParseOptions
+};
 use normalize_path::NormalizePath;
 use std::path::PathBuf;
 

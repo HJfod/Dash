@@ -1,7 +1,10 @@
 
 use std::fmt::Display;
 
-use crate::{grammar::{self, GrammarFile}, char_iter::CharIter, src::{Src, Span}, logger::{LoggerRef, Message, Level}};
+use crate::parser::grammar::{self, GrammarFile};
+use crate::shared::char_iter::CharIter;
+use crate::shared::src::{Src, Span};
+use crate::shared::logger::{LoggerRef, Message, Level};
 use unicode_xid::UnicodeXID;
 
 fn closing_paren(ch: char) -> char {

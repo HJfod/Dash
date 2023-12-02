@@ -1,7 +1,7 @@
 
 use std::{collections::{HashSet, HashMap}, fmt::Display};
 use serde::{Deserialize, Deserializer, de::Visitor};
-use crate::tokenizer::IsToken;
+use crate::parser::tokenizer::IsToken;
 
 fn verify_str<'de: 'g, 'g, D: Deserializer<'de>>(s: &'g str) -> Result<&'g str, D::Error> {
     if s.chars().all(|c| c.is_alphabetic() || c == '-') {

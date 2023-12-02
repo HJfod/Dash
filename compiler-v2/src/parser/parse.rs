@@ -1,15 +1,17 @@
 
 use std::{collections::HashMap, fmt::Display, sync::Arc};
-use crate::grammar::ItemOrMember;
-use crate::logger::LoggerRef;
-use crate::src::Span;
-use crate::tokenizer::TokenIterator;
+use crate::parser::grammar::ItemOrMember;
+use crate::shared::logger::LoggerRef;
+use crate::shared::src::Span;
+use crate::parser::tokenizer::TokenIterator;
 
-use super::ast::{Node, Child, Value, ArcSpan};
-use super::grammar::{Rule, GrammarFile, MemberKind, Grammar, Item, IfGrammar, TokenItem};
-use super::tokenizer::{Tokenizer, TokenKind, Token};
-use super::src::Src;
-use super::logger::{Message, Level};
+use crate::checker::ast::{Node, Child, Value, ArcSpan};
+use crate::parser::grammar::{Rule, GrammarFile, MemberKind, Grammar, Item, IfGrammar, TokenItem};
+use crate::parser::tokenizer::{Tokenizer, TokenKind, Token};
+use crate::shared::src::Src;
+use crate::shared::logger::{Message, Level};
+
+use super::ParseOptions;
 
 impl Node {
     fn from(name: &str, token: Token, src: Arc<Src>) -> Node {
@@ -436,7 +438,7 @@ impl<'s, 'g> Rule<'g> {
 }
 
 impl<'g> GrammarFile<'g> {
-    pub(super) fn exec(&self, src: Arc<Src>, logger: LoggerRef, options: ParseOptions) -> Node {
+    pub(crate) fn exec(&self, src: Arc<Src>, logger: LoggerRef, options: ParseOptions) -> Node {
         let mut tokenizer = Tokenizer::new(src.as_ref(), self, logger).into();
         let ast = self.rules.get("main")
             .expect("internal compiler error: no 'main' rule provide - grammar file is invalid")
@@ -451,9 +453,4 @@ impl<'g> GrammarFile<'g> {
         }
         ast
     }
-}
-
-#[derive(Default, Clone)]
-pub struct ParseOptions {
-    pub debug_log_matches: bool,
 }

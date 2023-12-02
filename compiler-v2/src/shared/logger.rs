@@ -1,7 +1,6 @@
 
 use std::{sync::{Arc, Mutex}, fmt::{Display, Write}};
-
-use crate::src::Span;
+use crate::shared::src::Span;
 
 #[allow(unused)]
 #[derive(Debug, Clone, Copy, PartialEq)]
