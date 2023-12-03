@@ -1,7 +1,29 @@
 
+use std::ptr::NonNull;
 use crate::{parser::grammar::{TypeItem, Test}, shared::logger::{LoggerRef, Message, Level}};
-
 use super::{ast::{Node, Child}, ty::Ty};
+
+struct Scope {
+    parent: Option<NonNull<Scope>>,
+    children: Vec<Scope>,
+}
+
+struct Checker {
+    root_scope: Scope,
+    current_scope: NonNull<Scope>,
+}
+
+impl Checker {
+    pub fn enter_scope(&mut self, scope: NonNull<Scope>) {
+        self.current_scope = scope;
+    }
+
+    pub fn leave_scope(&mut self) {
+        if let Some(parent) = unsafe { self.current_scope.as_ref() }.parent {
+            self.current_scope = parent;
+        }
+    }
+}
 
 impl<'n, 'g> TypeItem<'g> {
     fn eval(&self, node: &Node<'n, 'g>) -> Ty<'n, 'g> {

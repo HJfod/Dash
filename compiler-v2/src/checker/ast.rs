@@ -54,16 +54,16 @@ pub enum Value {
 }
 
 pub struct Node<'n, 'g> {
-    pub(crate) name: String,
+    pub(super) name: String,
     // not a HashMap because ast nodes have at most like 7 children
     // in the future this could be replaced by a stack-allocated max-size
     // arrayvector if the performance benefit becomes necessary
-    pub(crate) children: Vec<(String, Child<'n, 'g>)>,
+    pub(super) children: Vec<(String, Child<'n, 'g>)>,
     // for AST nodes representing literals
-    pub(crate) value: Option<Value>,
-    pub(crate) span: ArcSpan,
-    pub(crate) resolved_ty: Option<Ty<'n, 'g>>,
-    pub(crate) check: Option<&'g Check<'g>>,
+    pub(super) value: Option<Value>,
+    pub(super) span: ArcSpan,
+    pub(super) resolved_ty: Option<Ty<'n, 'g>>,
+    pub(super) check: Option<&'g Check<'g>>,
 }
 
 impl<'n, 'g> Node<'n, 'g> {
