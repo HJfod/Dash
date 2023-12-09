@@ -16,7 +16,7 @@ fun getAncestorBinding(this: Reflect::Expr) -> Reflect::Field? {
 // Operations like calling a macro or codegen are compile time only
 // Calling a function marked as `extern` is runtime only
 
-public macro @reactive(prop: &var Reflect::Field) {
+public macro @reactive(var prop: Reflect::Field) -> Reflect::Field {
     let refs = Reflect::findRefs(prop);
     for ref in refs {
         if let bind = ref.getAncestorBinding() {
@@ -27,10 +27,10 @@ public macro @reactive(prop: &var Reflect::Field) {
             });
         }
     }
+    prop
 }
 
-public macro @reactiveStruct(target: &var Reflect::StructDecl) {
-    for field in target.fields {
-        (@reactive)(field);
-    }
+public macro @reactiveStruct(var target: Reflect::StructDecl) -> Reflect::StructDecl {
+    target.fields = target.fields.map(@reactive);
+    target
 }

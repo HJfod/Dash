@@ -87,7 +87,7 @@
 				},
 				{
 					"name": "storage.type.dash",
-					"match": "\\b(let|var|const|fun|mut|decl|struct|macro|codegen|compiler_intrinsic|module|enum|extends|using|type|public|private)\\b"
+					"match": "\\b(let|var|const|fun|mut|decl|struct|macro|codegen|reflect|compiler_intrinsic|module|enum|extends|using|type|public|private)\\b"
 				},
 				{
 					"name": "punctuation.dash",

@@ -32,6 +32,8 @@
         "export", "import",
         // Reactivity
         "depends", "required",
+        // Macros
+        "reflect", "codegen",
         // Other
         "mut", "mutable", "new", "null"
     ]

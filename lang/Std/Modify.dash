@@ -1,5 +1,4 @@
 
-public macro @modify(this: &var Reflect::Struct) {
-}
+public macro @modify(this: Reflect::Struct) -> Reflect::Struct {}
 
-public macro @override(this: &var Reflect::Function, priority: int? = none) {}
+public macro @override(this: Reflect::Function, priority: int? = none) -> Reflect::Function {}
