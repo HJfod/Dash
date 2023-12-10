@@ -6,7 +6,7 @@ use dash_compiler_v2::{
     default_grammar,
     tokenize,
     checker::ast::ASTPool,
-    parser::ParseOptions
+    parser::ParseOptions, check_coherency
 };
 use normalize_path::NormalizePath;
 use std::path::PathBuf;
@@ -51,7 +51,7 @@ fn main() {
     if args.no_ast {
         return;
     }
-    let ast_pool = ASTPool::parse_src_pool(
+    let mut ast_pool = ASTPool::parse_src_pool(
         &src_pool, &grammar, logger.clone(), ParseOptions {
             debug_log_matches: args.debug_log_matches
         }
@@ -62,6 +62,10 @@ fn main() {
             println!("AST for {}", ast.span().0);
             println!("{ast:#?}");
         }
+    }
+
+    for ast in &mut ast_pool {
+        check_coherency(ast, logger.clone());
     }
 
     let ref_logger = logger.lock().unwrap();

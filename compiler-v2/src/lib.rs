@@ -1,4 +1,6 @@
 
+use checker::ast::Node;
+use checker::coherency::Checker;
 use parser::grammar::GrammarFile;
 use parser::tokenizer::{Tokenizer, Token};
 use shared::logger::LoggerRef;
@@ -18,4 +20,9 @@ pub fn default_grammar() -> GrammarFile<'static> {
 
 pub fn tokenize<'s, 'g: 's>(src: &'s Src, grammar: &'s GrammarFile<'g>, logger: LoggerRef) -> Vec<Token<'s>> {
     Tokenizer::new(src, grammar, logger).collect()
+}
+
+pub fn check_coherency(node: &mut Node, logger: LoggerRef) {
+    let mut checker = Checker::new();
+    node.check_coherency(&mut checker, logger.clone());
 }

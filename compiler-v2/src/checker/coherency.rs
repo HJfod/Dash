@@ -20,7 +20,7 @@ impl From<&grammar::TypeItem<'_>> for TypeItem {
     }
 }
 
-pub enum Test {
+pub(crate) enum Test {
     Equal {
         equal: (TypeItem, TypeItem),
     },
@@ -72,7 +72,7 @@ impl Test {
     }
 }
 
-pub struct Check {
+pub(crate) struct Check {
     pub result: TypeItem,
     pub tests: Vec<Test>,
 }
@@ -97,15 +97,17 @@ impl From<&grammar::Check<'_>> for Check {
 
 pub(crate) struct Scope {
     parent: Option<NonNull<Scope>>,
-    children: Vec<Scope>,
 }
 
 impl Scope {
     pub fn new(parent: NonNull<Scope>) -> Self {
         Self {
             parent: Some(parent),
-            children: vec![],
         }
+    }
+    
+    pub fn root() -> Self {
+        Self { parent: None }
     }
 }
 
@@ -115,6 +117,15 @@ pub(crate) struct Checker {
 }
 
 impl Checker {
+    pub fn new() -> Self {
+        let mut ret = Self {
+            root_scope: Scope::root(),
+            current_scope: NonNull::dangling(),
+        };
+        ret.current_scope = NonNull::from(&ret.root_scope);
+        ret
+    }
+    
     pub fn scope(&self) -> NonNull<Scope> {
         self.current_scope
     }
@@ -133,7 +144,7 @@ impl Checker {
 impl TypeItem {
     fn eval(&self, children: &Children) -> Ty {
         match self {
-            TypeItem::Type(ty) => todo!(),
+            TypeItem::Type(ty) => ty.clone(),
             TypeItem::Member(member) => {
                 match children.get(member).unwrap() {
                     Child::Node(n) => n.resolved_ty.clone().unwrap(),
@@ -158,7 +169,7 @@ impl Node {
         );
     }
 
-    fn check_coherency(&mut self, checker: &mut Checker, logger: LoggerRef) {
+    pub(crate) fn check_coherency(&mut self, checker: &mut Checker, logger: LoggerRef) {
         // If this AST node has already been resolved, that means that all of 
         // its children have also been resolved and no need to check them again
         if self.resolved_ty.is_some() {

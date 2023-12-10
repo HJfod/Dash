@@ -99,14 +99,14 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new_empty<S: Into<String>>(name: S, span: ArcSpan) -> Self {
+    pub(crate) fn new_empty<S: Into<String>>(name: S, span: ArcSpan) -> Self {
         Self {
             name: name.into(), children: Default::default(),
             value: None, span, resolved_ty: None,
             check: Check::default(),
         }
     }
-    pub fn new<S: Into<String>>(
+    pub(crate) fn new<S: Into<String>>(
         name: S,
         children: Children,
         span: ArcSpan,
@@ -117,7 +117,7 @@ impl Node {
             span, resolved_ty: None, check,
         }
     }
-    pub fn new_with_value<S: Into<String>>(name: S, value: Value, span: ArcSpan) -> Self {
+    pub(crate) fn new_with_value<S: Into<String>>(name: S, value: Value, span: ArcSpan) -> Self {
         Self {
             name: name.into(), children: Default::default(),
             value: Some(value), span, resolved_ty: None,
@@ -150,7 +150,7 @@ pub struct ASTPool {
     asts: Vec<Node>,
 }
 
-impl<'n, 's: 'g, 'g> ASTPool {
+impl<'s: 'g, 'g> ASTPool {
     pub fn parse_src_pool(
         pool: &SrcPool,
         grammar: &'s GrammarFile<'g>,
@@ -169,11 +169,20 @@ impl<'n, 's: 'g, 'g> ASTPool {
     }
 }
 
-impl<'n, 'a, 'g> IntoIterator for &'a ASTPool {
+impl<'a> IntoIterator for &'a ASTPool {
     type Item = &'a Node;
     type IntoIter = <&'a Vec<Node> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.asts.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut ASTPool {
+    type Item = &'a mut Node;
+    type IntoIter = <&'a mut Vec<Node> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.asts.iter_mut()
     }
 }
