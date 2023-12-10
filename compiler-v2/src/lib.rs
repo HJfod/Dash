@@ -23,6 +23,6 @@ pub fn tokenize<'s, 'g: 's>(src: &'s Src, grammar: &'s GrammarFile<'g>, logger: 
 }
 
 pub fn check_coherency(node: &mut Node, logger: LoggerRef) {
-    let mut checker = Checker::new();
+    let mut checker = Checker::new(logger.clone());
     node.check_coherency(&mut checker, logger.clone());
 }

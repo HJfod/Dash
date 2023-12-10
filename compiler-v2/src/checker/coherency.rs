@@ -1,139 +1,89 @@
 
-use std::ptr::NonNull;
-use crate::{shared::logger::{LoggerRef, Message, Level}, parser::grammar};
-use super::{ast::{Node, Child, Children}, ty::Ty};
+use std::{ptr::NonNull, collections::HashMap};
+use crate::shared::logger::LoggerRef;
+use super::{ast::{Node, Child, Children}, ty::Ty, tests::TypeItem, path::{FullIdentPath, IdentPath}, entity::Entity};
 
-// These are separate from grammar's for a few reasons:
-// #1 Can't move out of grammar,
-
-pub enum TypeItem {
-    Member(String),
-    Type(Ty),
+pub(crate) struct ItemSpace<T> {
+    items: HashMap<FullIdentPath, T>,
 }
 
-impl From<&grammar::TypeItem<'_>> for TypeItem {
-    fn from(value: &grammar::TypeItem<'_>) -> Self {
-        match value {
-            grammar::TypeItem::Member(mem) => Self::Member(mem.to_string()),
-            grammar::TypeItem::Type(ty) => Self::Type(Ty::new_builtin(ty)),
-        }
+impl<T> ItemSpace<T> {
+    fn new<H: Into<HashMap<FullIdentPath, T>>>(values: H) -> Self {
+        Self { items: values.into() }
+    }
+    pub fn try_push(&mut self, name: IdentPath, item: T) -> Result<&T, &T> {
+        self.items.insert(name.clone(), item);
+        self.items.get(&name).unwrap()
     }
 }
 
-pub(crate) enum Test {
-    Equal {
-        equal: (TypeItem, TypeItem),
-    },
-    Scope {
-        scope: Option<Scope>,
-        tests: Vec<Test>,
-    },
-}
-
-impl From<&grammar::Test<'_>> for Test {
-    fn from(value: &grammar::Test<'_>) -> Self {
-        match value {
-            grammar::Test::Equal { equal } => Test::Equal {
-                equal: ((&equal.0).into(), (&equal.1).into())
-            },
-            grammar::Test::Scope { tests } => Test::Scope {
-                scope: None,
-                tests: tests.iter().map(|t| t.into()).collect()
-            }
-        }
-    }
-}
-
-impl Test {
-    fn exec(&mut self, children: &Children, checker: &mut Checker, logger: LoggerRef) {
-        match self {
-            Test::Equal { equal } => {
-                let (a, b) = (equal.0.eval(children), equal.1.eval(children));
-                if !a.convertible(&b) {
-                    logger.lock().unwrap().log(Message::new(
-                        Level::Error,
-                        format!("Type {a} is not convertible to type {b}"),
-                        a.decl().or(b.decl()).expect(
-                            "neither type in \"test\".\"equal\" has a declaration"
-                        ).span().as_ref()
-                    ));
-                }
-            }
-            Test::Scope { scope, tests } => {
-                checker.enter_scope(NonNull::from(
-                    scope.get_or_insert_with(|| Scope::new(checker.scope()))
-                ));
-                for test in tests {
-                    test.exec(children, checker, logger.clone());
-                }
-                checker.leave_scope();
-            }
-        }
-    }
-}
-
-pub(crate) struct Check {
-    pub result: TypeItem,
-    pub tests: Vec<Test>,
-}
-
-impl Default for Check {
+impl<T> Default for ItemSpace<T> {
     fn default() -> Self {
         Self {
-            result: TypeItem::Type(Ty::Invalid),
-            tests: vec![],
-        }
-    }
-}
-
-impl From<&grammar::Check<'_>> for Check {
-    fn from(value: &grammar::Check<'_>) -> Self {
-        Self {
-            result: (&value.result).into(),
-            tests: value.tests.iter().map(|t| t.into()).collect()
+            items: Default::default()
         }
     }
 }
 
 pub(crate) struct Scope {
+    logger: LoggerRef,
     parent: Option<NonNull<Scope>>,
+    types: ItemSpace<Ty>,
+    entities: ItemSpace<Entity>,
 }
 
 impl Scope {
     pub fn new(parent: NonNull<Scope>) -> Self {
         Self {
+            logger: unsafe { parent.as_ref() }.logger.clone(),
             parent: Some(parent),
+            types: Default::default(),
+            entities: Default::default(),
         }
     }
-    
-    pub fn root() -> Self {
-        Self { parent: None }
+    pub fn root(logger: LoggerRef) -> Self {
+        Self {
+            logger,
+            parent: None,
+            types: ItemSpace::new(
+                [Ty::Never, Ty::Void, Ty::Bool, Ty::Int, Ty::Float, Ty::String]
+                    .map(|t| (FullIdentPath::new([t.to_string().into()]), t))
+            ),
+            entities: Default::default(),
+        }
+    }
+    pub fn types(&mut self) -> &mut ItemSpace<Ty> {
+        &mut self.types
+    }
+    pub fn entities(&mut self) -> &mut ItemSpace<Entity> {
+        &mut self.entities
     }
 }
 
 pub(crate) struct Checker {
+    logger: LoggerRef,
     root_scope: Scope,
     current_scope: NonNull<Scope>,
+    namespace_stack: FullIdentPath,
 }
 
 impl Checker {
-    pub fn new() -> Self {
+    pub fn new(logger: LoggerRef) -> Self {
         let mut ret = Self {
-            root_scope: Scope::root(),
+            logger: logger.clone(),
+            root_scope: Scope::root(logger),
             current_scope: NonNull::dangling(),
+            namespace_stack: FullIdentPath::default(),
         };
         ret.current_scope = NonNull::from(&ret.root_scope);
         ret
     }
-    
     pub fn scope(&self) -> NonNull<Scope> {
         self.current_scope
     }
-
     pub fn enter_scope(&mut self, scope: NonNull<Scope>) {
         self.current_scope = scope;
     }
-
     pub fn leave_scope(&mut self) {
         if let Some(parent) = unsafe { self.current_scope.as_ref() }.parent {
             self.current_scope = parent;
@@ -142,7 +92,7 @@ impl Checker {
 }
 
 impl TypeItem {
-    fn eval(&self, children: &Children) -> Ty {
+    pub(crate) fn eval(&self, children: &Children) -> Ty {
         match self {
             TypeItem::Type(ty) => ty.clone(),
             TypeItem::Member(member) => {

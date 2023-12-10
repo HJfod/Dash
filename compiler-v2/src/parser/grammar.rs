@@ -330,6 +330,27 @@ impl<'de: 'g, 'g> Deserialize<'de> for TypeItem<'g> {
     }
 }
 
+#[derive(Debug)]
+pub enum IdentItem<'g> {
+    Member(&'g str),
+    Ident(&'g str),
+}
+
+impl<'de: 'g, 'g> Deserialize<'de> for IdentItem<'g> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>
+    {
+        let s: &'g str = Deserialize::deserialize(deserializer)?;
+        if let Some(s) = s.strip_prefix(':') {
+            Ok(IdentItem::Member(s))
+        }
+        else {
+            Ok(IdentItem::Ident(s))
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 #[serde(untagged)]
@@ -337,6 +358,11 @@ pub enum Test<'g> {
     Equal {
         #[serde(borrow)]
         equal: (TypeItem<'g>, TypeItem<'g>),
+    },
+    NewEntity {
+        new_entity: IdentItem<'g>,
+        #[serde(rename = "type")]
+        ty: TypeItem<'g>,
     },
     Scope {
         tests: Vec<Test<'g>>,

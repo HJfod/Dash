@@ -5,7 +5,8 @@ use crate::shared::logger::LoggerRef;
 use crate::parser::grammar::GrammarFile;
 use crate::parser::ParseOptions;
 
-use super::coherency::Check;
+use super::path::IdentPath;
+use super::tests::Check;
 use super::ty::Ty;
 
 #[derive(Clone)]
@@ -129,6 +130,9 @@ impl Node {
     }
     pub fn span(&self) -> ArcSpan {
         self.span.clone()
+    }
+    pub fn to_ident_path(&self) -> IdentPath {
+        IdentPath::parse(&self.span.0.data()[self.span.1])
     }
 }
 
