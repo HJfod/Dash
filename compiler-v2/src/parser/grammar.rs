@@ -338,6 +338,9 @@ pub enum Test<'g> {
         #[serde(borrow)]
         equal: (TypeItem<'g>, TypeItem<'g>),
     },
+    Scope {
+        tests: Vec<Test<'g>>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -345,6 +348,7 @@ pub enum Test<'g> {
 pub struct Check<'g> {
     #[serde(borrow)]
     pub result: TypeItem<'g>,
+    #[serde(default)]
     pub tests: Vec<Test<'g>>,
 }
 

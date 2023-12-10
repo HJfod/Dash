@@ -2,9 +2,10 @@
 use std::{sync::Arc, ops::Range, fmt::Debug};
 use crate::shared::src::{Src, SrcPool, Span};
 use crate::shared::logger::LoggerRef;
-use crate::parser::grammar::{GrammarFile, Check};
+use crate::parser::grammar::GrammarFile;
 use crate::parser::ParseOptions;
 
+use super::coherency::Check;
 use super::ty::Ty;
 
 #[derive(Clone)]
@@ -22,13 +23,13 @@ impl ArcSpan {
     }
 }
 
-pub enum Child<'n, 'g> {
-    Node(Node<'n, 'g>),
-    Maybe(Option<Node<'n, 'g>>),
-    List(Vec<Node<'n, 'g>>),
+pub enum Child {
+    Node(Node),
+    Maybe(Option<Node>),
+    List(Vec<Node>),
 }
 
-impl Debug for Child<'_, '_> {
+impl Debug for Child {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Node(n) => Debug::fmt(n, f),
@@ -53,31 +54,63 @@ pub enum Value {
     String(String),
 }
 
-pub struct Node<'n, 'g> {
+#[derive(Default)]
+pub struct Children(Vec<(String, Child)>);
+
+impl Children {
+    pub fn get(&self, name: &str) -> Option<&Child> {
+        self.0.iter().find(|c| c.0 == name).map(|c| &c.1)
+    }
+}
+
+impl From<Vec<(String, Child)>> for Children {
+    fn from(value: Vec<(String, Child)>) -> Self {
+        Self(value)
+    }
+}
+
+impl<'a> IntoIterator for &'a Children {
+    type IntoIter = <&'a Vec<(String, Child)> as IntoIterator>::IntoIter;
+    type Item = <&'a Vec<(String, Child)> as IntoIterator>::Item;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a mut Children {
+    type IntoIter = <&'a mut Vec<(String, Child)> as IntoIterator>::IntoIter;
+    type Item = <&'a mut Vec<(String, Child)> as IntoIterator>::Item;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter_mut()
+    }
+}
+
+pub struct Node {
     pub(super) name: String,
     // not a HashMap because ast nodes have at most like 7 children
     // in the future this could be replaced by a stack-allocated max-size
     // arrayvector if the performance benefit becomes necessary
-    pub(super) children: Vec<(String, Child<'n, 'g>)>,
+    pub(super) children: Children,
     // for AST nodes representing literals
     pub(super) value: Option<Value>,
     pub(super) span: ArcSpan,
-    pub(super) resolved_ty: Option<Ty<'n, 'g>>,
-    pub(super) check: Option<&'g Check<'g>>,
+    pub(super) resolved_ty: Option<Ty>,
+    pub(super) check: Check,
 }
 
-impl<'n, 'g> Node<'n, 'g> {
+impl Node {
     pub fn new_empty<S: Into<String>>(name: S, span: ArcSpan) -> Self {
         Self {
-            name: name.into(), children: vec![], value: None,
-            span, resolved_ty: None, check: None,
+            name: name.into(), children: Default::default(),
+            value: None, span, resolved_ty: None,
+            check: Check::default(),
         }
     }
     pub fn new<S: Into<String>>(
         name: S,
-        children: Vec<(String, Child<'n, 'g>)>,
+        children: Children,
         span: ArcSpan,
-        check: Option<&'g Check<'g>>,
+        check: Check,
     ) -> Self {
         Self {
             name: name.into(), children, value: None,
@@ -86,8 +119,9 @@ impl<'n, 'g> Node<'n, 'g> {
     }
     pub fn new_with_value<S: Into<String>>(name: S, value: Value, span: ArcSpan) -> Self {
         Self {
-            name: name.into(), children: vec![], value: Some(value),
-            span, resolved_ty: None, check: None,
+            name: name.into(), children: Default::default(),
+            value: Some(value), span, resolved_ty: None,
+            check: Check::default(),
         }
     }
     pub fn name(&self) -> &str {
@@ -96,12 +130,9 @@ impl<'n, 'g> Node<'n, 'g> {
     pub fn span(&self) -> ArcSpan {
         self.span.clone()
     }
-    pub fn child(&self, name: &str) -> Option<&Child<'n, 'g>> {
-        self.children.iter().find(|c| c.0 == name).map(|c| &c.1)
-    }
 }
 
-impl Debug for Node<'_, '_> {
+impl Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut dbg = f.debug_struct(&self.name);
         for child in &self.children {
@@ -115,11 +146,11 @@ impl Debug for Node<'_, '_> {
     }
 }
 
-pub struct ASTPool<'n, 'g> {
-    asts: Vec<Node<'n, 'g>>,
+pub struct ASTPool {
+    asts: Vec<Node>,
 }
 
-impl<'n, 's: 'g, 'g> ASTPool<'n, 'g> {
+impl<'n, 's: 'g, 'g> ASTPool {
     pub fn parse_src_pool(
         pool: &SrcPool,
         grammar: &'s GrammarFile<'g>,
@@ -133,14 +164,14 @@ impl<'n, 's: 'g, 'g> ASTPool<'n, 'g> {
         }
     }
 
-    pub fn iter(&self) -> <&Vec<Node<'n, 'g>> as IntoIterator>::IntoIter {
+    pub fn iter(&self) -> <&Vec<Node> as IntoIterator>::IntoIter {
         self.into_iter()
     }
 }
 
-impl<'n, 'a, 'g> IntoIterator for &'a ASTPool<'n, 'g> {
-    type Item = &'a Node<'n, 'g>;
-    type IntoIter = <&'a Vec<Node<'n, 'g>> as IntoIterator>::IntoIter;
+impl<'n, 'a, 'g> IntoIterator for &'a ASTPool {
+    type Item = &'a Node;
+    type IntoIter = <&'a Vec<Node> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.asts.iter()

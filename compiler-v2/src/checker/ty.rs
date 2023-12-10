@@ -1,11 +1,10 @@
 
-use std::fmt::Display;
-use crate::shared::wrappers::RefWrapper;
+use std::{fmt::Display, ptr::NonNull};
 
 use super::ast::Node;
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Ty<'n, 'g> {
+pub enum Ty {
     /// Represents that an error occurred during typechecking, or the 
     /// checked statement results in no type
     Invalid,
@@ -23,26 +22,44 @@ pub enum Ty<'n, 'g> {
     String,
     /// Function type
     Function {
-        params: Vec<(String, Ty<'n, 'g>)>,
-        ret_ty: Box<Ty<'n, 'g>>,
-        decl: RefWrapper<'n, Node<'n, 'g>>,
+        params: Vec<(String, Ty)>,
+        ret_ty: Box<Ty>,
     },
-    /// Alias for another type
+    /// Alias for another type. Can be implicitly converted to the other type
     Alias {
         name: String,
-        ty: Box<Ty<'n, 'g>>,
-        decl: RefWrapper<'n, Node<'n, 'g>>,
+        ty: Box<Ty>,
+        decl: NonNull<Node>,
+    },
+    /// A "new type" alias for another type; in other words, can *not* be 
+    /// implicitly converted to the other type
+    Named {
+        name: String,
+        ty: Box<Ty>,
+        decl: NonNull<Node>,
     },
 }
 
-impl<'n, 'g> Ty<'n, 'g> {
+impl Ty {
+    pub fn new_builtin(name: &str) -> Self {
+        match name {
+            "never" => Self::Never,
+            "void" => Self::Void,
+            "bool" => Self::Bool,
+            "int" => Self::Int,
+            "float" => Self::Float,
+            "string" => Self::String,
+            _ => panic!("internal compiler error: invalid builtin type '{name}'")
+        }
+    }
+
     /// Whether this type is one that can't exist as a value (`invalid` or `never`)
     pub fn unreal(&self) -> bool {
         matches!(self, Ty::Invalid | Ty::Never)
     }
 
     /// Reduce type into its canonical representation, for example remove aliases
-    pub fn reduce(&self) -> &Ty<'n, 'g> {
+    pub fn reduce(&self) -> &Ty {
         match self {
             Self::Alias { name: _, ty, decl: _ } => ty,
             other => other,
@@ -53,11 +70,11 @@ impl<'n, 'g> Ty<'n, 'g> {
     /// not
     /// 
     /// In most cases this means equality
-    pub fn convertible(&self, other: &Ty<'n, 'g>) -> bool {
+    pub fn convertible(&self, other: &Ty) -> bool {
         self.unreal() || other.unreal() || *self.reduce() == *other.reduce()
     }
 
-    pub fn decl(&self) -> Option<&'n Node<'n, 'g>> {
+    pub fn decl(&self) -> Option<&Node> {
         match self {
             Ty::Invalid => None,
             Ty::Never => None,
@@ -66,13 +83,14 @@ impl<'n, 'g> Ty<'n, 'g> {
             Ty::Int => None,
             Ty::Float => None,
             Ty::String => None,
-            Ty::Function { params: _, ret_ty: _, decl } => Some(decl.to_inner()),
-            Ty::Alias { name: _, ty: _, decl } => Some(decl.to_inner()),
+            Ty::Function { params: _, ret_ty: _ } => None,
+            Ty::Alias { name: _, ty: _, decl } |
+            Ty::Named { name: _, ty: _, decl } => Some(unsafe { decl.as_ref() }),
         }
     }
 }
 
-impl Display for Ty<'_, '_> {
+impl Display for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Invalid => f.write_str("invalid"),
@@ -82,13 +100,14 @@ impl Display for Ty<'_, '_> {
             Self::Int => f.write_str("int"),
             Self::Float => f.write_str("float"),
             Self::String => f.write_str("string"),
-            Self::Function { params, ret_ty, decl: _ } => f.write_fmt(format_args!(
+            Self::Function { params, ret_ty } => f.write_fmt(format_args!(
                 "fun({}) -> {ret_ty}", params.iter()
                     .map(|(p, t)| format!("{p}: {t}"))
                     .collect::<Vec<_>>()
                     .join(", ")
             )),
             Self::Alias { name, ty: _, decl: _ } => f.write_str(name),
+            Self::Named { name, ty: _, decl: _ } => f.write_str(name),
         }
     }
 }

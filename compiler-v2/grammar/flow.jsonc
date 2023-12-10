@@ -21,10 +21,13 @@
                 ]
             }
         ],
-        "check": [
-            { "equal": [":cond", "bool"] },
-            { "equal": [":then", ":else"] }
-        ]
+        "check": {
+            "result": ":then",
+            "tests": [
+                { "equal": [":cond", "bool"] },
+                { "equal": [":then", ":else"] }
+            ]
+        }
     },
     // While loop
     "#while": {

@@ -5,7 +5,7 @@ use crate::shared::logger::LoggerRef;
 use crate::shared::src::Span;
 use crate::parser::tokenizer::TokenIterator;
 
-use crate::checker::ast::{Node, Child, Value, ArcSpan};
+use crate::checker::ast::{Node, Child, Value, ArcSpan, Children};
 use crate::parser::grammar::{Rule, GrammarFile, MemberKind, Grammar, Item, IfGrammar, TokenItem};
 use crate::parser::tokenizer::{Tokenizer, TokenKind, Token};
 use crate::shared::src::Src;
@@ -13,8 +13,8 @@ use crate::shared::logger::{Message, Level};
 
 use super::ParseOptions;
 
-impl<'n, 'g> Node<'n, 'g> {
-    fn from(name: &'g str, token: Token, src: Arc<Src>) -> Node<'n, 'g> {
+impl Node {
+    fn from(name: &str, token: Token, src: Arc<Src>) -> Node {
         match token.kind {
             TokenKind::Keyword |
             TokenKind::Op |
@@ -34,16 +34,16 @@ impl<'n, 'g> Node<'n, 'g> {
 }
 
 #[derive(Default, Debug)]
-enum Var<'n, 'g> {
+enum Var {
     #[default]
     None,
-    Node(Node<'n, 'g>),
-    List(Vec<Node<'n, 'g>>),
-    Maybe(Option<Node<'n, 'g>>),
+    Node(Node),
+    List(Vec<Node>),
+    Maybe(Option<Node>),
 }
 
-impl<'n, 'g> Var<'n, 'g> {
-    fn assign(&mut self, node: Node<'n, 'g>) {
+impl Var {
+    fn assign(&mut self, node: Node) {
         match self {
             Var::None => *self = Var::Node(node),
             Var::Node(_) => panic!(
@@ -56,7 +56,7 @@ impl<'n, 'g> Var<'n, 'g> {
     }
 }
 
-impl<'n, 's, 'g> IfGrammar<'g> {
+impl<'s, 'g> IfGrammar<'g> {
     fn peek<I>(token: &TokenItem<'_>, tokenizer: &TokenIterator<'s, 'g, I>) -> bool
         where I: Iterator<Item = Token<'s>>
     {
@@ -91,7 +91,7 @@ impl<'n, 's, 'g> IfGrammar<'g> {
         rule_name: &'g str,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
-        vars: &mut HashMap<String, Var<'n, 'g>>
+        vars: &mut HashMap<String, Var>
     ) -> bool
         where I: Iterator<Item = Token<'s>>
     {
@@ -146,7 +146,7 @@ impl<'n: 'g, 's, 'g: 's> Item<'g> {
         token: &TokenItem<'s>,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
-    ) -> Result<(Node<'n, 'g>, Option<Vec<Token<'s>>>), InvalidToken>
+    ) -> Result<(Node, Option<Vec<Token<'s>>>), InvalidToken>
         where I: Iterator<Item = Token<'s>>
     {
         // can't store EOF
@@ -167,8 +167,8 @@ impl<'n: 'g, 's, 'g: 's> Item<'g> {
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
         options: ParseOptions,
-        with: Option<HashMap<String, Var<'n, 'g>>>,
-    ) -> Result<(Node<'n, 'g>, Option<Vec<Token<'s>>>), InvalidToken>
+        with: Option<HashMap<String, Var>>,
+    ) -> Result<(Node, Option<Vec<Token<'s>>>), InvalidToken>
         where I: Iterator<Item = Token<'s>>
     {
         match self {
@@ -236,9 +236,9 @@ impl<'n: 'g, 's, 'g: 's> Grammar<'g> {
         rule_name: &'g str, 
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
-        vars: &mut HashMap<String, Var<'n, 'g>>,
+        vars: &mut HashMap<String, Var>,
         options: ParseOptions,
-    ) -> Option<Node<'n, 'g>>
+    ) -> Option<Node>
         where I: Iterator<Item = Token<'s>>
     {
         match self {
@@ -364,8 +364,8 @@ impl<'n: 'g, 's, 'g: 's> Rule<'g> {
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
         options: ParseOptions,
-        with: Option<HashMap<String, Var<'n, 'g>>>,
-    ) -> Node<'n, 'g>
+        with: Option<HashMap<String, Var>>,
+    ) -> Node
         where I: Iterator<Item = Token<'s>>
     {
         if options.debug_log_matches {
@@ -396,7 +396,7 @@ impl<'n: 'g, 's, 'g: 's> Rule<'g> {
             
         let start = tokenizer.start_offset();
         for stmt in &self.grammar {
-            let o: Option<Node<'_, 'g>> = stmt.exec(self.name, src.clone(), tokenizer, &mut vars, options.clone());
+            let o: Option<Node> = stmt.exec(self.name, src.clone(), tokenizer, &mut vars, options.clone());
             if let Some(ret) = o {
                 if options.debug_log_matches {
                     tokenizer.logger().lock().unwrap().log(Message::new(
@@ -418,29 +418,31 @@ impl<'n: 'g, 's, 'g: 's> Rule<'g> {
         }
         Node::new(
             self.name,
-            vars.into_iter()
-                .filter_map(|(name, value)| {
-                    let value = match value {
-                        Var::Node(node) => Child::Node(node),
-                        Var::List(list) => Child::List(list),
-                        Var::Maybe(opt) => Child::Maybe(opt),
-                        Var::None       => return None,
-                        // Var::None => panic!(
-                        //     "internal compiler error: required child '{name}' \
-                        //     was not assigned - grammar file is invalid"
-                        // ),
-                    };
-                    Some((name, value))
-                })
-                .collect(),
+            Children::from(
+                vars.into_iter()
+                    .filter_map(|(name, value)| {
+                        let value = match value {
+                            Var::Node(node) => Child::Node(node),
+                            Var::List(list) => Child::List(list),
+                            Var::Maybe(opt) => Child::Maybe(opt),
+                            Var::None       => return None,
+                            // Var::None => panic!(
+                            //     "internal compiler error: required child '{name}' \
+                            //     was not assigned - grammar file is invalid"
+                            // ),
+                        };
+                        Some((name, value))
+                    })
+                    .collect::<Vec<_>>()
+            ),
             ArcSpan(src.clone(), start..tokenizer.end_offset()),
-            self.check.as_ref()
+            self.check.as_ref().map(|c| c.into()).unwrap_or_default()
         )
     }
 }
 
 impl<'g> GrammarFile<'g> {
-    pub(crate) fn exec(&'g self, src: Arc<Src>, logger: LoggerRef, options: ParseOptions) -> Node<'_, 'g> {
+    pub(crate) fn exec(&'g self, src: Arc<Src>, logger: LoggerRef, options: ParseOptions) -> Node {
         let mut tokenizer = Tokenizer::new(src.as_ref(), self, logger).into();
         let ast = self.rules.get("main")
             .expect("internal compiler error: no 'main' rule provide - grammar file is invalid")

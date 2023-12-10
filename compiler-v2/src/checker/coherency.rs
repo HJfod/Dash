@@ -1,19 +1,124 @@
 
 use std::ptr::NonNull;
-use crate::{parser::grammar::{TypeItem, Test}, shared::logger::{LoggerRef, Message, Level}};
-use super::{ast::{Node, Child}, ty::Ty};
+use crate::{shared::logger::{LoggerRef, Message, Level}, parser::grammar};
+use super::{ast::{Node, Child, Children}, ty::Ty};
 
-struct Scope {
+// These are separate from grammar's for a few reasons:
+// #1 Can't move out of grammar,
+
+pub enum TypeItem {
+    Member(String),
+    Type(Ty),
+}
+
+impl From<&grammar::TypeItem<'_>> for TypeItem {
+    fn from(value: &grammar::TypeItem<'_>) -> Self {
+        match value {
+            grammar::TypeItem::Member(mem) => Self::Member(mem.to_string()),
+            grammar::TypeItem::Type(ty) => Self::Type(Ty::new_builtin(ty)),
+        }
+    }
+}
+
+pub enum Test {
+    Equal {
+        equal: (TypeItem, TypeItem),
+    },
+    Scope {
+        scope: Option<Scope>,
+        tests: Vec<Test>,
+    },
+}
+
+impl From<&grammar::Test<'_>> for Test {
+    fn from(value: &grammar::Test<'_>) -> Self {
+        match value {
+            grammar::Test::Equal { equal } => Test::Equal {
+                equal: ((&equal.0).into(), (&equal.1).into())
+            },
+            grammar::Test::Scope { tests } => Test::Scope {
+                scope: None,
+                tests: tests.iter().map(|t| t.into()).collect()
+            }
+        }
+    }
+}
+
+impl Test {
+    fn exec(&mut self, children: &Children, checker: &mut Checker, logger: LoggerRef) {
+        match self {
+            Test::Equal { equal } => {
+                let (a, b) = (equal.0.eval(children), equal.1.eval(children));
+                if !a.convertible(&b) {
+                    logger.lock().unwrap().log(Message::new(
+                        Level::Error,
+                        format!("Type {a} is not convertible to type {b}"),
+                        a.decl().or(b.decl()).expect(
+                            "neither type in \"test\".\"equal\" has a declaration"
+                        ).span().as_ref()
+                    ));
+                }
+            }
+            Test::Scope { scope, tests } => {
+                checker.enter_scope(NonNull::from(
+                    scope.get_or_insert_with(|| Scope::new(checker.scope()))
+                ));
+                for test in tests {
+                    test.exec(children, checker, logger.clone());
+                }
+                checker.leave_scope();
+            }
+        }
+    }
+}
+
+pub struct Check {
+    pub result: TypeItem,
+    pub tests: Vec<Test>,
+}
+
+impl Default for Check {
+    fn default() -> Self {
+        Self {
+            result: TypeItem::Type(Ty::Invalid),
+            tests: vec![],
+        }
+    }
+}
+
+impl From<&grammar::Check<'_>> for Check {
+    fn from(value: &grammar::Check<'_>) -> Self {
+        Self {
+            result: (&value.result).into(),
+            tests: value.tests.iter().map(|t| t.into()).collect()
+        }
+    }
+}
+
+pub(crate) struct Scope {
     parent: Option<NonNull<Scope>>,
     children: Vec<Scope>,
 }
 
-struct Checker {
+impl Scope {
+    pub fn new(parent: NonNull<Scope>) -> Self {
+        Self {
+            parent: Some(parent),
+            children: vec![],
+        }
+    }
+}
+
+pub(crate) struct Checker {
     root_scope: Scope,
     current_scope: NonNull<Scope>,
 }
 
 impl Checker {
+    pub fn scope(&self) -> NonNull<Scope> {
+        self.current_scope
+    }
+
     pub fn enter_scope(&mut self, scope: NonNull<Scope>) {
         self.current_scope = scope;
     }
@@ -25,12 +130,12 @@ impl Checker {
     }
 }
 
-impl<'n, 'g> TypeItem<'g> {
-    fn eval(&self, node: &Node<'n, 'g>) -> Ty<'n, 'g> {
+impl TypeItem {
+    fn eval(&self, children: &Children) -> Ty {
         match self {
             TypeItem::Type(ty) => todo!(),
             TypeItem::Member(member) => {
-                match node.child(member).unwrap() {
+                match children.get(member).unwrap() {
                     Child::Node(n) => n.resolved_ty.clone().unwrap(),
                     Child::Maybe(maybe) => maybe.as_ref()
                         .and_then(|n| n.resolved_ty.clone())
@@ -42,9 +147,9 @@ impl<'n, 'g> TypeItem<'g> {
     }
 }
 
-impl<'n, 'g> Node<'n, 'g> {
-    fn for_all_children<F: FnMut(&mut Node<'n, 'g>)>(&mut self, mut fun: F) {
-        self.children.iter_mut().for_each(|child|
+impl Node {
+    fn for_all_children<F: FnMut(&mut Node)>(&mut self, mut fun: F) {
+        (&mut self.children).into_iter().for_each(|child|
             match &mut child.1 {
                 Child::Node(n) => fun(n),
                 Child::Maybe(n) => if let Some(n) = n { fun(n) },
@@ -53,7 +158,7 @@ impl<'n, 'g> Node<'n, 'g> {
         );
     }
 
-    fn check_coherency(&mut self, logger: LoggerRef) {
+    fn check_coherency(&mut self, checker: &mut Checker, logger: LoggerRef) {
         // If this AST node has already been resolved, that means that all of 
         // its children have also been resolved and no need to check them again
         if self.resolved_ty.is_some() {
@@ -63,7 +168,7 @@ impl<'n, 'g> Node<'n, 'g> {
         // Check all children
         let mut some_unresolved = false;
         self.for_all_children(|n| {
-            n.check_coherency(logger.clone());
+            n.check_coherency(checker, logger.clone());
             if n.resolved_ty.is_some() {
                 some_unresolved = true;
             }
@@ -72,27 +177,9 @@ impl<'n, 'g> Node<'n, 'g> {
             return;
         }
 
-        // Run check tests, otherwise this is resolved and results in Invalid
-        let Some(check) = self.check else {
-            self.resolved_ty = Some(Ty::Invalid);
-            return;
-        };
-        for test in &check.tests {
-            match test {
-                Test::Equal { equal } => {
-                    let (a, b) = (equal.0.eval(self), equal.1.eval(self));
-                    if !a.convertible(&b) {
-                        logger.lock().unwrap().log(Message::new(
-                            Level::Error,
-                            format!("Type {a} is not convertible to type {b}"),
-                            a.decl().or(b.decl()).expect(
-                                "neither type in \"test\".\"equal\" has a declaration"
-                            ).span().as_ref()
-                        ));
-                    }
-                }
-            }
+        for test in &mut self.check.tests {
+            test.exec(&self.children, checker, logger.clone());
         }
-        self.resolved_ty = Some(check.result.eval(self));
+        self.resolved_ty = Some(self.check.result.eval(&self.children));
     }
 }

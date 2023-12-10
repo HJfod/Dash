@@ -37,7 +37,7 @@
             {
                 "if": { "match": ":" },
                 "then": [
-                    { "match": "#type", "into": "type" }
+                    { "match": "#type-expr", "into": "type" }
                 ]
             },
             {
@@ -47,9 +47,12 @@
                 ]
             }
         ],
-        "check": [
-            { "equal": [":type", ":value"] }
-        ]
+        "check": {
+            "result": ":void",
+            "tests": [
+                { "equal": [":type", ":value"] }
+            ]
+        }
     },
     "#const-decl": {
         "members": ["qualifiers", "name", "?type", "?value"],
@@ -63,7 +66,7 @@
             {
                 "if": { "match": ":" },
                 "then": [
-                    { "match": "#type", "into": "type" }
+                    { "match": "#type-expr", "into": "type" }
                 ]
             },
             {
@@ -73,9 +76,12 @@
                 ]
             }
         ],
-        "check": [
-            { "equal": [":type", ":value"] }
-        ]
+        "check": {
+            "result": ":void",
+            "tests": [
+                { "equal": [":type", ":value"] }
+            ]
+        }
     },
     // `this` parameter in a function
     "#fun-receiver-param": {
