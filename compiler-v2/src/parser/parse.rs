@@ -14,22 +14,24 @@ use crate::shared::logger::{Message, Level};
 use super::ParseOptions;
 
 impl Node {
-    fn from(name: &str, token: Token, src: Arc<Src>) -> Node {
-        match token.kind {
-            TokenKind::Keyword |
-            TokenKind::Op |
-            TokenKind::Punct |
-            TokenKind::Ident |
-            TokenKind::Parentheses(_) |
-            TokenKind::Braces(_) |
-            TokenKind::Brackets(_) => None,
-            TokenKind::Int(n) => Some(Value::Int(n)),
-            TokenKind::Float(n) => Some(Value::Float(n)),
-            TokenKind::String(s) => Some(Value::String(s)),
+    fn from(token: Token, src: Arc<Src>) -> Node {
+        let (n, v) = match token.kind {
+            TokenKind::Keyword => ("kw", None),
+            TokenKind::Op => ("op", None),
+            TokenKind::Punct => ("punct", None),
+            TokenKind::Ident => ("ident", None),
+            TokenKind::Parentheses(_) => ("paren", None),
+            TokenKind::Braces(_) => ("brace", None),
+            TokenKind::Brackets(_) => ("bracket", None),
+            TokenKind::Int(n) => ("int", Some(Value::Int(n))),
+            TokenKind::Float(n) => ("float", Some(Value::Float(n))),
+            TokenKind::String(s) => ("string", Some(Value::String(s))),
             TokenKind::Error(_) => unreachable!("errors should never be matched")
-        }
-            .map(|v| Node::new_with_value(name, v, ArcSpan(src.clone(), token.span.1.clone())))
-            .unwrap_or_else(|| Node::new_empty(name, ArcSpan(src, token.span.1)))
+        };
+        let n = format!("tk-{n}");
+        v
+            .map(|v| Node::new_with_value(&n, v, ArcSpan(src.clone(), token.span.1.clone())))
+            .unwrap_or_else(|| Node::new_empty(n, ArcSpan(src, token.span.1)))
     }
 }
 
@@ -88,7 +90,6 @@ impl<'s, 'g> IfGrammar<'g> {
 
     fn exec<I>(
         &self,
-        rule_name: &'g str,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
         vars: &mut HashMap<String, Var>
@@ -110,7 +111,7 @@ impl<'s, 'g> IfGrammar<'g> {
                             vars.get_mut(*into).expect(
                                 "internal compiler error: unknown variable {r} \
                                 - grammar file is invalid"
-                            ).assign(Node::from(rule_name, token, src));
+                            ).assign(Node::from(token, src));
                         }
                     }
                     true
@@ -129,10 +130,10 @@ impl<'s, 'g> IfGrammar<'g> {
                 ), Var::None)
             }
             IfGrammar::Not { not } => {
-                !not.exec(rule_name, src, tokenizer, vars)
+                !not.exec(src, tokenizer, vars)
             }
             IfGrammar::Either { either } => {
-                either.iter().any(|e| e.exec(rule_name, src.clone(), tokenizer, vars))
+                either.iter().any(|e| e.exec(src.clone(), tokenizer, vars))
             }
         }
     }
@@ -142,7 +143,6 @@ struct InvalidToken;
 
 impl<'n: 'g, 's, 'g: 's> Item<'g> {
     fn next<I>(
-        rule_name: &'g str, 
         token: &TokenItem<'s>,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
@@ -158,12 +158,11 @@ impl<'n: 'g, 's, 'g: 's> Item<'g> {
             return Err(InvalidToken);
         }
         let inner = token.kind.take_inner();
-        Ok((Node::from(rule_name, token, src.clone()), inner))
+        Ok((Node::from(token, src.clone()), inner))
     } 
 
     fn parse<I>(
         &'g self,
-        rule_name: &'g str, 
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
         options: ParseOptions,
@@ -180,7 +179,7 @@ impl<'n: 'g, 's, 'g: 's> Item<'g> {
                     );
                 }
                 if IfGrammar::peek(token, tokenizer) {
-                    Self::next(rule_name, token, src, tokenizer)
+                    Self::next(token, src, tokenizer)
                 }
                 else {
                     Grammar::expected_next_token(token, tokenizer);
@@ -233,7 +232,6 @@ impl<'n: 'g, 's, 'g: 's> Grammar<'g> {
     #[must_use]
     fn exec<I>(
         &'g self,
-        rule_name: &'g str, 
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
         vars: &mut HashMap<String, Var>,
@@ -244,7 +242,6 @@ impl<'n: 'g, 's, 'g: 's> Grammar<'g> {
         match self {
             Grammar::Match { match_, into, inner, with } => {
                 if let Ok((node, inner_tokens)) = match_.parse(
-                    rule_name, 
                     src.clone(),
                     tokenizer,
                     options.clone(),
@@ -267,8 +264,7 @@ impl<'n: 'g, 's, 'g: 's> Grammar<'g> {
                             let mut iter = tokenizer.fork(inner_tokens.into_iter());
                             for g in inner {
                                 if let Some(ret) = g.exec(
-                                    rule_name, src.clone(),
-                                    &mut iter, vars, options.clone()
+                                    src.clone(), &mut iter, vars, options.clone()
                                 ) {
                                     return Some(ret);
                                 }
@@ -292,16 +288,16 @@ impl<'n: 'g, 's, 'g: 's> Grammar<'g> {
                 None
             }
             Grammar::If { if_, then, else_ } => {
-                if if_.exec(rule_name, src.clone(), tokenizer, vars) {
+                if if_.exec(src.clone(), tokenizer, vars) {
                     for g in then {
-                        if let Some(ret) = g.exec(rule_name, src.clone(), tokenizer, vars, options.clone()) {
+                        if let Some(ret) = g.exec(src.clone(), tokenizer, vars, options.clone()) {
                             return Some(ret);
                         }
                     }
                 }
                 else {
                     for g in else_ {
-                        if let Some(ret) = g.exec(rule_name, src.clone(), tokenizer, vars, options.clone()) {
+                        if let Some(ret) = g.exec(src.clone(), tokenizer, vars, options.clone()) {
                             return Some(ret);
                         }
                     }
@@ -309,9 +305,9 @@ impl<'n: 'g, 's, 'g: 's> Grammar<'g> {
                 None
             }
             Grammar::While { while_, then } => {
-                while while_.exec(rule_name, src.clone(), tokenizer, vars) {
+                while while_.exec(src.clone(), tokenizer, vars) {
                     for g in then {
-                        if let Some(ret) = g.exec(rule_name, src.clone(), tokenizer, vars, options.clone()) {
+                        if let Some(ret) = g.exec(src.clone(), tokenizer, vars, options.clone()) {
                             return Some(ret);
                         }
                     }
@@ -321,7 +317,7 @@ impl<'n: 'g, 's, 'g: 's> Grammar<'g> {
             Grammar::Return { return_, with } => {
                 match return_ {
                     ItemOrMember::Item(i) => i.parse(
-                        rule_name, src, tokenizer, options, 
+                        src, tokenizer, options, 
                         with.as_ref().map(|w| w.iter().map(|s| (
                             s.0.to_string(),
                             std::mem::take(vars.get_mut(*s.1).expect(
@@ -396,7 +392,7 @@ impl<'n: 'g, 's, 'g: 's> Rule<'g> {
             
         let start = tokenizer.start_offset();
         for stmt in &self.grammar {
-            let o: Option<Node> = stmt.exec(self.name, src.clone(), tokenizer, &mut vars, options.clone());
+            let o: Option<Node> = stmt.exec(src.clone(), tokenizer, &mut vars, options.clone());
             if let Some(ret) = o {
                 if options.debug_log_matches {
                     tokenizer.logger().lock().unwrap().log(Message::new(

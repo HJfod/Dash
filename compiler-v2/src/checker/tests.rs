@@ -5,7 +5,7 @@
 
 use std::ptr::NonNull;
 
-use crate::{parser::grammar, shared::logger::{LoggerRef, Message, Level}};
+use crate::{parser::grammar, shared::logger::{LoggerRef, Message, Level, Note}};
 
 use super::{ty::Ty, coherency::{Scope, Checker}, ast::{Children, Child, Node}, path::IdentPath, entity::Entity};
 
@@ -33,7 +33,7 @@ impl IdentItem {
         match self {
             Self::Member(mem) => match children.get(mem).unwrap() {
                 Child::Node(n) => Some(n.to_ident_path()),
-                Child::Maybe(m) => m.map(|n| n.to_ident_path()),
+                Child::Maybe(m) => m.as_ref().map(|n| n.to_ident_path()),
                 Child::List(_) => panic!("can not use a list member as an ident path"),
             },
             Self::Ident(i) => Some(IdentPath::new([i.as_str().into()], true)),
@@ -109,11 +109,21 @@ impl Test {
                 checker.leave_scope();
             }
             Test::NewEntity { new_entity, ty } => {
+                println!("new entity test");
                 let path = new_entity.to_path(children).unwrap();
-                unsafe { checker.scope().as_mut() }.entities().try_push(
-                    path,
-                    Entity::new(ty.eval(children), node)
-                );
+                if let Err(e) = unsafe { checker.scope().as_mut() }.entities().try_push(
+                    &path,
+                    Entity::new(ty.eval(children), node),
+                    checker.namespace_stack()
+                ) {
+                    logger.lock().unwrap().log(Message::new(
+                        Level::Error,
+                        format!("Name '{path}' has already been defined in this scope"),
+                        unsafe { node.as_ref() }.span.as_ref()
+                    ).note(Note::new_at(
+                        "Previous definition here", e.decl().span.as_ref()
+                    )));
+                }
             }
         }
     }

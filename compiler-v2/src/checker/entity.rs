@@ -11,4 +11,7 @@ impl Entity {
     pub(crate) fn new(ty: Ty, decl: NonNull<Node>) -> Self {
         Self { ty, decl }
     }
+    pub(crate) fn decl(&self) -> &Node {
+        unsafe { self.decl.as_ref() }
+    }
 }

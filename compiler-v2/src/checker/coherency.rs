@@ -1,7 +1,7 @@
 
 use std::{ptr::NonNull, collections::HashMap};
 use crate::shared::logger::LoggerRef;
-use super::{ast::{Node, Child, Children}, ty::Ty, tests::TypeItem, path::{FullIdentPath, IdentPath}, entity::Entity};
+use super::{ast::{Node, Child, Children}, ty::Ty, tests::TypeItem, path::{FullIdentPath, IdentPath, Ident}, entity::Entity};
 
 pub(crate) struct ItemSpace<T> {
     items: HashMap<FullIdentPath, T>,
@@ -11,9 +11,46 @@ impl<T> ItemSpace<T> {
     fn new<H: Into<HashMap<FullIdentPath, T>>>(values: H) -> Self {
         Self { items: values.into() }
     }
-    pub fn try_push(&mut self, name: IdentPath, item: T) -> Result<&T, &T> {
-        self.items.insert(name.clone(), item);
-        self.items.get(&name).unwrap()
+    pub fn try_push(&mut self, name: &IdentPath, item: T, namespace_stack: &FullIdentPath) -> Result<&T, &T> {
+        // The full name for this item is the current topmost namespace name 
+        // joined with the name of the item
+        let full_name = namespace_stack.join(name);
+        // Check if this name already exists in this scope
+        // Can't just do `if let Some` because the borrow checker then complains 
+        // that you can't mutate self.items in the `else` branch afterwards
+        println!("pushing {full_name}");
+        if self.items.contains_key(&full_name) {
+            Err(self.items.get(&full_name).unwrap())
+        }
+        else {
+            self.items.insert(full_name.clone(), item);
+            Ok(self.items.get(&full_name).unwrap())
+        }
+    }
+    /// Try to find an item in this scope with a fully resolved name
+    pub fn get(&self, full_name: &FullIdentPath) -> Option<&T> {
+        self.items.get(full_name)
+    }
+    /// Try to find an item in this scope with an unresolved name
+    pub fn find(&self, name: &IdentPath, namespace_stack: &FullIdentPath) -> Option<&T> {
+        // This is an optimization; the else branch would also do this since 
+        // FullIdentPath::join would just return `name` every time
+        if name.is_absolute() {
+            self.get(&name.to_full())
+        }
+        else {
+            // Try joining the path to the namespace stack. If not found, check 
+            // that namespace's parent namespace, all the way down to root
+            let mut temp = namespace_stack.clone();
+            while !temp.is_empty() {
+                if let Some(found) = self.get(&temp.join(name)) {
+                    return Some(found);
+                }
+                temp.pop();
+            }
+            // Check root namespace
+            self.get(&name.to_full())
+        }
     }
 }
 
@@ -89,6 +126,15 @@ impl Checker {
             self.current_scope = parent;
         }
     }
+    pub fn namespace_stack(&self) -> &FullIdentPath {
+        &self.namespace_stack
+    }
+    pub fn enter_namespace(&mut self, name: Ident) {
+        self.namespace_stack.push(name);
+    }
+    pub fn leave_namespace(&mut self) {
+        self.namespace_stack.pop();
+    }
 }
 
 impl TypeItem {
@@ -96,7 +142,7 @@ impl TypeItem {
         match self {
             TypeItem::Type(ty) => ty.clone(),
             TypeItem::Member(member) => {
-                match children.get(member).unwrap() {
+                match children.get(member).unwrap_or_else(|| panic!("internal compiler error: no child named {member}")) {
                     Child::Node(n) => n.resolved_ty.clone().unwrap(),
                     Child::Maybe(maybe) => maybe.as_ref()
                         .and_then(|n| n.resolved_ty.clone())
@@ -118,7 +164,6 @@ impl Node {
             }
         );
     }
-
     pub(crate) fn check_coherency(&mut self, checker: &mut Checker, logger: LoggerRef) {
         // If this AST node has already been resolved, that means that all of 
         // its children have also been resolved and no need to check them again
@@ -130,7 +175,7 @@ impl Node {
         let mut some_unresolved = false;
         self.for_all_children(|n| {
             n.check_coherency(checker, logger.clone());
-            if n.resolved_ty.is_some() {
+            if n.resolved_ty.is_none() {
                 some_unresolved = true;
             }
         });
@@ -138,8 +183,9 @@ impl Node {
             return;
         }
 
+        let ptr = NonNull::from(self as &Self);
         for test in &mut self.check.tests {
-            test.exec(&self.children, checker, logger.clone());
+            test.exec(&self.children, ptr, checker, logger.clone());
         }
         self.resolved_ty = Some(self.check.result.eval(&self.children));
     }

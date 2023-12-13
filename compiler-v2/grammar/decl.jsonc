@@ -80,7 +80,8 @@
         "check": {
             "result": ":void",
             "tests": [
-                { "equal": [":type", ":value"] }
+                { "equal": [":type", ":value"] },
+                { "new-entity": ":name", "type": ":type" }
             ]
         }
     },

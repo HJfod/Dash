@@ -1,5 +1,6 @@
 
 let y = 5;
+let y = 2;
 
 fun what(a: int, b: int) -> int {
     if a > b {

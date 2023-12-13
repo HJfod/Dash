@@ -54,8 +54,11 @@ impl IdentPath {
             absolute
         }
     }
-    pub fn into_full(self) -> FullIdentPath {
-        FullIdentPath::new(self.components)
+    pub fn to_full(&self) -> FullIdentPath {
+        FullIdentPath::new(self.components.clone())
+    }
+    pub fn is_absolute(&self) -> bool {
+        self.absolute
     }
 }
 
@@ -77,9 +80,29 @@ impl FullIdentPath {
     pub fn new<T: Into<Vec<Ident>>>(path: T) -> Self {
         Self { components: path.into() }
     }
-
     pub fn ends_with(&self, path: &IdentPath) -> bool {
         self.to_string().ends_with(&path.to_string())
+    }
+    pub fn push(&mut self, ident: Ident) {
+        self.components.push(ident);
+    }
+    pub fn pop(&mut self) {
+        self.components.pop();
+    }
+    // Add another path on the end of this full path. If the other path is 
+    // absolute, returns it as a full path
+    pub fn join(&self, path: &IdentPath) -> FullIdentPath {
+        if path.absolute {
+            path.to_full()
+        }
+        else {
+            let mut new = self.clone();
+            new.components.extend(path.components.iter().cloned());
+            new
+        }
+    }
+    pub fn is_empty(&self) -> bool {
+        self.components.is_empty()
     }
 }
 

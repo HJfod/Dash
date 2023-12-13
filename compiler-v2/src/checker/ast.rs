@@ -131,8 +131,8 @@ impl Node {
     pub fn span(&self) -> ArcSpan {
         self.span.clone()
     }
-    pub fn to_ident_path(&self) -> IdentPath {
-        IdentPath::parse(&self.span.0.data()[self.span.1])
+    pub(crate) fn to_ident_path(&self) -> IdentPath {
+        IdentPath::parse(&self.span.0.data()[self.span.1.clone()])
     }
 }
 
