@@ -1,5 +1,7 @@
 
 use std::{collections::HashMap, fmt::Display, sync::Arc};
+use crate::checker::Ice;
+use crate::ice;
 use crate::parser::grammar::ItemOrMember;
 use crate::shared::logger::LoggerRef;
 use crate::shared::src::Span;
@@ -48,13 +50,37 @@ impl Var {
     fn assign(&mut self, node: Node) {
         match self {
             Var::None => *self = Var::Node(node),
-            Var::Node(_) => panic!(
-                "internal compiler error: attempted to assign a child more than once \
-                - grammar file is invalid"
-            ),
+            Var::Node(_) => ice!("attempted to assign a child more than once"),
             Var::List(list) => list.push(node),
             Var::Maybe(opt) => *opt = Some(node),
         }
+    }
+}
+
+struct Vars<'g> {
+    vars: HashMap<&'g str, Var>,
+}
+
+impl<'g> Vars<'g> {
+    fn get(&self, var: &'g str) -> &Var {
+        self.vars.get(var).ice_due_to("unknown variable", var)
+    }
+    fn get_mut(&mut self, var: &'g str) -> &mut Var {
+        self.vars.get_mut(var).ice_due_to("unknown variable", var)
+    }
+}
+
+impl<'g> IntoIterator for Vars<'g> {
+    type Item = <HashMap<&'g str, Var> as IntoIterator>::Item;
+    type IntoIter = <HashMap<&'g str, Var> as IntoIterator>::IntoIter;
+    fn into_iter(self) -> Self::IntoIter {
+        self.vars.into_iter()
+    }
+}
+
+impl<'g> FromIterator<(&'g str, Var)> for Vars<'g> {
+    fn from_iter<T: IntoIterator<Item = (&'g str, Var)>>(iter: T) -> Self {
+        Self { vars: iter.into_iter().collect() }
     }
 }
 
@@ -81,10 +107,9 @@ impl<'s, 'g> IfGrammar<'g> {
             TokenItem::Eof(_) => false,
             TokenItem::OneOf(tokens) => tokens.iter().any(|t| Self::peek(t, tokenizer)),
             TokenItem::NamedTokenList(list) => tokenizer.grammar()
-                .named_token_lists.get(list).unwrap_or_else(|| panic!(
-                    "internal compiler error: unknown named token list [{list}] \
-                    - grammar file is invalid"
-                )).iter().any(|t| Self::peek(t, tokenizer))
+                .named_token_lists.get(list)
+                    .ice_due_to("unknown named token list", list)
+                    .iter().any(|t| Self::peek(t, tokenizer))
         }
     }
 
@@ -92,7 +117,7 @@ impl<'s, 'g> IfGrammar<'g> {
         &self,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
-        vars: &mut HashMap<String, Var>
+        vars: &mut Vars<'g>
     ) -> bool
         where I: Iterator<Item = Token<'s>>
     {
@@ -101,17 +126,14 @@ impl<'s, 'g> IfGrammar<'g> {
                 if Self::peek(match_, tokenizer) {
                     if matches!(match_, TokenItem::Eof(_)) {
                         if into.is_some() {
-                            panic!("can't use \"into\" with {{ \"match\": \"eof\" }}");
+                            ice!("can't use \"into\" with {{ \"match\": \"eof\" }}");
                         }
                         return true;
                     }
                     let token = tokenizer.next().unwrap();
                     if !matches!(token.kind, TokenKind::Error(_)) {
                         if let Some(into) = into {
-                            vars.get_mut(*into).expect(
-                                "internal compiler error: unknown variable {r} \
-                                - grammar file is invalid"
-                            ).assign(Node::from(token, src));
+                            vars.get_mut(into).assign(Node::from(token, src));
                         }
                     }
                     true
@@ -124,10 +146,7 @@ impl<'s, 'g> IfGrammar<'g> {
                 Self::peek(peek, tokenizer)
             }
             IfGrammar::Set { set } => {
-                !matches!(vars.get(*set).expect(
-                    "internal compiler error: unknown variable {r} for \"set\" \
-                    - grammar file is invalid"
-                ), Var::None)
+                !matches!(vars.get(set), Var::None)
             }
             IfGrammar::Not { not } => {
                 !not.exec(src, tokenizer, vars)
@@ -166,7 +185,7 @@ impl<'n: 'g, 's, 'g: 's> Item<'g> {
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
         options: ParseOptions,
-        with: Option<HashMap<String, Var>>,
+        with: Option<Vars<'g>>,
     ) -> Result<(Node, Option<Vec<Token<'s>>>), InvalidToken>
         where I: Iterator<Item = Token<'s>>
     {
@@ -234,7 +253,7 @@ impl<'n: 'g, 's, 'g: 's> Grammar<'g> {
         &'g self,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
-        vars: &mut HashMap<String, Var>,
+        vars: &mut Vars<'g>,
         options: ParseOptions,
     ) -> Option<Node>
         where I: Iterator<Item = Token<'s>>
@@ -246,18 +265,11 @@ impl<'n: 'g, 's, 'g: 's> Grammar<'g> {
                     tokenizer,
                     options.clone(),
                     with.as_ref().map(|w| w.iter().map(|s| (
-                        s.0.to_string(),
-                        std::mem::take(vars.get_mut(*s.1).expect(
-                            "internal compiler error: unknown variable {r} \
-                            - grammar file is invalid"
-                        ))
+                        *s.0, std::mem::take(vars.get_mut(s.1))
                     )).collect())
                 ) {
                     if let Some(into) = into {
-                        vars.get_mut(*into).unwrap_or_else(|| panic!(
-                            "internal compiler error: unknown variable {into} \
-                            - grammar file is invalid"
-                        )).assign(node);
+                        vars.get_mut(into).assign(node);
                     }
                     if !inner.is_empty() {
                         if let Some(inner_tokens) = inner_tokens {
@@ -319,17 +331,11 @@ impl<'n: 'g, 's, 'g: 's> Grammar<'g> {
                     ItemOrMember::Item(i) => i.parse(
                         src, tokenizer, options, 
                         with.as_ref().map(|w| w.iter().map(|s| (
-                            s.0.to_string(),
-                            std::mem::take(vars.get_mut(*s.1).expect(
-                                "internal compiler error: unknown variable {r} \
-                                - grammar file is invalid"
-                            ))
+                            *s.0,
+                            std::mem::take(vars.get_mut(s.1))
                         )).collect())
                     ).ok().map(|n| n.0),
-                    ItemOrMember::Member(m) => match std::mem::take(vars.get_mut(*m).expect(
-                        "internal compiler error: unknown variable {m} \
-                        in \"return\" - grammar file is invalid"
-                    )) {
+                    ItemOrMember::Member(m) => match std::mem::take(vars.get_mut(m)) {
                         Var::Node(n) => Some(n),
                         _ => panic!(
                             "internal compiler error: variable {m} was not a node \
@@ -360,7 +366,7 @@ impl<'n: 'g, 's, 'g: 's> Rule<'g> {
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s, 'g, I>,
         options: ParseOptions,
-        with: Option<HashMap<String, Var>>,
+        with: Option<Vars<'g>>,
     ) -> Node
         where I: Iterator<Item = Token<'s>>
     {
@@ -375,18 +381,15 @@ impl<'n: 'g, 's, 'g: 's> Rule<'g> {
 
         let mut vars = self.members.iter()
             .map(|kind| match kind {
-                MemberKind::List(a)  => (a.to_string(), Var::List(vec![])),
-                MemberKind::Maybe(a) => (a.to_string(), Var::Maybe(None)),
-                MemberKind::Rule(a)  => (a.to_string(), Var::None),
+                MemberKind::List(a)  => (*a, Var::List(vec![])),
+                MemberKind::Maybe(a) => (*a, Var::Maybe(None)),
+                MemberKind::Rule(a)  => (*a, Var::None),
             })
-            .collect::<HashMap<_, _>>();
+            .collect::<Vars<'g>>();
 
         if let Some(with) = with {
             for (name, var) in with {
-                *vars.get_mut(&name).expect(
-                    "internal compiler error: unknown variable {r} \
-                    provided through \"with\" - grammar file is invalid"
-                ) = var;
+                *vars.get_mut(name) = var;
             }
         }
             
@@ -398,7 +401,7 @@ impl<'n: 'g, 's, 'g: 's> Rule<'g> {
                     tokenizer.logger().lock().unwrap().log(Message::new(
                         Level::Info,
                         format!("Returned rule {}", ret.name()),
-                        ret.span().as_ref()
+                        ret.span()
                     ));
                 }
                 return ret;
@@ -427,7 +430,7 @@ impl<'n: 'g, 's, 'g: 's> Rule<'g> {
                             //     was not assigned - grammar file is invalid"
                             // ),
                         };
-                        Some((name, value))
+                        Some((name.to_string(), value))
                     })
                     .collect::<Vec<_>>()
             ),

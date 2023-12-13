@@ -1,10 +1,12 @@
 
 use std::{sync::Arc, ops::Range, fmt::Debug};
+use crate::ice;
 use crate::shared::src::{Src, SrcPool, Span};
 use crate::shared::logger::LoggerRef;
 use crate::parser::grammar::GrammarFile;
 use crate::parser::ParseOptions;
 
+use super::Ice;
 use super::path::IdentPath;
 use super::tests::Check;
 use super::ty::Ty;
@@ -12,15 +14,21 @@ use super::ty::Ty;
 #[derive(Clone)]
 pub struct ArcSpan(pub Arc<Src>, pub Range<usize>);
 
+impl ArcSpan {
+    pub fn as_ref(&self) -> Span {
+        Span(self.0.as_ref(), self.1.clone())
+    }
+}
+
 impl Debug for ArcSpan {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_ref())
     }
 }
 
-impl ArcSpan {
-    pub fn as_ref(&self) -> Span {
-        Span(self.0.as_ref(), self.1.clone())
+impl PartialEq for ArcSpan {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0 && self.1 == other.1
     }
 }
 
@@ -28,6 +36,16 @@ pub enum Child {
     Node(Node),
     Maybe(Option<Node>),
     List(Vec<Node>),
+}
+
+impl Child {
+    pub fn span(&self) -> Span {
+        match self {
+            Child::Node(n) => n.span(),
+            Child::Maybe(n) => n.as_ref().ice("attempted to get span of a Maybe that was None").span(),
+            Child::List(_) => ice!("attempted to get span of a list"),
+        }
+    }
 }
 
 impl Debug for Child {
@@ -128,8 +146,8 @@ impl Node {
     pub fn name(&self) -> &str {
         &self.name
     }
-    pub fn span(&self) -> ArcSpan {
-        self.span.clone()
+    pub fn span(&self) -> Span {
+        self.span.as_ref()
     }
     pub(crate) fn to_ident_path(&self) -> IdentPath {
         IdentPath::parse(&self.span.0.data()[self.span.1.clone()])

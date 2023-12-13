@@ -1,17 +1,17 @@
 
-use std::ptr::NonNull;
-use super::{ast::Node, ty::Ty};
+use crate::shared::src::Span;
+use super::{ast::ArcSpan, ty::Ty};
 
 pub(crate) struct Entity {
     ty: Ty,
-    decl: NonNull<Node>,
+    decl_span: ArcSpan,
 }
 
 impl Entity {
-    pub(crate) fn new(ty: Ty, decl: NonNull<Node>) -> Self {
-        Self { ty, decl }
+    pub(crate) fn new(ty: Ty, decl_span: ArcSpan) -> Self {
+        Self { ty, decl_span }
     }
-    pub(crate) fn decl(&self) -> &Node {
-        unsafe { self.decl.as_ref() }
+    pub(crate) fn span(&self) -> Span {
+        self.decl_span.as_ref()
     }
 }

@@ -358,6 +358,7 @@ pub enum Test<'g> {
     Equal {
         #[serde(borrow)]
         equal: (TypeItem<'g>, TypeItem<'g>),
+        at: Option<&'g str>,
     },
     #[serde(rename_all = "kebab-case")]
     NewEntity {

@@ -1,7 +1,7 @@
 
-use std::{ptr::NonNull, collections::HashMap};
-use crate::shared::logger::LoggerRef;
-use super::{ast::{Node, Child, Children}, ty::Ty, tests::TypeItem, path::{FullIdentPath, IdentPath, Ident}, entity::Entity};
+use std::{collections::HashMap, pin::Pin, ptr::NonNull};
+use crate::{shared::logger::LoggerRef, ice};
+use super::{ast::{Node, Child, Children}, ty::Ty, tests::TypeItem, path::{FullIdentPath, IdentPath, Ident}, entity::Entity, Ice};
 
 pub(crate) struct ItemSpace<T> {
     items: HashMap<FullIdentPath, T>,
@@ -18,7 +18,6 @@ impl<T> ItemSpace<T> {
         // Check if this name already exists in this scope
         // Can't just do `if let Some` because the borrow checker then complains 
         // that you can't mutate self.items in the `else` branch afterwards
-        println!("pushing {full_name}");
         if self.items.contains_key(&full_name) {
             Err(self.items.get(&full_name).unwrap())
         }
@@ -70,10 +69,10 @@ pub(crate) struct Scope {
 }
 
 impl Scope {
-    pub fn new(parent: NonNull<Scope>) -> Self {
+    pub fn new(parent: &mut Scope) -> Self {
         Self {
-            logger: unsafe { parent.as_ref() }.logger.clone(),
-            parent: Some(parent),
+            logger: parent.logger.clone(),
+            parent: Some(NonNull::from(parent)),
             types: Default::default(),
             entities: Default::default(),
         }
@@ -105,24 +104,24 @@ pub(crate) struct Checker {
 }
 
 impl Checker {
-    pub fn new(logger: LoggerRef) -> Self {
-        let mut ret = Self {
+    pub fn new(logger: LoggerRef) -> Pin<Box<Self>> {
+        let mut ret = Box::pin(Self {
             logger: logger.clone(),
             root_scope: Scope::root(logger),
             current_scope: NonNull::dangling(),
             namespace_stack: FullIdentPath::default(),
-        };
-        ret.current_scope = NonNull::from(&ret.root_scope);
+        });
+        ret.current_scope = NonNull::from(&mut ret.root_scope);
         ret
     }
-    pub fn scope(&self) -> NonNull<Scope> {
-        self.current_scope
+    pub fn scope<'a>(&mut self) -> &'a mut Scope {
+        unsafe { self.current_scope.as_mut() }
     }
     pub fn enter_scope(&mut self, scope: NonNull<Scope>) {
         self.current_scope = scope;
     }
     pub fn leave_scope(&mut self) {
-        if let Some(parent) = unsafe { self.current_scope.as_ref() }.parent {
+        if let Some(parent) = self.scope().parent {
             self.current_scope = parent;
         }
     }
@@ -142,12 +141,12 @@ impl TypeItem {
         match self {
             TypeItem::Type(ty) => ty.clone(),
             TypeItem::Member(member) => {
-                match children.get(member).unwrap_or_else(|| panic!("internal compiler error: no child named {member}")) {
+                match children.get(member).ice_due_to("no such child", member) {
                     Child::Node(n) => n.resolved_ty.clone().unwrap(),
                     Child::Maybe(maybe) => maybe.as_ref()
                         .and_then(|n| n.resolved_ty.clone())
                         .unwrap_or(Ty::Invalid),
-                    Child::List(_) => panic!("can't eval list child"),
+                    Child::List(_) => ice!("can't get type for list child"),
                 }
             }
         }
@@ -183,9 +182,8 @@ impl Node {
             return;
         }
 
-        let ptr = NonNull::from(self as &Self);
         for test in &mut self.check.tests {
-            test.exec(&self.children, ptr, checker, logger.clone());
+            test.exec(&self.children, self.span.clone(), checker, logger.clone());
         }
         self.resolved_ty = Some(self.check.result.eval(&self.children));
     }

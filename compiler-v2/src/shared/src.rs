@@ -7,6 +7,18 @@ use crate::shared::char_iter::CharIter;
 #[derive(Debug)]
 pub struct Span<'s>(pub &'s Src, pub Range<usize>);
 
+impl<'s> Span<'s> {
+    pub fn builtin() -> Self {
+        Self(&Src::Builtin, 0..0)
+    }
+}
+
+impl<'s> Clone for Span<'s> {
+    fn clone(&self) -> Self {
+        Self(self.0, self.1.clone())
+    }
+}
+
 impl Display for Span<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let lookup = LineColLookup::new(self.0.data());
@@ -113,6 +125,16 @@ impl Debug for Src {
 impl Display for Src {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.name())
+    }
+}
+
+impl PartialEq for Src {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Src::Builtin, Src::Builtin) => true,
+            (Src::File { path: a, data: _ }, Self::File { path: b, data: _ }) => a == b,
+            (_, _) => false
+        }
     }
 }
 

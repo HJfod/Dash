@@ -50,7 +50,7 @@ impl IdentPath {
             absolute = false;
         }
         Self {
-            components: value.split("::").map(|v| Ident::from(v)).collect(),
+            components: value.split("::").map(Ident::from).collect(),
             absolute
         }
     }

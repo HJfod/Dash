@@ -6,8 +6,7 @@
 use std::ptr::NonNull;
 
 use crate::{parser::grammar, shared::logger::{LoggerRef, Message, Level, Note}};
-
-use super::{ty::Ty, coherency::{Scope, Checker}, ast::{Children, Child, Node}, path::IdentPath, entity::Entity};
+use super::{ty::Ty, coherency::{Scope, Checker}, ast::{Children, Child, ArcSpan}, path::IdentPath, entity::Entity, Ice};
 
 pub enum TypeItem {
     Member(String),
@@ -53,6 +52,7 @@ impl From<&grammar::IdentItem<'_>> for IdentItem {
 pub(crate) enum Test {
     Equal {
         equal: (TypeItem, TypeItem),
+        at: Option<String>,
     },
     Scope {
         scope: Option<Scope>,
@@ -67,8 +67,9 @@ pub(crate) enum Test {
 impl From<&grammar::Test<'_>> for Test {
     fn from(value: &grammar::Test<'_>) -> Self {
         match value {
-            grammar::Test::Equal { equal } => Test::Equal {
+            grammar::Test::Equal { equal, at } => Test::Equal {
                 equal: ((&equal.0).into(), (&equal.1).into()),
+                at: at.map(|s| s.to_string())
             },
             grammar::Test::Scope { tests } => Test::Scope {
                 scope: None,
@@ -84,44 +85,42 @@ impl From<&grammar::Test<'_>> for Test {
 
 impl Test {
     pub(crate) fn exec(
-        &mut self, children: &Children, node: NonNull<Node>, checker: &mut Checker, logger: LoggerRef
+        &mut self, children: &Children, node_span: ArcSpan, checker: &mut Checker, logger: LoggerRef
     ) {
         match self {
-            Test::Equal { equal } => {
+            Test::Equal { equal, at } => {
                 let (a, b) = (equal.0.eval(children), equal.1.eval(children));
                 if !a.convertible(&b) {
                     logger.lock().unwrap().log(Message::new(
                         Level::Error,
                         format!("Type {a} is not convertible to type {b}"),
-                        a.decl().or(b.decl()).expect(
-                            "neither type in \"test\".\"equal\" has a declaration"
-                        ).span().as_ref()
+                        at.as_ref()
+                            .map(|at| children.get(at).ice_due_to("unknown child", at).span())
+                            .unwrap_or(node_span.as_ref())
                     ));
                 }
             }
             Test::Scope { scope, tests } => {
-                checker.enter_scope(NonNull::from(
-                    scope.get_or_insert_with(|| Scope::new(checker.scope()))
-                ));
+                let scope = scope.get_or_insert_with(|| Scope::new(checker.scope()));
+                checker.enter_scope(NonNull::from(scope));
                 for test in tests {
-                    test.exec(children, node, checker, logger.clone());
+                    test.exec(children, node_span.clone(), checker, logger.clone());
                 }
                 checker.leave_scope();
             }
             Test::NewEntity { new_entity, ty } => {
-                println!("new entity test");
                 let path = new_entity.to_path(children).unwrap();
-                if let Err(e) = unsafe { checker.scope().as_mut() }.entities().try_push(
+                if let Err(e) = checker.scope().entities().try_push(
                     &path,
-                    Entity::new(ty.eval(children), node),
+                    Entity::new(ty.eval(children), node_span.clone()),
                     checker.namespace_stack()
                 ) {
                     logger.lock().unwrap().log(Message::new(
                         Level::Error,
                         format!("Name '{path}' has already been defined in this scope"),
-                        unsafe { node.as_ref() }.span.as_ref()
+                        node_span.as_ref()
                     ).note(Note::new_at(
-                        "Previous definition here", e.decl().span.as_ref()
+                        "Previous definition here", e.span()
                     )));
                 }
             }

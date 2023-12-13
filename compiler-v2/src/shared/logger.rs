@@ -73,7 +73,7 @@ impl Display for Message<'_> {
             self.notes
                 .iter()
                 .fold(String::new(), |mut acc, note| {
-                    write!(&mut acc, " * {note}").unwrap();
+                    write!(&mut acc, "\n * {note}").unwrap();
                     acc
                 })
         ))
