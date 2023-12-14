@@ -435,7 +435,7 @@ impl<'n: 'g, 's, 'g: 's> Rule<'g> {
                     .collect::<Vec<_>>()
             ),
             ArcSpan(src.clone(), start..tokenizer.end_offset()),
-            self.check.as_ref().map(|c| c.into()).unwrap_or_default()
+            self.check.iter().map(|c| c.into()).collect()
         )
     }
 }

@@ -21,12 +21,9 @@
     "#entity": {
         "members": ["ident"],
         "grammar": [{ "match": "#ident-path", "into": "ident" }],
-        "check": {
-            "result": "",
-            "tests": [
-                { "find": ":ident" }
-            ]
-        }
+        "check": [
+            // { "find-entity": ":ident" }
+        ]
     },
     "#block": {
         "members": ["list"],

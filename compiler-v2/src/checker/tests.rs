@@ -5,7 +5,7 @@
 
 use std::ptr::NonNull;
 
-use crate::{parser::grammar, shared::logger::{LoggerRef, Message, Level, Note}};
+use crate::{parser::grammar, shared::logger::{LoggerRef, Message, Level, Note}, ice};
 use super::{ty::Ty, coherency::{Scope, Checker}, ast::{Children, Child, ArcSpan}, path::IdentPath, entity::Entity, Ice};
 
 pub enum TypeItem {
@@ -62,6 +62,9 @@ pub(crate) enum Test {
         new_entity: IdentItem,
         ty: TypeItem,
     },
+    Result {
+        result: TypeItem,
+    },
 }
 
 impl From<&grammar::Test<'_>> for Test {
@@ -78,15 +81,23 @@ impl From<&grammar::Test<'_>> for Test {
             grammar::Test::NewEntity { new_entity, ty } => Test::NewEntity {
                 new_entity: new_entity.into(),
                 ty: ty.into(),
-            } 
+            },
+            grammar::Test::Result { result } => Test::Result {
+                result: result.into()
+            },
         }
     }
 }
 
 impl Test {
+    #[must_use]
     pub(crate) fn exec(
-        &mut self, children: &Children, node_span: ArcSpan, checker: &mut Checker, logger: LoggerRef
-    ) {
+        &mut self,
+        children: &Children,
+        node_span: ArcSpan,
+        checker: &mut Checker,
+        logger: LoggerRef
+    ) -> Option<Ty> {
         match self {
             Test::Equal { equal, at } => {
                 let (a, b) = (equal.0.eval(children), equal.1.eval(children));
@@ -99,14 +110,18 @@ impl Test {
                             .unwrap_or(node_span.as_ref())
                     ));
                 }
+                None
             }
             Test::Scope { scope, tests } => {
                 let scope = scope.get_or_insert_with(|| Scope::new(checker.scope()));
                 checker.enter_scope(NonNull::from(scope));
                 for test in tests {
-                    test.exec(children, node_span.clone(), checker, logger.clone());
+                    if test.exec(children, node_span.clone(), checker, logger.clone()).is_some() {
+                        ice!("\"result\" for check tests used inside a scope");
+                    }
                 }
                 checker.leave_scope();
+                None
             }
             Test::NewEntity { new_entity, ty } => {
                 let path = new_entity.to_path(children).unwrap();
@@ -123,30 +138,11 @@ impl Test {
                         "Previous definition here", e.span()
                     )));
                 }
+                None
             }
-        }
-    }
-}
-
-pub(crate) struct Check {
-    pub result: TypeItem,
-    pub tests: Vec<Test>,
-}
-
-impl Default for Check {
-    fn default() -> Self {
-        Self {
-            result: TypeItem::Type(Ty::Invalid),
-            tests: vec![],
-        }
-    }
-}
-
-impl From<&grammar::Check<'_>> for Check {
-    fn from(value: &grammar::Check<'_>) -> Self {
-        Self {
-            result: (&value.result).into(),
-            tests: value.tests.iter().map(|t| t.into()).collect()
+            Test::Result { result } => {
+                Some(result.eval(children))
+            }
         }
     }
 }

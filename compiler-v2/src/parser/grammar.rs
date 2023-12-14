@@ -369,15 +369,9 @@ pub enum Test<'g> {
     Scope {
         tests: Vec<Test<'g>>,
     },
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub struct Check<'g> {
-    #[serde(borrow)]
-    pub result: TypeItem<'g>,
-    #[serde(default)]
-    pub tests: Vec<Test<'g>>,
+    Result {
+        result: TypeItem<'g>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -389,7 +383,8 @@ pub struct Rule<'g> {
     pub members: Vec<MemberKind<'g>>,
     #[serde(borrow)]
     pub grammar: Vec<Grammar<'g>>,
-    pub check: Option<Check<'g>>,
+    #[serde(default)]
+    pub check: Vec<Test<'g>>,
 }
 
 #[derive(Debug, Deserialize)]

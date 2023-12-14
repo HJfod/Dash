@@ -47,13 +47,11 @@
                 ]
             }
         ],
-        "check": {
-            "result": "void",
-            "tests": [
-                { "equal": [":type", ":value"] },
-                { "new-entity": ":name", "type": ":type" }
-            ]
-        }
+        "check": [
+            { "equal": [":type", ":value"] },
+            { "new-entity": ":name", "type": ":type" },
+            { "result": "void" }
+        ]
     },
     "#const-decl": {
         "members": ["qualifiers", "name", "?type", "?value"],
@@ -77,13 +75,11 @@
                 ]
             }
         ],
-        "check": {
-            "result": "void",
-            "tests": [
-                { "equal": [":type", ":value"] },
-                { "new-entity": ":name", "type": ":type" }
-            ]
-        }
+        "check": [
+            { "equal": [":type", ":value"] },
+            { "new-entity": ":name", "type": ":type" },
+            { "result": "void" }
+        ]
     },
     // `this` parameter in a function
     "#fun-receiver-param": {

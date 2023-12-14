@@ -8,7 +8,7 @@ use crate::parser::ParseOptions;
 
 use super::Ice;
 use super::path::IdentPath;
-use super::tests::Check;
+use super::tests::Test;
 use super::ty::Ty;
 
 #[derive(Clone)]
@@ -114,7 +114,7 @@ pub struct Node {
     pub(super) value: Option<Value>,
     pub(super) span: ArcSpan,
     pub(super) resolved_ty: Option<Ty>,
-    pub(super) check: Check,
+    pub(super) check: Vec<Test>,
 }
 
 impl Node {
@@ -122,14 +122,14 @@ impl Node {
         Self {
             name: name.into(), children: Default::default(),
             value: None, span, resolved_ty: None,
-            check: Check::default(),
+            check: Default::default(),
         }
     }
     pub(crate) fn new<S: Into<String>>(
         name: S,
         children: Children,
         span: ArcSpan,
-        check: Check,
+        check: Vec<Test>,
     ) -> Self {
         Self {
             name: name.into(), children, value: None,
@@ -140,7 +140,7 @@ impl Node {
         Self {
             name: name.into(), children: Default::default(),
             value: Some(value), span, resolved_ty: None,
-            check: Check::default(),
+            check: Default::default(),
         }
     }
     pub fn name(&self) -> &str {

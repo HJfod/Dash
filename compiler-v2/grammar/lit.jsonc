@@ -2,7 +2,7 @@
     "#void-lit": {
         "members": ["value"],
         "grammar": [{ "match": "void", "into": "value" }],
-        "check": { "result": "void" }
+        "check": [{ "result": "void" }]
     },
     "#bool-lit": {
         "members": ["value"],
@@ -11,21 +11,21 @@
             "then": [],
             "else": [{ "match": "false", "into": "value" }]
         }],
-        "check": { "result": "bool" }
+        "check": [{ "result": "bool" }]
     },
     "#int-lit": {
         "members": ["value"],
         "grammar": [{ "match": "int", "into": "value" }],
-        "check": { "result": "int" }
+        "check": [{ "result": "int" }]
     },
     "#float-lit": {
         "members": ["value"],
         "grammar": [{ "match": "float", "into": "value" }],
-        "check": { "result": "float" }
+        "check": [{ "result": "float" }]
     },
     "#string-lit": {
         "members": ["value"],
         "grammar": [{ "match": "string", "into": "value" }],
-        "check": { "result": "string" }
+        "check": [{ "result": "string" }]
     }
 }

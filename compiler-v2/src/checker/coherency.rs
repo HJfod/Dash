@@ -182,9 +182,13 @@ impl Node {
             return;
         }
 
-        for test in &mut self.check.tests {
-            test.exec(&self.children, self.span.clone(), checker, logger.clone());
+        for test in &mut self.check {
+            if let Some(res) = test.exec(&self.children, self.span.clone(), checker, logger.clone()) {
+                self.resolved_ty = Some(res);
+                return;
+            }
         }
-        self.resolved_ty = Some(self.check.result.eval(&self.children));
+        // If no result type was provided, resolve to unknown
+        self.resolved_ty = Some(Ty::Invalid);
     }
 }
