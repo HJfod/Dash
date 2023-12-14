@@ -19,7 +19,7 @@
             { "if": { "peek": "while" },            "then": [{ "return": "#while" }] },
             { "if": { "peek": "return" },           "then": [{ "return": "#return" }] },
             { "if": { "peek": "using" },            "then": [{ "return": "#using-path" }] },
-            { "if": { "peek": "$ident-token" },    "then": [{ "return": "#entity" }] },
+            { "if": { "peek": "$ident-token" },     "then": [{ "return": "#entity" }] },
             { "if": { "peek": "void" },             "then": [{ "return": "#void-lit" }] },
             { "if": { "peek": ["true", "false"] },  "then": [{ "return": "#bool-lit" }] },
             { "if": { "peek": "int" },              "then": [{ "return": "#int-lit" }] },

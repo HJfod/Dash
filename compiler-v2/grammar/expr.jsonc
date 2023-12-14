@@ -20,7 +20,13 @@
     },
     "#entity": {
         "members": ["ident"],
-        "grammar": [{ "match": "#ident-path", "into": "ident" }]
+        "grammar": [{ "match": "#ident-path", "into": "ident" }],
+        "check": {
+            "result": "",
+            "tests": [
+                { "find": ":ident" }
+            ]
+        }
     },
     "#block": {
         "members": ["list"],
