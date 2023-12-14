@@ -73,6 +73,8 @@ impl<'s> Message<'s> {
 
 impl Display for Message<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // todo: migrate to https://crates.io/crates/lyneate mayhaps
+
         fn indent(msg: &str) -> String {
             let mut lines = msg.lines();
             let first = lines.next().unwrap_or_default();
