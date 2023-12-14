@@ -1,8 +1,32 @@
 
-use std::{path::PathBuf, sync::Arc, fs, fmt::{Debug, Display}, ops::Range, ffi::OsStr};
+use std::{path::PathBuf, sync::Arc, fs, fmt::{Debug, Display}, ops::Range, ffi::OsStr, cmp::max};
 use line_col::LineColLookup;
+use colored::{Color, Colorize};
 
 use crate::shared::char_iter::CharIter;
+
+pub enum Underline {
+    /// Error squiggle
+    Squiggle,
+    /// Highlight
+    Highlight,
+    /// Gray underline
+    Normal,
+}
+
+impl Underline {
+    fn line(&self, range: Range<usize>) -> String {
+        let (symbol, color) = match self {
+            Self::Squiggle => ("~", Color::Red),
+            Self::Highlight => ("^", Color::Cyan),
+            Self::Normal => ("-", Color::Black),
+        };
+        format!("{}{}",
+            " ".repeat(range.start),
+            symbol.repeat(max(1, range.end - range.start)).color(color)
+        )
+    }
+}
 
 #[derive(Debug)]
 pub struct Span<'s>(pub &'s Src, pub Range<usize>);
@@ -10,6 +34,51 @@ pub struct Span<'s>(pub &'s Src, pub Range<usize>);
 impl<'s> Span<'s> {
     pub fn builtin() -> Self {
         Self(&Src::Builtin, 0..0)
+    }
+    pub fn underlined(&self, style: Underline) -> String {
+        // Get the starting and ending linecols as 0-based indices
+        let sub_tuple = |a: (usize, usize)| { (a.0 - 1, a.1 - 1) };
+        let lookup = LineColLookup::new(self.0.data());
+        let start = sub_tuple(lookup.get(self.1.start));
+        let end = sub_tuple(lookup.get(self.1.end));
+
+        let mut lines = self.0
+            .data().lines()
+            .skip(start.0).take(end.0 - start.0 + 1);
+
+        let padding = end.0.to_string().len();
+        let output_line = |line: usize, content, range| {
+            format!(
+                "{:pad1$}{}{}\n{:pad2$}{}\n",
+                line.to_string().yellow(), " | ".black(), content,
+                "", style.line(range),
+                pad1 = padding - line.to_string().len(),
+                pad2 = padding + 3
+            )
+        };
+        
+        let underlined = if end.0 == start.0 {
+            output_line(start.0 + 1, lines.next().unwrap(), start.1..end.1)
+        }
+        else {
+            let mut res = String::new();
+            let mut i = 1;
+            let len = end.0 - start.0;
+            for line in lines {
+                res.push_str(&output_line(start.0 + i, line, match i {
+                    _ if i == len => 0..end.1,
+                    1 => start.1..line.len(),
+                    _ => 0..line.len(),
+                }));
+                i += 1;
+            }
+            res
+        };
+        format!(
+            "{}{}{}\n{}",
+            " ".repeat(padding), "--> ".black(), self.to_string().black(),
+            underlined
+        )
     }
 }
 
@@ -53,63 +122,20 @@ impl Src {
             path,
         }))
     }
-
     pub fn name(&self) -> String {
         match self {
             Src::Builtin => String::from("<compiler built-in>"),
             Src::File { path, data: _ } => path.to_string_lossy().to_string(),
         }
     }
-
     pub fn data(&self) -> &str {
         match self {
             Src::Builtin => "",
             Src::File { path: _, data } => data.as_str(),
         }
     }
-
     pub fn iter(&self) -> CharIter {
         CharIter::new(self.data())
-    }
-
-    pub fn underlined(&self, range: Range<usize>) -> String {
-        let lookup = LineColLookup::new(self.data());
-        let start = lookup.get(range.start);
-        let end = lookup.get(range.end);
-        let mut lines = self
-            .data().lines()
-            .skip(start.0 - 1).take(end.0 - start.0 + 1);
-        
-        if end.0 == start.0 {
-            format!(
-                "{}\n{}{}\n",
-                lines.next().unwrap(),
-                " ".repeat(start.1 - 1),
-                "~".repeat(std::cmp::max(1, end.1 - start.1))
-            )
-        } else {
-            let mut res = String::new();
-            let mut i = 1;
-            let len = end.0 - start.0;
-            for line in lines {
-                res += &if i == len {
-                    format!("{}\n{}\n", line, "~".repeat(std::cmp::max(1, end.1 - 1)))
-                }
-                else if i == 1 {
-                    format!(
-                        "{}\n{}{}\n",
-                        line,
-                        " ".repeat(start.1 - 1),
-                        "~".repeat(std::cmp::max(1, line.len() - start.1 + 1))
-                    )
-                }
-                else {
-                    format!("{}\n{}\n", line, "~".repeat(std::cmp::max(1, line.len())))
-                };
-                i += 1;
-            }
-            res
-        }
     }
 }
 

@@ -1,6 +1,9 @@
 
 use std::{sync::{Arc, Mutex}, fmt::{Display, Write}};
 use crate::shared::src::Span;
+use colored::Colorize;
+
+use super::src::Underline;
 
 #[allow(unused)]
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -12,7 +15,11 @@ pub enum Level {
 
 impl Display for Level {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{}", match self {
+            Level::Info => "Info".bold(),
+            Level::Warning => "Warning".bold().yellow(),
+            Level::Error => "Error".bold().red(),
+        })
     }
 }
 
@@ -35,11 +42,13 @@ impl Display for Note<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ref span) = self.at {
             f.write_fmt(format_args!(
-                "Note: {}\n{}\n(In {})",
-                self.info, span.0.underlined(span.1.clone()), span
+                "{}:\n{}{}",
+                "Note".bold(),
+                span.underlined(Underline::Normal),
+                self.info
             ))
         } else {
-            f.write_fmt(format_args!("Note: {}", self.info))
+            f.write_fmt(format_args!("{} {}", "Note:".bold().black(), self.info))
         }
     }
 }
@@ -64,16 +73,24 @@ impl<'s> Message<'s> {
 
 impl Display for Message<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        fn indent(msg: &str) -> String {
+            let mut lines = msg.lines();
+            let first = lines.next().unwrap_or_default();
+            lines.fold(first.to_string(), |mut acc, l| {
+                write!(&mut acc, "\n{:>3}{}", "", l).unwrap();
+                acc
+            })
+        }
+        
         f.write_fmt(format_args!(
-            "{} at {}:\n{}{}{}",
+            "{}:\n{}{}\n{}",
             self.level,
-            self.span,
-            self.span.0.underlined(self.span.1.clone()),
+            self.span.underlined(Underline::Squiggle),
             self.info,
             self.notes
                 .iter()
                 .fold(String::new(), |mut acc, note| {
-                    write!(&mut acc, "\n * {note}").unwrap();
+                    write!(&mut acc, "\n + {}\n", indent(&note.to_string())).unwrap();
                     acc
                 })
         ))
