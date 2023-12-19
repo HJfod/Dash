@@ -46,7 +46,7 @@ impl<'s> Span<'s> {
             .data().lines()
             .skip(start.0).take(end.0 - start.0 + 1);
 
-        let padding = end.0.to_string().len();
+        let padding = (end.0 + 1).to_string().len();
         let output_line = |line: usize, content, range| {
             format!(
                 "{:pad1$}{}{}\n{:pad2$}{}\n",

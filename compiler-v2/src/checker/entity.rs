@@ -14,4 +14,7 @@ impl Entity {
     pub(crate) fn span(&self) -> Span {
         self.decl_span.as_ref()
     }
+    pub(crate) fn ty(&self) -> Ty {
+        self.ty.clone()
+    }
 }

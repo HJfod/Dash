@@ -94,6 +94,9 @@
                 "if": { "match": "=" },
                 "then": [{ "error": "The `this` parameter may not have a default value" }]
             }
+        ],
+        "check": [
+            // todo: verify type matches class, make type class type
         ]
     },
     "#fun-param": {
@@ -108,6 +111,11 @@
                     { "match": "#expr", "into": "default-value" }
                 ]
             }
+        ],
+        "check": [
+            { "equal": [":type", ":default-value"] },
+            { "new-entity": ":name", "type": ":type" },
+            { "result": "void" }
         ]
     },
     "#fun-decl": {
@@ -146,6 +154,18 @@
                 "if": { "peek": "{...}" },
                 "then": [{ "match": "#block", "into": "body" }]
             }
+        ],
+        "check": [
+            // todo: all the fun param check shash
+            { "set": "--fun-type", "value": [] },
+            {
+                "for": "--param", "in": ":params",
+                "tests": [
+                    { "add": "--fun-type", "value": "--param" }
+                ]
+            },
+            { "new-entity": ":name", "type": "" },
+            { "result": "void" }
         ]
     },
     "#getter-decl": {

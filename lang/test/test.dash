@@ -2,7 +2,6 @@
 let y = 5;
 
 fun what(a: int, b: int) -> int {
-    c;
     if a > b {
         return;
     }
@@ -11,6 +10,6 @@ fun what(a: int, b: int) -> int {
     }
 }
 
-let x = what(2, 5) + 6;
+let y = what(2, 5) + 6;
 
 assert((2 + 5 * 3 - 1 + 2 / 2) == (2 + (5 * 3) - 1 + (2 / 2)));

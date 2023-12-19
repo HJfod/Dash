@@ -313,6 +313,7 @@ pub enum Grammar<'g> {
 pub enum TypeItem<'g> {
     Member(&'g str),
     Type(&'g str),
+    Find(IdentItem<'g>),
 }
 
 impl<'de: 'g, 'g> Deserialize<'de> for TypeItem<'g> {
@@ -323,6 +324,9 @@ impl<'de: 'g, 'g> Deserialize<'de> for TypeItem<'g> {
         let s: &'g str = Deserialize::deserialize(deserializer)?;
         if let Some(s) = s.strip_prefix(':') {
             Ok(TypeItem::Member(s))
+        }
+        else if let Some(s) = s.strip_prefix('@') {
+            Ok(TypeItem::Find(s.into()))
         }
         else {
             Ok(TypeItem::Type(s))
@@ -336,18 +340,24 @@ pub enum IdentItem<'g> {
     Ident(&'g str),
 }
 
+impl<'g> From<&'g str> for IdentItem<'g> {
+    fn from(value: &'g str) -> Self {
+        if let Some(s) = value.strip_prefix(':') {
+            IdentItem::Member(s)
+        }
+        else {
+            IdentItem::Ident(value)
+        }
+    }
+}
+
 impl<'de: 'g, 'g> Deserialize<'de> for IdentItem<'g> {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>
     {
         let s: &'g str = Deserialize::deserialize(deserializer)?;
-        if let Some(s) = s.strip_prefix(':') {
-            Ok(IdentItem::Member(s))
-        }
-        else {
-            Ok(IdentItem::Ident(s))
-        }
+        Ok(IdentItem::from(s))
     }
 }
 

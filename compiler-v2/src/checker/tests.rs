@@ -11,6 +11,7 @@ use super::{ty::Ty, coherency::{Scope, Checker}, ast::{Children, Child, ArcSpan}
 pub enum TypeItem {
     Member(String),
     Type(Ty),
+    Find(IdentItem),
 }
 
 impl From<&grammar::TypeItem<'_>> for TypeItem {
@@ -18,6 +19,7 @@ impl From<&grammar::TypeItem<'_>> for TypeItem {
         match value {
             grammar::TypeItem::Member(mem) => Self::Member(mem.to_string()),
             grammar::TypeItem::Type(ty) => Self::Type(Ty::new_builtin(ty)),
+            grammar::TypeItem::Find(find) => Self::Find(find.into()),
         }
     }
 }
@@ -28,7 +30,7 @@ pub enum IdentItem {
 }
 
 impl IdentItem {
-    fn to_path(&self, children: &Children) -> Option<IdentPath> {
+    pub(crate) fn to_path(&self, children: &Children) -> Option<IdentPath> {
         match self {
             Self::Member(mem) => match children.get(mem).unwrap() {
                 Child::Node(n) => Some(n.to_ident_path()),
@@ -100,7 +102,10 @@ impl Test {
     ) -> Option<Ty> {
         match self {
             Test::Equal { equal, at } => {
-                let (a, b) = (equal.0.eval(children), equal.1.eval(children));
+                let (a, b) = (
+                    equal.0.find_resulting_ty(node_span.clone(), children, checker),
+                    equal.1.find_resulting_ty(node_span.clone(), children, checker)
+                );
                 if !a.convertible(&b) {
                     logger.lock().unwrap().log(Message::new(
                         Level::Error,
@@ -127,7 +132,7 @@ impl Test {
                 let path = new_entity.to_path(children).unwrap();
                 if let Err(e) = checker.scope().entities().try_push(
                     &path,
-                    Entity::new(ty.eval(children), node_span.clone()),
+                    Entity::new(ty.find_resulting_ty(node_span.clone(), children, checker), node_span.clone()),
                     checker.namespace_stack()
                 ) {
                     logger.lock().unwrap().log(Message::new(
@@ -141,7 +146,7 @@ impl Test {
                 None
             }
             Test::Result { result } => {
-                Some(result.eval(children))
+                Some(result.find_resulting_ty(node_span.clone(), children, checker))
             }
         }
     }

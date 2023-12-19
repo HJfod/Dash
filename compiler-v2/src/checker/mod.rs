@@ -15,15 +15,8 @@ pub(crate) trait Ice: Sized {
     }
 }
 
-impl<'a, T> Ice for Option<&'a mut T> {
-    type R = &'a mut T;
-    fn ice(self, msg: &str) -> Self::R {
-        self.unwrap_or_else(|| panic!("Internal compiler error: {msg}"))
-    }
-}
-
-impl<'a, T> Ice for Option<&'a T> {
-    type R = &'a T;
+impl<T> Ice for Option<T> {
+    type R = T;
     fn ice(self, msg: &str) -> Self::R {
         self.unwrap_or_else(|| panic!("Internal compiler error: {msg}"))
     }

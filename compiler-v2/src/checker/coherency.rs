@@ -1,7 +1,7 @@
 
 use std::{collections::HashMap, pin::Pin, ptr::NonNull};
-use crate::{shared::logger::LoggerRef, ice};
-use super::{ast::{Node, Child, Children}, ty::Ty, tests::TypeItem, path::{FullIdentPath, IdentPath, Ident}, entity::Entity, Ice};
+use crate::{shared::{logger::{LoggerRef, Message, Level}, ptr_iter::PtrChainIter}, ice};
+use super::{ast::{Node, Child, Children, ArcSpan}, ty::Ty, tests::TypeItem, path::{FullIdentPath, IdentPath, Ident}, entity::Entity, Ice};
 
 pub(crate) struct ItemSpace<T> {
     items: HashMap<FullIdentPath, T>,
@@ -114,6 +114,9 @@ impl Checker {
         ret.current_scope = NonNull::from(&mut ret.root_scope);
         ret
     }
+    pub(crate) fn scopes(&self) -> impl Iterator<Item = &mut Scope> {
+        PtrChainIter::new(self.current_scope, |s| s.parent)
+    }
     pub fn scope<'a>(&mut self) -> &'a mut Scope {
         unsafe { self.current_scope.as_mut() }
     }
@@ -137,7 +140,7 @@ impl Checker {
 }
 
 impl TypeItem {
-    pub(crate) fn eval(&self, children: &Children) -> Ty {
+    pub(crate) fn find_resulting_ty(&self, node_span: ArcSpan, children: &Children, checker: &Checker) -> Ty {
         match self {
             TypeItem::Type(ty) => ty.clone(),
             TypeItem::Member(member) => {
@@ -148,6 +151,18 @@ impl TypeItem {
                         .unwrap_or(Ty::Invalid),
                     Child::List(_) => ice!("can't get type for list child"),
                 }
+            }
+            TypeItem::Find(find) => {
+                let path = find.to_path(children).ice("unable to get valid ident path from child");
+                for scope in checker.scopes() {
+                    if let Some(ent) = scope.entities().find(&path, checker.namespace_stack()) {
+                        return ent.ty();
+                    }
+                }
+                checker.logger.lock().unwrap().log(Message::new(
+                    Level::Error, format!("Unknown item '{path}'"), node_span.as_ref()
+                ));
+                Ty::Invalid
             }
         }
     }

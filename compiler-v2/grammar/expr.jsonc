@@ -22,7 +22,7 @@
         "members": ["ident"],
         "grammar": [{ "match": "#ident-path", "into": "ident" }],
         "check": [
-            // { "find-entity": ":ident" }
+            { "result": "@:ident" }
         ]
     },
     "#block": {
