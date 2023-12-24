@@ -1,11 +1,49 @@
 
 use std::fmt::Display;
 
-use crate::parser::grammar::{self, GrammarFile};
 use crate::shared::char_iter::CharIter;
 use crate::shared::src::{Src, Span};
 use crate::shared::logger::{LoggerRef, Message, Level};
 use unicode_xid::UnicodeXID;
+
+const STRICT_KEYWORDS: &[&str] = &[
+    // Literals
+    "void", "true", "false", "none",
+    // Constants & special variables
+    "this", "super",
+    // Declarations
+    "var", "let", "fun", "struct", "enum", "using",
+    "macro", "extends", "module", "type",
+    // Prepositions
+    "in", "is", "as", "where", "from",
+    // Loops & conditionals
+    "if", "else", "for", "while",
+    // Control flow
+    "try", "return", "break", "continue",
+    // Visibility
+    "extern", "public", "private",
+    // Types
+    "typeof", "const",
+    // Other
+    "codegen", "compiler_intrinsic"
+];
+const CONTEXTUAL_KEYWORDS: &[&str] = &[
+    "get", "set", "assert", "default"
+];
+const RESERVED_KEYWORDS: &[&str] = &[
+    // Declarations
+    "trait", "class", "interface",
+    // Control flow
+    "unwrap", "yield", "match", "switch",
+    // Visibility
+    "export", "import",
+    // Reactivity
+    "depends", "required",
+    // Macros
+    "reflect", "codegen",
+    // Other
+    "mut", "mutable", "new", "null"
+];
 
 fn closing_paren(ch: char) -> char {
     match ch {
@@ -89,22 +127,21 @@ impl std::fmt::Debug for Token<'_> {
     }
 }
 
-pub struct Tokenizer<'s, 'g> {
+pub struct Tokenizer<'s> {
     src: &'s Src,
     iter: CharIter<'s>,
-    grammar: &'g grammar::GrammarFile<'g>,
     logger: LoggerRef,
 }
 
-impl std::fmt::Debug for Tokenizer<'_, '_> {
+impl std::fmt::Debug for Tokenizer<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("Tokenizer")
     }
 }
 
-impl<'s, 'g> Tokenizer<'s, 'g> {
-    pub fn new(src: &'s Src, grammar: &'g grammar::GrammarFile<'g>, logger: LoggerRef) -> Self {
-        Self { src, iter: src.iter(), grammar, logger, }
+impl<'s> Tokenizer<'s> {
+    pub fn new(src: &'s Src, logger: LoggerRef) -> Self {
+        Self { src, iter: src.iter(), logger, }
     }
     fn skip_ws(&mut self) {
         loop {
@@ -134,7 +171,7 @@ impl<'s, 'g> Tokenizer<'s, 'g> {
     }
 }
 
-impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
+impl<'s> Iterator for Tokenizer<'s> {
     type Item = Token<'s>;
     fn next(&mut self) -> Option<Self::Item> {
         macro_rules! nothing {
@@ -221,10 +258,10 @@ impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
         if parse!(next is_xid_start) {
             parse!(next_while is_xid_continue);
             let raw = raw!();
-            if self.grammar.keywords.strict.contains(raw) {
+            if STRICT_KEYWORDS.contains(&raw) {
                 return make_token!(TokenKind::Keyword);
             }
-            if self.grammar.keywords.reserved.contains(raw) {
+            if RESERVED_KEYWORDS.contains(&raw) {
                 return make_token!(TokenKind::Error(format!("reserved keyword '{raw}'")));
             }
             return make_token!(TokenKind::Ident);
@@ -344,28 +381,26 @@ impl<'s, 'g> Iterator for Tokenizer<'s, 'g> {
     }
 }
 
-pub struct TokenIterator<'s, 'g, I: Iterator<Item = Token<'s>>> {
+pub struct TokenIterator<'s, I: Iterator<Item = Token<'s>>> {
     src: &'s Src,
-    grammar: &'g GrammarFile<'g>,
     iter: I,
     peek: Option<Token<'s>>,
     start_of_last_token: usize,
     logger: LoggerRef,
 }
 
-impl<'s, 'g, I: Iterator<Item = Token<'s>>> TokenIterator<'s, 'g, I> {
+impl<'s, I: Iterator<Item = Token<'s>>> TokenIterator<'s, I> {
     pub fn new(
         src: &'s Src,
-        grammar: &'g GrammarFile<'g>,
         start_offset: usize,
         logger: LoggerRef,
         mut iter: I,
     ) -> Self {
         let peek = iter.next();
-        Self { src, grammar, logger, iter, peek, start_of_last_token: start_offset }
+        Self { src, logger, iter, peek, start_of_last_token: start_offset }
     }
-    pub fn fork<O: Iterator<Item = Token<'s>>>(&self, iter: O) -> TokenIterator<'s, 'g, O> {
-        TokenIterator::new(self.src, self.grammar, self.start_of_last_token, self.logger.clone(), iter)
+    pub fn fork<O: Iterator<Item = Token<'s>>>(&self, iter: O) -> TokenIterator<'s, O> {
+        TokenIterator::new(self.src, self.start_of_last_token, self.logger.clone(), iter)
     }
     pub fn peek(&self) -> Option<&Token<'s>> {
         self.peek.as_ref()
@@ -379,15 +414,12 @@ impl<'s, 'g, I: Iterator<Item = Token<'s>>> TokenIterator<'s, 'g, I> {
     pub fn eof_span(&self) -> Span<'s> {
         Span(self.src, self.start_of_last_token - 1..self.start_of_last_token)
     }
-    pub fn grammar(&self) -> &'g grammar::GrammarFile<'g> {
-        self.grammar
-    }
     pub fn logger(&self) -> LoggerRef {
         self.logger.clone()
     }
 }
 
-impl<'s, 'g, I: Iterator<Item = Token<'s>>> Iterator for TokenIterator<'s, 'g, I> {
+impl<'s, I: Iterator<Item = Token<'s>>> Iterator for TokenIterator<'s, I> {
     type Item = Token<'s>;
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.iter.next();
@@ -398,8 +430,8 @@ impl<'s, 'g, I: Iterator<Item = Token<'s>>> Iterator for TokenIterator<'s, 'g, I
     }
 }
 
-impl<'s, 'g> From<Tokenizer<'s, 'g>> for TokenIterator<'s, 'g, Tokenizer<'s, 'g>> {
-    fn from(value: Tokenizer<'s, 'g>) -> Self {
-        Self::new(value.src, value.grammar, value.offset(), value.logger.clone(), value)
+impl<'s> From<Tokenizer<'s>> for TokenIterator<'s, Tokenizer<'s>> {
+    fn from(value: Tokenizer<'s>) -> Self {
+        Self::new(value.src, value.offset(), value.logger.clone(), value)
     }
 }

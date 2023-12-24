@@ -1,127 +1,113 @@
 
-use std::{
-    cmp::max,
-    fmt::{Debug, Display},
-    fs,
-    path::{Path, PathBuf}, ffi::OsStr, hash::Hash, sync::Arc,
-};
-use crate::parser::stream::{SrcReader, TokenStream};
+use std::{path::PathBuf, sync::Arc, fs, fmt::{Debug, Display}, ops::Range, ffi::OsStr, cmp::max};
+use line_col::LineColLookup;
+use colored::{Color, Colorize};
 
-use super::logging::LoggerRef;
+use crate::shared::char_iter::CharIter;
 
-#[derive(Debug, Clone)]
-pub struct Loc {
-    pub src: Arc<Src>,
-    pub line: usize,
-    pub column: usize,
-    pub offset: usize,
+pub enum Underline {
+    /// Error squiggle
+    Squiggle,
+    /// Highlight
+    Highlight,
+    /// Gray underline
+    Normal,
 }
 
-impl Loc {
-    pub const fn builtin() -> Self {
-        Self {
-            src: Src::builtin(),
-            line: 0,
-            column: 0,
-            offset: 0,
-        }
-    }
-}
-
-impl PartialEq for Loc {
-    fn eq(&self, other: &Self) -> bool {
-        self.offset == other.offset
+impl Underline {
+    fn line(&self, range: Range<usize>) -> String {
+        let (symbol, color) = match self {
+            Self::Squiggle => ("~", Color::Red),
+            Self::Highlight => ("^", Color::Cyan),
+            Self::Normal => ("-", Color::Black),
+        };
+        format!("{}{}",
+            " ".repeat(range.start),
+            symbol.repeat(max(1, range.end - range.start)).color(color)
+        )
     }
 }
 
-impl PartialOrd for Loc {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.offset.partial_cmp(&other.offset)
-    }
-}
+#[derive(Debug)]
+pub struct Span<'s>(pub &'s Src, pub Range<usize>);
 
-impl Display for Loc {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{}:{}", self.line + 1, self.column + 1))
+impl<'s> Span<'s> {
+    pub fn builtin() -> Self {
+        Self(&Src::Builtin, 0..0)
     }
-}
+    pub fn underlined(&self, style: Underline) -> String {
+        // Get the starting and ending linecols as 0-based indices
+        let sub_tuple = |a: (usize, usize)| { (a.0 - 1, a.1 - 1) };
+        let lookup = LineColLookup::new(self.0.data());
+        let start = sub_tuple(lookup.get(self.1.start));
+        let end = sub_tuple(lookup.get(self.1.end));
 
-pub type Span = std::ops::Range<Loc>;
+        let mut lines = self.0
+            .data().lines()
+            .skip(start.0).take(end.0 - start.0 + 1);
 
-pub static BUILTIN_SPAN: Span = Span {
-    start: Loc::builtin(),
-    end: Loc::builtin(),
-};
-
-pub trait Spanful {
-    fn start(&self) -> Loc;
-    fn end(&self) -> Loc;
-    fn src(&self) -> Arc<Src> {
-        self.start().src
-    }
-    fn display(&self) -> String {
-        if self.start() == self.end() {
-            format!("{}", self.start())
-        } else {
-            format!("{}-{}", self.start(), self.end())
-        }
-    }
-    fn full_display(&self) -> String {
-        format!("{}:{}", self.src(), self.display())
-    }
-    fn underlined(&self) -> String {
-        let start = self.start();
-        let end = self.end();
-        let lines = self.src()
-            .lines()
-            .get(start.line..=end.line)
-            .and_then(|p| (!p.is_empty()).then_some(Vec::from(p)))
-            .unwrap_or(vec![String::from("/* Invalid source code range */")]);
-        if lines.len() == 1 {
+        let padding = (end.0 + 1).to_string().len();
+        let output_line = |line: usize, content, range| {
             format!(
-                "{}\n{}{}\n",
-                lines[0],
-                " ".repeat(start.column),
-                "~".repeat(max(1, end.column - start.column))
+                "{:pad1$}{}{}\n{:pad2$}{}\n",
+                line.to_string().yellow(), " | ".black(), content,
+                "", style.line(range),
+                pad1 = padding - line.to_string().len(),
+                pad2 = padding + 3
             )
-        } else {
+        };
+        
+        let underlined = if end.0 == start.0 {
+            output_line(start.0 + 1, lines.next().unwrap(), start.1..end.1)
+        }
+        else {
             let mut res = String::new();
             let mut i = 1;
-            let len = lines.len();
+            let len = end.0 - start.0;
             for line in lines {
-                res += &if i == len {
-                    format!("{}\n{}\n", line, "~".repeat(max(1, end.column)))
-                } else if i == 1 {
-                    format!(
-                        "{}\n{}{}\n",
-                        line,
-                        " ".repeat(start.column),
-                        "~".repeat(max(1, line.len() - start.column))
-                    )
-                } else {
-                    format!("{}\n{}\n", line, "~".repeat(max(1, line.len())))
-                };
+                res.push_str(&output_line(start.0 + i, line, match i {
+                    _ if i == len => 0..end.1,
+                    1 => start.1..line.len(),
+                    _ => 0..line.len(),
+                }));
                 i += 1;
             }
             res
+        };
+        format!(
+            "{}{}{}\n{}",
+            " ".repeat(padding), "--> ".black(), self.to_string().black(),
+            underlined
+        )
+    }
+}
+
+impl<'s> Clone for Span<'s> {
+    fn clone(&self) -> Self {
+        Self(self.0, self.1.clone())
+    }
+}
+
+impl Display for Span<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let lookup = LineColLookup::new(self.0.data());
+        let start = lookup.get(self.1.start);
+        if self.1.is_empty() {
+            write!(f, "{}:{}:{}", self.0.name(), start.0, start.1)
+        }
+        else {
+            let end = lookup.get(self.1.end);
+            write!(f, "{}:{}:{}-{}:{}", self.0.name(), start.0, start.1, end.0, end.1)
         }
     }
 }
 
-impl Spanful for Span {
-    fn start(&self) -> Loc {
-        self.start
-    }
-
-    fn end(&self) -> Loc {
-        self.end
-    }
-}
-
-#[derive(Eq)]
 pub enum Src {
     Builtin,
-    File { path: PathBuf, chars: Vec<char> },
+    File {
+        path: PathBuf,
+        data: String,
+    }
 }
 
 impl Src {
@@ -129,113 +115,27 @@ impl Src {
         Arc::from(Self::Builtin)
     }
 
-    pub fn from_file(path: &Path) -> Result<Arc<Self>, String> {
+    pub fn from_file<P: Into<PathBuf>>(path: P) -> Result<Arc<Self>, String> {
+        let path = path.into();
         Ok(Arc::from(Src::File {
-            path: path.to_path_buf(),
-            chars: fs::read_to_string(path)
-                .map_err(|e| format!("Can't read file: {}", e))?
-                .chars()
-                .collect(),
+            data: fs::read_to_string(&path).map_err(|e| format!("Can't read file: {}", e))?,
+            path,
         }))
     }
-
     pub fn name(&self) -> String {
         match self {
             Src::Builtin => String::from("<compiler built-in>"),
-            Src::File { path, chars: _ } => path.to_string_lossy().to_string(),
+            Src::File { path, data: _ } => path.to_string_lossy().to_string(),
         }
     }
-
-    pub fn get(&self, pos: usize) -> Option<char> {
+    pub fn data(&self) -> &str {
         match self {
-            Src::Builtin => None,
-            Src::File { path: _, chars } => chars.get(pos).copied(),
+            Src::Builtin => "",
+            Src::File { path: _, data } => data.as_str(),
         }
     }
-
-    pub fn is_empty(&self) -> bool {
-        match self {
-            Src::Builtin => true,
-            Src::File { path: _, chars } => chars.is_empty(),
-        }
-    }
-
-    pub fn len(&self) -> usize {
-        match self {
-            Src::Builtin => 0,
-            Src::File { path: _, chars } => chars.len(),
-        }
-    }
-
-    pub fn loc(self: Arc<Self>, offset: usize) -> Loc {
-        let mut o = 0usize;
-        let len = self.len();
-        let mut line = 0;
-        let mut column = 0;
-        while o != offset {
-            let c = self.get(o).expect("Internal Compiler Error: Src::get failed at offset despite offset being within 0..Src::len");
-            if c == '\n' {
-                line += 1;
-                column = 0;
-            } else {
-                column += 1;
-            }
-            o += 1;
-            if o >= len {
-                break;
-            }
-        }
-        Loc {
-            src: self,
-            line,
-            column,
-            offset,
-        }
-    }
-
-    pub fn span(self: Arc<Self>, mut start: usize, mut end: usize) -> Span {
-        if start > end {
-            std::mem::swap(&mut start, &mut end);
-        }
-        Span {
-            start: self.loc(start),
-            end: self.loc(end),
-        }
-    }
-
-    pub fn lines(&self) -> Vec<String> {
-        match self {
-            Src::Builtin => Vec::new(),
-            Src::File { path: _, chars } => chars
-                .iter()
-                .collect::<String>()
-                .split('\n')
-                .map(|s| s.into())
-                .collect(),
-        }
-    }
-
-    pub fn tokenize(self: Arc<Self>, logger: LoggerRef) -> TokenStream<SrcReader> {
-        TokenStream::new(self, SrcReader::new(self, logger))
-    }
-}
-
-impl Hash for Src {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        match self {
-            Self::Builtin => 0.hash(state),
-            Self::File { path, chars: _ } => path.hash(state),
-        }
-    }
-}
-
-impl PartialEq for Src {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Src::Builtin, Src::Builtin) => true,
-            (Src::File { path: a, chars: _ }, Src::File { path: b, chars: _ }) => a == b,
-            _ => false,
-        }
+    pub fn iter(&self) -> CharIter {
+        CharIter::new(self.data())
     }
 }
 
@@ -243,7 +143,7 @@ impl Debug for Src {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Builtin => f.write_str("Builtin"),
-            Self::File { path, chars: _ } => f.write_fmt(format_args!("File({path:?})")),
+            Self::File { path, data: _ } => f.write_fmt(format_args!("File({path:?})")),
         }
     }
 }
@@ -251,6 +151,16 @@ impl Debug for Src {
 impl Display for Src {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.name())
+    }
+}
+
+impl PartialEq for Src {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Src::Builtin, Src::Builtin) => true,
+            (Src::File { path: a, data: _ }, Self::File { path: b, data: _ }) => a == b,
+            (_, _) => false
+        }
     }
 }
 
@@ -262,14 +172,13 @@ pub struct SrcPool {
 impl SrcPool {
     pub fn new(files: Vec<PathBuf>) -> Result<Self, String> {
         Ok(Self {
-            srcs: files
-                .into_iter()
-                .map(|f| Src::from_file(&f))
-                .collect::<Result<_, _>>()?
+            srcs: files.into_iter().map(Src::from_file).collect::<Result<_, _>>()?
         })
     }
-
     pub fn new_from_dir(dir: PathBuf) -> Result<Self, String> {
+        if dir.is_file() {
+            return Self::new(vec![dir]);
+        }
         if !dir.exists() {
             Err("Directory does not exist".to_string())?;
         }
@@ -281,7 +190,6 @@ impl SrcPool {
             Self::new(srcs)
         }
     }
-    
     fn find_src_files(dir: PathBuf) -> Vec<PathBuf> {
         let mut res = vec![];
         if let Ok(entries) = std::fs::read_dir(dir) { 
@@ -299,8 +207,15 @@ impl SrcPool {
         }
         res
     }
+    pub fn iter(&self) -> impl Iterator<Item = Arc<Src>> + '_ {
+        self.into_iter()
+    }
+}
 
-    pub fn srcs(&self) -> &Vec<Arc<Src>> {
-        &self.srcs
+impl<'a> IntoIterator for &'a SrcPool {
+    type IntoIter = std::iter::Cloned<<&'a Vec<Arc<Src>> as IntoIterator>::IntoIter>;
+    type Item = Arc<Src>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.srcs.iter().cloned()
     }
 }

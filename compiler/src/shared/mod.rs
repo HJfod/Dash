@@ -1,6 +1,5 @@
 
+pub(crate) mod char_iter;
+pub(crate) mod ptr_iter;
+pub mod logger;
 pub mod src;
-pub mod logging;
-pub mod wrappers;
-pub mod is_none_or;
-pub mod ptr_iter;

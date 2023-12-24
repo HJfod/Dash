@@ -1,6 +1,12 @@
-// #![feature(result_option_inspect)]
-// #![feature(fmt_helpers_for_derive)]
 
-pub mod shared;
+use parser::tokenizer::{Tokenizer, Token};
+use shared::logger::LoggerRef;
+use shared::src::Src;
+
 pub mod parser;
-pub mod compiler;
+pub mod shared;
+pub mod ast;
+
+pub fn tokenize<'s, 'g: 's>(src: &'s Src, logger: LoggerRef) -> Vec<Token<'s>> {
+    Tokenizer::new(src, logger).collect()
+}

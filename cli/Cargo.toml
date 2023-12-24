@@ -5,5 +5,5 @@ edition = "2021"
 
 [dependencies]
 clap = { version = "4.3.23", features = ["derive"] }
-dash-compiler-v2 = { path = "../compiler-v2" }
+dash-compiler = { path = "../compiler" }
 normalize-path = "0.2.1"
