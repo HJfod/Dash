@@ -379,7 +379,7 @@ impl<'s> Iterator for Tokenizer<'s> {
 pub struct TokenIterator<'s, I: Iterator<Item = Token<'s>>> {
     src: &'s Src,
     iter: I,
-    peek: Option<Token<'s>>,
+    peek: [Option<Token<'s>>; 2],
     start_of_last_token: usize,
     logger: LoggerRef,
 }
@@ -391,21 +391,21 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenIterator<'s, I> {
         logger: LoggerRef,
         mut iter: I,
     ) -> Self {
-        let peek = iter.next();
+        let peek = core::array::from_fn(|_| iter.next());
         Self { src, logger, iter, peek, start_of_last_token: start_offset }
     }
     // pub fn fork<O: Iterator<Item = Token<'s>>>(&self, iter: O) -> TokenIterator<'s, O> {
     //     TokenIterator::new(self.src, self.start_of_last_token, self.logger.clone(), iter)
     // }
-    pub fn peek(&self) -> Option<&Token<'s>> {
-        self.peek.as_ref()
+    pub fn peek(&self, n: usize) -> Option<&Token<'s>> {
+        self.peek[n].as_ref()
     }
-    // pub fn start_offset(&self) -> usize {
-        // self.peek.as_ref().map(|t| t.span.1.start).unwrap_or(0)
-    // }
-    // pub fn end_offset(&self) -> usize {
-        // self.start_of_last_token
-    // }
+    pub fn start_offset(&self) -> usize {
+        self.peek(0).as_ref().map(|t| t.span.1.start).unwrap_or(0)
+    }
+    pub fn end_offset(&self) -> usize {
+        self.start_of_last_token
+    }
     fn eof_span(&self) -> Span<'s> {
         Span(self.src, self.start_of_last_token - 1..self.start_of_last_token)
     }
@@ -418,7 +418,7 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenIterator<'s, I> {
         }
     }
     pub fn expected<S: Display>(&mut self, expected: S) {
-        self.error(if let Some(token) = &self.peek {
+        self.error(if let Some(token) = &self.peek(0) {
             format!("Expected {expected}, got {token}")
         }
         else {
@@ -431,10 +431,11 @@ impl<'s, I: Iterator<Item = Token<'s>>> Iterator for TokenIterator<'s, I> {
     type Item = Token<'s>;
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.iter.next();
-        if let Some(offset) = self.peek.as_ref().map(|t| t.span.1.end) {
+        if let Some(offset) = self.peek(0).as_ref().map(|t| t.span.1.end) {
             self.start_of_last_token = offset;
         }
-        std::mem::replace(&mut self.peek, next)
+        self.peek.rotate_left(1);
+        std::mem::replace(self.peek.last_mut().unwrap(), next)
     }
 }
 
