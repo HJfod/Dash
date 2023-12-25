@@ -1,2 +1,3 @@
 
-pub mod tokens;
+pub mod decl;
+pub mod token;

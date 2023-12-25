@@ -101,6 +101,26 @@ impl Display for Span<'_> {
         }
     }
 }
+#[derive(Clone)]
+pub struct ArcSpan(pub Arc<Src>, pub Range<usize>);
+
+impl ArcSpan {
+    pub fn as_ref(&self) -> Span {
+        Span(self.0.as_ref(), self.1.clone())
+    }
+}
+
+impl Debug for ArcSpan {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_ref())
+    }
+}
+
+impl PartialEq for ArcSpan {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0 && self.1 == other.1
+    }
+}
 
 pub enum Src {
     Builtin,

@@ -62,8 +62,8 @@ pub struct Message<'s> {
 }
 
 impl<'s> Message<'s> {
-    pub fn new<S: Into<String>>(level: Level, info: S, span: Span<'s>) -> Self {
-        Self { level, info: info.into(), notes: vec![], span }
+    pub fn new<S: Display>(level: Level, info: S, span: Span<'s>) -> Self {
+        Self { level, info: info.to_string(), notes: vec![], span }
     }
     pub fn note(mut self, note: Note<'s>) -> Self {
         self.notes.push(note);

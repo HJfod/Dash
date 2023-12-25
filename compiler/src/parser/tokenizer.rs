@@ -6,7 +6,7 @@ use crate::shared::src::{Src, Span};
 use crate::shared::logger::{LoggerRef, Message, Level};
 use unicode_xid::UnicodeXID;
 
-const STRICT_KEYWORDS: &[&str] = &[
+pub(crate) const STRICT_KEYWORDS: &[&str] = &[
     // Literals
     "void", "true", "false", "none",
     // Constants & special variables
@@ -27,10 +27,10 @@ const STRICT_KEYWORDS: &[&str] = &[
     // Other
     "codegen", "compiler_intrinsic"
 ];
-const CONTEXTUAL_KEYWORDS: &[&str] = &[
+pub(crate) const CONTEXTUAL_KEYWORDS: &[&str] = &[
     "get", "set", "assert", "default"
 ];
-const RESERVED_KEYWORDS: &[&str] = &[
+pub(crate) const RESERVED_KEYWORDS: &[&str] = &[
     // Declarations
     "trait", "class", "interface",
     // Control flow
@@ -72,7 +72,6 @@ pub enum TokenKind<'s> {
     Keyword,
     Ident,
     Punct,
-    Op,
     Int(i64),
     Float(f64),
     String(String),
@@ -86,7 +85,7 @@ impl<'s> TokenKind<'s> {
     pub fn take_inner(&mut self) -> Option<Vec<Token<'s>>> {
         match self {
             Self::Braces(p) | Self::Brackets(p) | Self::Parentheses(p) => Some(std::mem::take(p)),
-            Self::Keyword | Self::Ident | Self::Punct | Self::Op |
+            Self::Keyword | Self::Ident | Self::Punct | 
             Self::Int(_) | Self::Float(_) | Self::String(_) | Self::Error(_) => None
         }
     }
@@ -104,7 +103,6 @@ impl Display for Token<'_> {
             TokenKind::Keyword => write!(f, "keyword {}", self.raw),
             TokenKind::Ident => write!(f, "identifier '{}'", self.raw),
             TokenKind::Punct => write!(f, "'{}'", self.raw),
-            TokenKind::Op => write!(f, "operator '{}'", self.raw),
             TokenKind::Int(_) => write!(f, "integer"),
             TokenKind::Float(_) => write!(f, "float"),
             TokenKind::String(_) => write!(f, "string"),
@@ -341,14 +339,11 @@ impl<'s> Iterator for Tokenizer<'s> {
             // Single
             parse!(next ',' | ';' | '@') ||
             // Arrows
-            parse!(next '-' | '=', '>')
+            parse!(next '-' | '=', '>') ||
+            // Operator
+            parse!(next_while is_op_char)
         {
             return make_token!(TokenKind::Punct);
-        }
-
-        // Operators
-        if parse!(next_while is_op_char) {
-            return make_token!(TokenKind::Op);
         }
 
         // Parentheses
@@ -399,23 +394,36 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenIterator<'s, I> {
         let peek = iter.next();
         Self { src, logger, iter, peek, start_of_last_token: start_offset }
     }
-    pub fn fork<O: Iterator<Item = Token<'s>>>(&self, iter: O) -> TokenIterator<'s, O> {
-        TokenIterator::new(self.src, self.start_of_last_token, self.logger.clone(), iter)
-    }
+    // pub fn fork<O: Iterator<Item = Token<'s>>>(&self, iter: O) -> TokenIterator<'s, O> {
+    //     TokenIterator::new(self.src, self.start_of_last_token, self.logger.clone(), iter)
+    // }
     pub fn peek(&self) -> Option<&Token<'s>> {
         self.peek.as_ref()
     }
-    pub fn start_offset(&self) -> usize {
-        self.peek.as_ref().map(|t| t.span.1.start).unwrap_or(0)
-    }
-    pub fn end_offset(&self) -> usize {
-        self.start_of_last_token
-    }
-    pub fn eof_span(&self) -> Span<'s> {
+    // pub fn start_offset(&self) -> usize {
+        // self.peek.as_ref().map(|t| t.span.1.start).unwrap_or(0)
+    // }
+    // pub fn end_offset(&self) -> usize {
+        // self.start_of_last_token
+    // }
+    fn eof_span(&self) -> Span<'s> {
         Span(self.src, self.start_of_last_token - 1..self.start_of_last_token)
     }
-    pub fn logger(&self) -> LoggerRef {
-        self.logger.clone()
+    pub fn error<S: Display>(&mut self, msg: S) {
+        if let Some(token) = self.next() {
+            self.logger.lock().unwrap().log(Message::new(Level::Error, msg, token.span));
+        }
+        else {
+            self.logger.lock().unwrap().log(Message::new(Level::Error, msg, self.eof_span()))
+        }
+    }
+    pub fn expected<S: Display>(&mut self, expected: S) {
+        self.error(if let Some(token) = &self.peek {
+            format!("Expected {expected}, got {token}")
+        }
+        else {
+            format!("Expected {expected}, got end-of-file")
+        })
     }
 }
 

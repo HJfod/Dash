@@ -5,26 +5,27 @@ extern crate syn;
 extern crate quote;
 extern crate darling;
 
-use darling::{FromMeta, ast::NestedMeta, Error};
+use darling::{FromMeta, ast::NestedMeta};
 use proc_macro::TokenStream;
-use proc_macro2::Ident;
-use quote::{quote, format_ident};
-use syn::{parse_macro_input, ItemStruct, Attribute, spanned::Spanned, LitStr, parse::Parse, Fields};
+use quote::quote;
+use syn::Pat;
+use syn::spanned::Spanned;
+use syn::{parse_macro_input, ItemStruct, parse::Parser, Fields, Field};
 
 macro_rules! unwrap_macro_input {
     ($e: expr) => {
         match $e {
             Ok(v) => v,
-            Err(e) => return TokenStream::from(Error::from(e).write_errors())
+            Err(e) => return syn::Error::from(e).to_compile_error().into(),
         }
     };
 }
 
 #[derive(Debug, FromMeta)]
 struct TokenArgs {
-    kind: Ident,
+    kind: String,
     #[darling(default)]
-    raw: Option<LitStr>,
+    raw: Option<String>,
 }
 
 #[proc_macro_attribute]
@@ -33,7 +34,9 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
     let mut target = parse_macro_input!(stream as ItemStruct);
     match &mut target.fields {
         Fields::Named(named) => {
-
+            named.named.push(Field::parse_named.parse2(quote! {
+                span: crate::shared::src::ArcSpan
+            }).unwrap());
         }
         _ => {
             return syn::Error::new(
@@ -43,7 +46,30 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
         }
     }
     let args = unwrap_macro_input!(TokenArgs::from_list(&attr_args));
-    let kind = args.kind;
+    let kind: Pat = unwrap_macro_input!(Pat::parse_single.parse_str(&args.kind));
+    let expected_kind = {
+        let construct = match &kind {
+            Pat::TupleStruct(t) => {
+                let path = &t.path;
+                quote!{ #path(Default::default()) }
+            }
+            Pat::Ident(i) => {
+                let path = &i.ident;
+                quote! { #path }
+            }
+            _ => {
+                return syn::Error::new(
+                    args.kind.span(), "kind must be a valid TokenKind pattern without the TokenKind prefix"
+                ).to_compile_error().into();
+            }
+        };
+        let raw = args.raw.as_deref().unwrap_or("");
+        quote! { crate::parser::tokenizer::Token {
+            kind: crate::parser::tokenizer::TokenKind::#construct,
+            raw: #raw,
+            span: crate::shared::src::Span::builtin(),
+        } }
+    };
     let test_raw = if let Some(raw) = args.raw {
         quote! { && token.raw == #raw }
     }
@@ -61,10 +87,15 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
             ) -> Result<Self, ()>
                 where I: Iterator<Item = crate::parser::tokenizer::Token<'s>>
             {
-                let token = tokenizer.next().ok_or(())?;
-                if matches!(token.kind, #kind) #test_raw {
-                    Ok(Self {})
+                if let Some(token) = tokenizer.peek() {
+                    if matches!(token.kind, crate::parser::tokenizer::TokenKind::#kind) #test_raw {
+                        return Ok(Self { span: crate::shared::src::ArcSpan(
+                            src, tokenizer.next().unwrap().span.1.clone()
+                        ) });
+                    }
                 }
+                tokenizer.expected(#expected_kind);
+                Err(())
             }
             
             fn peek<'s, I>(
@@ -72,7 +103,12 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
             ) -> bool
                 where I: Iterator<Item = crate::parser::tokenizer::Token<'s>>
             {
-
+                if let Some(token) = tokenizer.peek() {
+                    matches!(token.kind, crate::parser::tokenizer::TokenKind::#kind) #test_raw
+                }
+                else {
+                    false
+                }
             }
         }
     }.into()
