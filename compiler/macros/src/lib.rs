@@ -415,6 +415,7 @@ impl ToTokens for ParseReceiver {
                     &quote!{}, &self.ident, &self.generics,
                     quote! {
                         use crate::parser::parse::Parse;
+                        #parse_impl
                         tokenizer.expected(#expected);
                         Err(crate::parser::parse::FatalParseError)
                     },
