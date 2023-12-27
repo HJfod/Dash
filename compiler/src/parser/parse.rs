@@ -4,7 +4,7 @@ use crate::shared::src::{Src, ArcSpan};
 use super::tokenizer::{TokenIterator, Token};
 
 pub fn calculate_span<S: IntoIterator<Item = Option<ArcSpan>>>(spans: S) -> Option<ArcSpan> {
-    let mut filtered = spans.into_iter().filter_map(|s| s);
+    let mut filtered = spans.into_iter().flatten();
     let mut span = filtered.next()?;
     for ArcSpan(_, range) in filtered {
         if range.start < span.1.start {
@@ -78,7 +78,7 @@ macro_rules! impl_tuple_parse {
             }
 
             fn span(&self) -> Option<ArcSpan> {
-                #[allow(unused_parens)]
+                #[allow(unused_parens, non_snake_case)]
                 let ($a $(, $r)*) = &self;
                 calculate_span([$a.span() $(, $r.span())*])
             }
@@ -89,7 +89,7 @@ macro_rules! impl_tuple_parse {
     };
 }
 
-impl_tuple_parse!(A);
+// impl_tuple_parse!(A);
 impl_tuple_parse!(A; B);
 impl_tuple_parse!(A; B; C);
 impl_tuple_parse!(A; B; C; D);

@@ -13,6 +13,6 @@ pub struct LetDecl {
 #[derive(Parse)]
 #[parse(expected = "item declaration")]
 pub enum Decl {
-    LetDecl,
+    LetDecl(Box<LetDecl>),
 }
 

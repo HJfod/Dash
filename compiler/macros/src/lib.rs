@@ -332,10 +332,8 @@ impl ToTokens for ParseReceiver {
                     quote! {
                         use crate::parser::parse::Parse;
                         use crate::shared::src::ArcSpan;
-                        let start = tokenizer.start_offset();
                         Ok(Self {
                             #parse_impl
-                            // span: ArcSpan(src, start..tokenizer.end_offset())
                         })
                     },
                     quote! {

@@ -401,12 +401,12 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenIterator<'s, I> {
     pub fn peek(&self, n: usize) -> Option<&Token<'s>> {
         self.peek[n].as_ref()
     }
-    pub fn start_offset(&self) -> usize {
-        self.peek(0).as_ref().map(|t| t.span.1.start).unwrap_or(0)
-    }
-    pub fn end_offset(&self) -> usize {
-        self.start_of_last_token
-    }
+    // pub fn start_offset(&self) -> usize {
+    //     self.peek(0).as_ref().map(|t| t.span.1.start).unwrap_or(0)
+    // }
+    // pub fn end_offset(&self) -> usize {
+    //     self.start_of_last_token
+    // }
     fn eof_span(&self) -> Span<'s> {
         Span(self.src, self.start_of_last_token - 1..self.start_of_last_token)
     }
