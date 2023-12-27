@@ -27,9 +27,6 @@ pub(crate) const STRICT_KEYWORDS: &[&str] = &[
     // Other
     "codegen", "compiler_intrinsic"
 ];
-pub(crate) const CONTEXTUAL_KEYWORDS: &[&str] = &[
-    "get", "set", "assert", "default"
-];
 pub(crate) const RESERVED_KEYWORDS: &[&str] = &[
     // Declarations
     "trait", "class", "interface",
@@ -54,12 +51,12 @@ fn closing_paren(ch: char) -> char {
     }
 }
 
-pub trait IsToken {
+trait IsTokenChar {
     fn is_op_char(&self) -> bool;
     fn is_punct_char(&self) -> bool;
 }
 
-impl IsToken for char {
+impl IsTokenChar for char {
     fn is_op_char(&self) -> bool {
         matches!(self, '=' | '+' | '-' | '/' | '%' | '&' | '|' | '^' | '*' | '~' | '!' | '?' | '<' | '>' | '#')
     }
@@ -75,20 +72,10 @@ pub enum TokenKind<'s> {
     Int(i64),
     Float(f64),
     String(String),
-    Parentheses(Vec<Token<'s>>),
-    Brackets(Vec<Token<'s>>),
-    Braces(Vec<Token<'s>>),
+    Parentheses(TokenTree<'s>),
+    Brackets(TokenTree<'s>),
+    Braces(TokenTree<'s>),
     Error(String),
-}
-
-impl<'s> TokenKind<'s> {
-    pub fn take_inner(&mut self) -> Option<Vec<Token<'s>>> {
-        match self {
-            Self::Braces(p) | Self::Brackets(p) | Self::Parentheses(p) => Some(std::mem::take(p)),
-            Self::Keyword | Self::Ident | Self::Punct | 
-            Self::Int(_) | Self::Float(_) | Self::String(_) | Self::Error(_) => None
-        }
-    }
 }
 
 pub struct Token<'s> {
@@ -118,7 +105,7 @@ impl std::fmt::Debug for Token<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self, f)?;
         if let TokenKind::Parentheses(p) | TokenKind::Brackets(p) | TokenKind::Braces(p) = &self.kind {
-            f.debug_list().entries(p.iter()).finish()?;
+            f.debug_list().entries(p.items.iter()).finish()?;
         }
         write!(f, " ({}..{})", self.span.1.start, self.span.1.end)?;
         Ok(())
@@ -349,7 +336,7 @@ impl<'s> Iterator for Tokenizer<'s> {
         // Parentheses
         let opening = self.iter.peek().unwrap();
         if parse!(next '(' | '[' | '{') {
-            let mut tree = vec![];
+            let mut items = vec![];
             'find_closing: loop {
                 // skip whitespace
                 self.skip_ws();
@@ -361,8 +348,15 @@ impl<'s> Iterator for Tokenizer<'s> {
                     Some(_) => {}
                     None => return make_token!(TokenKind::Error("unclosed parenthesis".to_string())),
                 }
-                tree.push(self.next().unwrap());
+                items.push(self.next().unwrap());
             }
+            let tree = TokenTree {
+                src: self.src,
+                items,
+                start_offset: start,
+                eof_char: closing_paren(opening),
+                logger: self.logger.clone(),
+            };
             return make_token!(match opening {
                 '(' => TokenKind::Parentheses(tree),
                 '[' => TokenKind::Brackets(tree),
@@ -376,27 +370,34 @@ impl<'s> Iterator for Tokenizer<'s> {
     }
 }
 
+pub struct TokenTree<'s> {
+    src: &'s Src,
+    items: Vec<Token<'s>>,
+    start_offset: usize,
+    eof_char: char,
+    logger: LoggerRef,
+}
+
 pub struct TokenIterator<'s, I: Iterator<Item = Token<'s>>> {
     src: &'s Src,
     iter: I,
     peek: [Option<Token<'s>>; 2],
     start_of_last_token: usize,
+    eof_char: Option<char>,
     logger: LoggerRef,
 }
 
 impl<'s, I: Iterator<Item = Token<'s>>> TokenIterator<'s, I> {
-    pub fn new(
+    fn new(
         src: &'s Src,
         start_offset: usize,
+        eof_char: Option<char>,
         logger: LoggerRef,
         mut iter: I,
     ) -> Self {
         let peek = core::array::from_fn(|_| iter.next());
-        Self { src, logger, iter, peek, start_of_last_token: start_offset }
+        Self { src, logger, iter, peek, start_of_last_token: start_offset, eof_char }
     }
-    // pub fn fork<O: Iterator<Item = Token<'s>>>(&self, iter: O) -> TokenIterator<'s, O> {
-    //     TokenIterator::new(self.src, self.start_of_last_token, self.logger.clone(), iter)
-    // }
     pub fn peek(&self, n: usize) -> Option<&Token<'s>> {
         self.peek[n].as_ref()
     }
@@ -425,6 +426,23 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenIterator<'s, I> {
             format!("Expected {expected}, got end-of-file")
         })
     }
+    pub fn expected_eof(&mut self) {
+        self.expected(self.eof_char
+            .map(|c| format!("'{c}'"))
+            .unwrap_or(String::from("end-of-file"))
+        )
+    }
+    /// Constructs an empty TokenTree. Exists for the sake of the #[token] 
+    /// attribute being able to construct TokenKinds with subtrees
+    pub(crate) fn empty_tree(&self) -> TokenTree<'s> {
+        TokenTree {
+            src: self.src,
+            items: vec![],
+            start_offset: 0,
+            eof_char: '\0',
+            logger: self.logger.clone(),
+        }
+    }
 }
 
 impl<'s, I: Iterator<Item = Token<'s>>> Iterator for TokenIterator<'s, I> {
@@ -441,6 +459,12 @@ impl<'s, I: Iterator<Item = Token<'s>>> Iterator for TokenIterator<'s, I> {
 
 impl<'s> From<Tokenizer<'s>> for TokenIterator<'s, Tokenizer<'s>> {
     fn from(value: Tokenizer<'s>) -> Self {
-        Self::new(value.src, value.offset(), value.logger.clone(), value)
+        Self::new(value.src, value.offset(), None, value.logger.clone(), value)
+    }
+}
+
+impl<'s> From<TokenTree<'s>> for TokenIterator<'s, std::vec::IntoIter<Token<'s>>> {
+    fn from(value: TokenTree<'s>) -> Self {
+        TokenIterator::new(value.src, value.start_offset, Some(value.eof_char), value.logger.clone(), value.items.into_iter())
     }
 }

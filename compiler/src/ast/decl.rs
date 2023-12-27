@@ -1,11 +1,18 @@
 
-use super::{token::{kw, Ident, op}, ty::TypeExpr, expr::Expr};
-use dash_macros::node;
+use super::{token::{kw, op, punct}, ty::TypeExpr, expr::{Expr, IdentPath}};
+use dash_macros::Parse;
 
-#[node]
+#[derive(Parse)]
 pub struct LetDecl {
     let_kw: kw::Let,
-    name: Ident,
-    ty: Option<(op::Colon, TypeExpr)>,
+    name: IdentPath,
+    ty: Option<(punct::Colon, TypeExpr)>,
     value: Option<(op::Seq, Expr)>,
 }
+
+#[derive(Parse)]
+#[parse(expected = "item declaration")]
+pub enum Decl {
+    LetDecl,
+}
+
