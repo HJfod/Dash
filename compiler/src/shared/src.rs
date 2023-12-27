@@ -105,6 +105,9 @@ impl Display for Span<'_> {
 pub struct ArcSpan(pub Arc<Src>, pub Range<usize>);
 
 impl ArcSpan {
+    pub fn builtin() -> Self {
+        Self(Src::builtin(), 0..0)
+    }
     pub fn as_ref(&self) -> Span {
         Span(self.0.as_ref(), self.1.clone())
     }

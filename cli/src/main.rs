@@ -1,12 +1,12 @@
 
 use clap::Parser;
-use dash_compiler_v2::{
-    shared::logger::Logger,
+use dash_compiler::{
+    shared::{logger::Logger, src::ArcSpan},
     shared::src::SrcPool,
-    default_grammar,
+    parser::parse::Parse,
     tokenize,
-    checker::ast::ASTPool,
-    parser::ParseOptions, check_coherency
+    checker::pool::ASTPool,
+    // check_coherency
 };
 use normalize_path::NormalizePath;
 use std::path::PathBuf;
@@ -38,12 +38,11 @@ fn main() {
     let logger = Logger::default();
     let src_dir = args.dir.map(|d| cur_dir.join(d).normalize()).unwrap_or(cur_dir);
     let src_pool = SrcPool::new_from_dir(src_dir).expect("Unable to find sources");
-    let grammar = default_grammar();
     
     if args.debug_tokens {
         for src in &src_pool {
             println!(":: Tokens for {src} ::");
-            for t in tokenize(src.as_ref(), &grammar, logger.clone()) {
+            for t in tokenize(src.as_ref(), logger.clone()) {
                 println!("{t:#?}");
             }
         }
@@ -51,22 +50,20 @@ fn main() {
     if args.no_ast {
         return;
     }
-    let mut ast_pool = ASTPool::parse_src_pool(
-        &src_pool, &grammar, logger.clone(), ParseOptions {
-            debug_log_matches: args.debug_log_matches
-        }
+    let ast_pool = ASTPool::parse_src_pool(
+        &src_pool, logger.clone(),
     );
 
     if args.debug_ast {
         for ast in &ast_pool {
-            println!("AST for {}", ast.span().0);
+            println!("AST for {}", ast.span().unwrap_or(ArcSpan::builtin()).0);
             println!("{ast:#?}");
         }
     }
 
-    for ast in &mut ast_pool {
-        check_coherency(ast, logger.clone());
-    }
+    // for ast in &mut ast_pool {
+    //     check_coherency(ast, logger.clone());
+    // }
 
     let ref_logger = logger.lock().unwrap();
     println!(

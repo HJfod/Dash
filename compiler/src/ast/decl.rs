@@ -2,7 +2,7 @@
 use super::{token::{kw, op, punct}, ty::TypeExpr, expr::{Expr, IdentPath}};
 use dash_macros::Parse;
 
-#[derive(Parse)]
+#[derive(Debug, Parse)]
 pub struct LetDecl {
     let_kw: kw::Let,
     name: IdentPath,
@@ -10,7 +10,7 @@ pub struct LetDecl {
     value: Option<(op::Seq, Expr)>,
 }
 
-#[derive(Parse)]
+#[derive(Debug, Parse)]
 #[parse(expected = "item declaration")]
 pub enum Decl {
     LetDecl(Box<LetDecl>),

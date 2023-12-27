@@ -140,6 +140,7 @@ impl<T: Parse> Parse for Vec<T> {
     }
 }
 
+#[derive(Debug)]
 pub struct Separated<T: Parse, S: Parse> {
     items: Vec<T>,
     _phantom: PhantomData<S>,

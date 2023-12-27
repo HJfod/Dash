@@ -48,7 +48,7 @@ pub(crate) mod op {
     #[token(kind = "Punct", raw = "-")]
     pub struct Sub {}
 
-    #[derive(Parse)]
+    #[derive(Debug, Parse)]
     #[parse(expected = "operator")]
     pub enum BinOp {
         Seq(Box<Seq>),

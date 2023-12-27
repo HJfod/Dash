@@ -218,6 +218,7 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
     let name = target.ident;
     let (impl_generics, ty_generics, where_clause) = target.generics.split_for_impl();
     quote! {
+        #[derive(Debug)]
         #r
         impl #impl_generics crate::parser::parse::IsToken for #name #ty_generics #where_clause {}
     }.into()

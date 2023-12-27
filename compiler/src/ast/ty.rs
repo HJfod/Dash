@@ -2,13 +2,13 @@
 use dash_macros::Parse;
 use super::expr::IdentPath;
 
-#[derive(Parse)]
+#[derive(Debug, Parse)]
 #[parse(expected = "type")]
 pub enum TypeExpr {
     TypeIdent(Box<TypeIdent>),
 }
 
-#[derive(Parse)]
+#[derive(Debug, Parse)]
 pub struct TypeIdent {
     name: IdentPath,
 }

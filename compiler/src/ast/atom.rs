@@ -3,22 +3,22 @@ use dash_macros::Parse;
 use super::expr::{Expr, IdentPath, ExprList};
 use crate::ast::token::delim;
 
-#[derive(Parse)]
+#[derive(Debug, Parse)]
 pub struct ClosedExpr {
     inner: delim::Parenthesized<Expr>,
 }
 
-#[derive(Parse)]
+#[derive(Debug, Parse)]
 pub struct Block {
     exprs: delim::Braced<ExprList>,
 }
 
-#[derive(Parse)]
+#[derive(Debug, Parse)]
 pub struct ItemUse {
     path: IdentPath,
 }
 
-#[derive(Parse)]
+#[derive(Debug, Parse)]
 #[parse(expected = "expression")]
 pub enum Atom {
     ClosedExpr(Box<ClosedExpr>),
