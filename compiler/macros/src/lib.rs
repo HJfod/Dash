@@ -247,7 +247,7 @@ struct ParseField {
     ident: Option<syn::Ident>,
     ty: Type,
     #[darling(default)]
-    peek: bool,
+    peek_point: bool,
 }
 
 impl ToTokens for ParseReceiver {
@@ -268,40 +268,56 @@ impl ToTokens for ParseReceiver {
                     );
                 }
 
-                // Find amount of fields to peek
-                let mut encountered_non_peek = false;
+                // Find peek point if it was manually set
+                let mut encountered_peek_end = false;
                 let mut peek_count = 0;
                 for field in data.iter() {
-                    if field.peek {
-                        if encountered_non_peek {
+                    if field.peek_point {
+                        if extract_type_from_option(&field.ty).is_some() {
                             parse_impl.extend(
                                 syn::Error::new(
-                                    field.ident.span(),
-                                    "peeked fields must be the first ones in a struct"
+                                    field.ty.span(),
+                                    "peek point may not be an optional field"
                                 ).to_compile_error()
                             );
                         }
-                        else {
-                            peek_count += 1;
+                        if encountered_peek_end {
+                            parse_impl.extend(
+                                syn::Error::new(
+                                    field.ident.span(),
+                                    "only one field may be marked as the peek point"
+                                ).to_compile_error()
+                            );
                         }
-                    }
-                    // fields with Option are implicitly peeked since you can't 
-                    // exhaustively determine peeking with just them
-                    else if extract_type_from_option(&field.ty).is_some() {
+                        encountered_peek_end = true;
                         peek_count += 1;
                     }
-                    else {
-                        encountered_non_peek = true;
+                    else if !encountered_peek_end {
+                        peek_count += 1;
                     }
                 }
-                // Always peek on the first field even if it was not explicitly 
-                // marked as such, unless `no_peek` is set
-                if !self.no_peek && peek_count == 0 {
-                    peek_count = 1;
+                // Automatically figure out peek point if it wasn't manually set
+                if !self.no_peek && !encountered_peek_end {
+                    peek_count = 0;
+                    for field in data.iter() {
+                        peek_count += 1;
+                        // Break unless the type is optional, in which case 
+                        // continue peeking since an optional field is not 
+                        // enough to determine exhaustively
+                        if extract_type_from_option(&field.ty).is_none() {
+                            break;
+                        }
+                    }
                 }
+
+                peek_checks.extend(quote! {
+                    static_assertions::const_assert!(
+                        #peek_count <= crate::parser::tokenizer::MAX_PEEK_COUNT
+                    );
+                });
                 
                 // Generate parse and peek impls
-                let mut peek_ix = 0;
+                let mut peek_ix = 0usize;
                 for field in data.iter() {
                     let i = field.ident.as_ref().unwrap();
                     let t = &field.ty;
@@ -309,7 +325,7 @@ impl ToTokens for ParseReceiver {
                         #i: Parse::parse(src.clone(), tokenizer)?,
                     });
                     span_impl.extend(quote! { self.#i.span(), });
-                    if peek_count > 0 {
+                    if peek_ix < peek_count {
                         // if we are peeking more than 1 member, all but last must be 
                         // tokens
                         if peek_ix < peek_count - 1 {
@@ -318,13 +334,11 @@ impl ToTokens for ParseReceiver {
                             });
                         }
                         peek_impl.extend(quote! {
-                            if <#t>::peek(#peek_ix as usize, tokenizer) {
+                            if <#t>::peek(#peek_ix, tokenizer) {
                                 peeked += 1;
                             }
                         });
-                        if extract_type_from_option(&field.ty).is_none() {
-                            peek_ix += 1;
-                        }
+                        peek_ix += 1;
                     }
                 }
 

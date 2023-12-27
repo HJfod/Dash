@@ -42,6 +42,8 @@ pub(crate) const RESERVED_KEYWORDS: &[&str] = &[
     "mut", "mutable", "new", "null"
 ];
 
+pub const MAX_PEEK_COUNT: usize = 2;
+
 fn closing_paren(ch: char) -> char {
     match ch {
         '(' => ')',
@@ -381,7 +383,7 @@ pub struct TokenTree<'s> {
 pub struct TokenIterator<'s, I: Iterator<Item = Token<'s>>> {
     src: &'s Src,
     iter: I,
-    peek: [Option<Token<'s>>; 2],
+    peek: [Option<Token<'s>>; MAX_PEEK_COUNT],
     start_of_last_token: usize,
     eof_char: Option<char>,
     logger: LoggerRef,
