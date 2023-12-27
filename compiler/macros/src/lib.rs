@@ -97,7 +97,7 @@ fn impl_ast_item(
             fn parse<'s, I>(
                 src: std::sync::Arc<crate::shared::src::Src>,
                 tokenizer: &mut crate::parser::tokenizer::TokenIterator<'s, I>
-            ) -> Result<Self, ()>
+            ) -> Result<Self, crate::parser::parse::FatalParseError>
                 where I: Iterator<Item = crate::parser::tokenizer::Token<'s>>
             {
                 #parse_impl
@@ -200,7 +200,7 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
                 }
             }
             tokenizer.expected(#expected_kind);
-            Err(())
+            Err(crate::parser::parse::FatalParseError)
         },
         quote! {
             use crate::parser::tokenizer::TokenKind;
@@ -416,7 +416,7 @@ impl ToTokens for ParseReceiver {
                     quote! {
                         use crate::parser::parse::Parse;
                         tokenizer.expected(#expected);
-                        Err(())
+                        Err(crate::parser::parse::FatalParseError)
                     },
                     quote! {
                         #peek_impl

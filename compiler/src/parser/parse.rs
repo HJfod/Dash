@@ -17,9 +17,11 @@ pub fn calculate_span<S: IntoIterator<Item = Option<ArcSpan>>>(spans: S) -> Opti
     Some(span.clone())
 }
 
+pub struct FatalParseError;
+
 pub trait Parse: Sized {
     /// Parse this type from the token stream
-    fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, ()>
+    fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
         where I: Iterator<Item = Token<'s>>;
         
     /// Check if this type is coming up on the token stream at a position
@@ -33,7 +35,7 @@ pub trait Parse: Sized {
 
     /// If this type is coming up on the token stream based on `Self::peek`, 
     /// then attempt to parse it on the stream
-    fn peek_and_parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Option<Self>, ()>
+    fn peek_and_parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Option<Self>, FatalParseError>
         where I: Iterator<Item = Token<'s>>
     {
         if Self::peek(0, tokenizer) {
@@ -46,7 +48,7 @@ pub trait Parse: Sized {
 
     /// Parse a complete token stream into this type, erroring if the whole 
     /// stream couldn't be matched
-    fn parse_complete<'s, I, T>(src: Arc<Src>, tokenizer: T) -> Result<Self, ()>
+    fn parse_complete<'s, I, T>(src: Arc<Src>, tokenizer: T) -> Result<Self, FatalParseError>
         where
             T: Into<TokenIterator<'s, I>>,
             I: Iterator<Item = Token<'s>>
@@ -56,7 +58,7 @@ pub trait Parse: Sized {
         if stream.peek(0).is_some() {
             stream.expected_eof();
             // This is not a fatal parsing error, so we can continue without 
-            // returning Err(())
+            // returning Err(FatalParseError)
         }
         Ok(res)
     }
@@ -65,7 +67,7 @@ pub trait Parse: Sized {
 macro_rules! impl_tuple_parse {
     ($a: ident; $($r: ident);*) => {
         impl<$a: Parse, $($r: Parse),*> Parse for ($a, $($r),*) {
-            fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, ()>
+            fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
                 where I: Iterator<Item = Token<'s>>
             {
                 Ok(($a::parse(src.clone(), tokenizer)?, $($r::parse(src.clone(), tokenizer)?),*))
@@ -96,7 +98,7 @@ impl_tuple_parse!(A; B; C; D);
 impl_tuple_parse!(A; B; C; D; E);
 
 impl<T: Parse> Parse for Option<T> {
-    fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, ()>
+    fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
         where I: Iterator<Item = Token<'s>>
     {
         if Self::peek(0, tokenizer) {
@@ -119,7 +121,7 @@ impl<T: Parse> Parse for Option<T> {
 }
 
 impl<T: Parse> Parse for Vec<T> {
-    fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, ()>
+    fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
         where I: Iterator<Item = Token<'s>>
     {
         let mut res = Vec::new();
@@ -147,7 +149,7 @@ pub struct Separated<T: Parse, S: Parse> {
 }
 
 impl<T: Parse, S: Parse> Parse for Separated<T, S> {
-    fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, ()>
+    fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
         where I: Iterator<Item = Token<'s>>
     {
         let mut items = Vec::from([T::parse(src.clone(), tokenizer)?]);
