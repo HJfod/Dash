@@ -17,6 +17,23 @@ pub fn calculate_span<S: IntoIterator<Item = Option<ArcSpan>>>(spans: S) -> Opti
     Some(span.clone())
 }
 
+pub trait CompileMessage {
+    fn get_msg() -> &'static str;
+}
+
+#[macro_export]
+macro_rules! add_compile_message {
+    ($ident: ident: $msg: literal) => {
+        #[derive(Debug)]
+        struct $ident;
+        impl $crate::parser::parse::CompileMessage for $ident {
+            fn get_msg() -> &'static str {
+                $msg
+            }
+        }
+    };
+}
+
 pub struct FatalParseError;
 
 pub trait Parse: Sized {
@@ -29,9 +46,6 @@ pub trait Parse: Sized {
         where I: Iterator<Item = Token<'s>>;
     
     fn span(&self) -> Option<ArcSpan>;
-
-    /// For assertions
-    fn is_parseable() {}
 
     /// If this type is coming up on the token stream based on `Self::peek`, 
     /// then attempt to parse it on the stream
@@ -88,6 +102,12 @@ macro_rules! impl_tuple_parse {
     };
     ($a: ident) => {
         impl_tuple_parse!($a;);
+    };
+    (@extract_last $a: ident; $($r: ident;)+) => {
+        impl_tuple_parse!(@extract_last $($r;)+)
+    };
+    (@extract_last $a: ident;) => {
+        $a
     };
 }
 
@@ -160,6 +180,42 @@ impl<T: Parse> Parse for Vec<T> {
     }
 }
 
+// todo: Separated and SeparatedWithTrailing could attempt recovery via just 
+// consuming tokens until their separator is encountered
+
+#[derive(Debug)]
+pub struct OneOrMore<T: Parse>(Vec<T>);
+
+impl<T: Parse> std::ops::Deref for OneOrMore<T> {
+    type Target = Vec<T>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T: Parse> Parse for OneOrMore<T> {
+    fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
+        where I: Iterator<Item = Token<'s>>
+    {
+        let mut res = Vec::new();
+        res.push(T::parse(src.clone(), tokenizer)?);
+        while let Some(t) = T::peek_and_parse(src.clone(), tokenizer)? {
+            res.push(t);
+        }
+        Ok(OneOrMore(res))
+    }
+
+    fn peek<'s, I>(pos: usize, tokenizer: &TokenIterator<'s, I>) -> bool
+        where I: Iterator<Item = Token<'s>>
+    {
+        T::peek(pos, tokenizer)
+    }
+
+    fn span(&self) -> Option<ArcSpan> {
+        calculate_span(self.iter().map(|s| s.span()))
+    }
+}
+
 #[derive(Debug)]
 pub struct Separated<T: Parse, S: Parse> {
     items: Vec<T>,
@@ -185,6 +241,66 @@ impl<T: Parse, S: Parse> Parse for Separated<T, S> {
 
     fn span(&self) -> Option<ArcSpan> {
         self.items.span()
+    }
+}
+
+#[derive(Debug)]
+pub struct SeparatedWithTrailing<T: Parse, S: Parse> {
+    items: Vec<T>,
+    trailing: Option<S>,
+    _phantom: PhantomData<S>,
+}
+
+impl<T: Parse, S: Parse> Parse for SeparatedWithTrailing<T, S> {
+    fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
+        where I: Iterator<Item = Token<'s>>
+    {
+        let mut items = Vec::from([T::parse(src.clone(), tokenizer)?]);
+        let mut trailing = None;
+        while let Some(sep) = S::peek_and_parse(src.clone(), tokenizer)? {
+            if let Some(item) = T::peek_and_parse(src.clone(), tokenizer)? {
+                items.push(item);
+            }
+            else {
+                trailing = Some(sep);
+                break;
+            }
+        }
+        Ok(Self { items, trailing, _phantom: PhantomData })
+    }
+
+    fn peek<'s, I>(pos: usize, tokenizer: &TokenIterator<'s, I>) -> bool
+        where I: Iterator<Item = Token<'s>>
+    {
+        T::peek(pos, tokenizer)
+    }
+
+    fn span(&self) -> Option<ArcSpan> {
+        self.items.span()
+    }
+}
+
+#[derive(Debug)]
+pub struct DontExpect<T: Parse, M: CompileMessage>(PhantomData<(T, M)>);
+
+impl<T: Parse, M: CompileMessage> Parse for DontExpect<T, M> {
+    fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
+        where I: Iterator<Item = Token<'s>>
+    {
+        if T::peek_and_parse(src, tokenizer)?.is_some() {
+            tokenizer.error(M::get_msg())
+        }
+        Ok(Self(PhantomData))
+    }
+
+    fn peek<'s, I>(pos: usize, tokenizer: &TokenIterator<'s, I>) -> bool
+        where I: Iterator<Item = Token<'s>>
+    {
+        T::peek(pos, tokenizer)
+    }
+
+    fn span(&self) -> Option<ArcSpan> {
+        None
     }
 }
 

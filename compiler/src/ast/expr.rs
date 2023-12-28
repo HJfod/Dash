@@ -1,6 +1,6 @@
 
 use dash_macros::Parse;
-use crate::parser::parse::Separated;
+use crate::parser::parse::{Separated, OneOrMore};
 use super::{decl::Decl, token::{Ident, punct}, atom::Atom};
 
 #[derive(Debug, Parse)]
@@ -18,5 +18,5 @@ pub enum Expr {
 
 #[derive(Debug, Parse)]
 pub struct ExprList {
-    exprs: Vec<(Expr, Vec<punct::Semicolon>)>,
+    exprs: Vec<(Expr, OneOrMore<punct::Semicolon>)>,
 }

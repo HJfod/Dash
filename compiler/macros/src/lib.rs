@@ -288,11 +288,11 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
     if !encountered_peek_end {
         peek_count = 0;
         for field in data.iter() {
-            peek_count += 1;
             // Break unless the type is optional, in which case 
             // continue peeking since an optional field is not 
             // enough to determine exhaustively
             if extract_type_from_option(&field.ty).is_none() {
+                peek_count += 1;
                 break;
             }
         }
@@ -333,7 +333,9 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
                     peeked += 1;
                 }
             });
-            peek_ix += 1;
+            if extract_type_from_option(t).is_none() {
+                peek_ix += 1;
+            }
         }
     }
     (

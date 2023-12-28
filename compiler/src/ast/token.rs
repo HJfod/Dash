@@ -10,8 +10,17 @@ pub(crate) mod kw {
     #[token(kind = "Keyword", raw = "let")]
     pub struct Let {}
 
+    #[token(kind = "Keyword", raw = "fun")]
+    pub struct Fun {}
+
+    #[token(kind = "Keyword", raw = "this")]
+    pub struct This {}
+
     #[token(kind = "Ident", raw = "get")]
     pub struct Get {}
+
+    #[token(kind = "Ident", raw = "set")]
+    pub struct Set {}
 }
 
 pub(crate) mod lit {
@@ -52,6 +61,9 @@ pub(crate) mod lit {
 pub(crate) mod punct {
     use dash_macros::token;
 
+    #[token(kind = "Punct", raw = ",")]
+    pub struct Comma {}
+
     #[token(kind = "Punct", raw = ";")]
     pub struct Semicolon {}
 
@@ -60,6 +72,12 @@ pub(crate) mod punct {
 
     #[token(kind = "Punct", raw = "::")]
     pub struct Namespace {}
+
+    #[token(kind = "Punct", raw = "->")]
+    pub struct Arrow {}
+
+    #[token(kind = "Punct", raw = "=>")]
+    pub struct FatArrow {}
 }
 
 pub(crate) mod op {
