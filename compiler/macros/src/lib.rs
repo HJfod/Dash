@@ -10,13 +10,13 @@ use darling::{FromMeta, ast::NestedMeta};
 use proc_macro::TokenStream;
 use proc_macro2::{TokenStream as TokenStream2, Ident};
 use quote::{quote, quote_spanned, ToTokens};
-use syn::{Generics, Type};
+use syn::{Generics, Type, Path};
 use syn::spanned::Spanned;
 use syn::{parse_macro_input, ItemStruct, parse::Parser, Fields, Field};
 
 // https://stackoverflow.com/questions/55271857/how-can-i-get-the-t-from-an-optiont-when-using-syn
 fn extract_type_from_option(ty: &syn::Type) -> Option<&syn::Type> {
-    use syn::{GenericArgument, Path, PathArguments, PathSegment};
+    use syn::{GenericArgument, PathArguments, PathSegment};
 
     fn extract_type_path(ty: &syn::Type) -> Option<&Path> {
         match *ty {
@@ -250,116 +250,144 @@ struct ParseField {
     peek_point: bool,
 }
 
+fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStream2, TokenStream2, TokenStream2) {
+    let mut span_impl = quote! {};
+    let mut parse_impl = quote! {};
+    let mut peek_checks = quote! {};
+    let mut peek_impl = quote! {};
+
+    // Find peek point if it was manually set
+    let mut encountered_peek_end = false;
+    let mut peek_count = 0;
+    for field in data.iter() {
+        if field.peek_point {
+            if extract_type_from_option(&field.ty).is_some() {
+                parse_impl.extend(
+                    syn::Error::new(
+                        field.ty.span(),
+                        "peek point may not be an optional field"
+                    ).to_compile_error()
+                );
+            }
+            if encountered_peek_end {
+                parse_impl.extend(
+                    syn::Error::new(
+                        field.ident.span(),
+                        "only one field may be marked as the peek point"
+                    ).to_compile_error()
+                );
+            }
+            encountered_peek_end = true;
+            peek_count += 1;
+        }
+        else if !encountered_peek_end {
+            peek_count += 1;
+        }
+    }
+    // Automatically figure out peek point if it wasn't manually set
+    if !encountered_peek_end {
+        peek_count = 0;
+        for field in data.iter() {
+            peek_count += 1;
+            // Break unless the type is optional, in which case 
+            // continue peeking since an optional field is not 
+            // enough to determine exhaustively
+            if extract_type_from_option(&field.ty).is_none() {
+                break;
+            }
+        }
+    }
+
+    peek_checks.extend(quote! {
+        static_assertions::const_assert!(
+            #peek_count <= crate::parser::tokenizer::MAX_PEEK_COUNT
+        );
+    });
+    
+    // Generate parse and peek impls
+    let mut peek_ix = 0usize;
+    for (field_ix, field) in data.iter().enumerate() {
+        let t = &field.ty;
+        if let Some(ref i) = field.ident {
+            parse_impl.extend(quote! {
+                #i: Parse::parse(src.clone(), tokenizer)?,
+            });
+            span_impl.extend(quote! { self.#i.span(), });
+        }
+        else {
+            parse_impl.extend(quote! {
+                Parse::parse(src.clone(), tokenizer)?,
+            });
+            span_impl.extend(quote! { self.#field_ix.span(), });
+        }
+        if peek_ix < peek_count {
+            // if we are peeking more than 1 member, all but last must be 
+            // tokens
+            if peek_ix < peek_count - 1 {
+                peek_checks.extend(quote_spanned! {
+                    t.span() => <#t as crate::parser::parse::IsToken>::is_token();
+                });
+            }
+            peek_impl.extend(quote! {
+                if <#t>::peek(#peek_ix, tokenizer) {
+                    peeked += 1;
+                }
+            });
+            peek_ix += 1;
+        }
+    }
+    (
+        if data.is_struct() {
+            quote! {
+                use crate::parser::parse::Parse;
+                use crate::shared::src::ArcSpan;
+                Ok(#self_name {
+                    #parse_impl
+                })
+            }
+        }
+        else {
+            quote! {
+                use crate::parser::parse::Parse;
+                use crate::shared::src::ArcSpan;
+                Ok(#self_name(
+                    #parse_impl
+                ))
+            }
+        },
+        quote! {
+            #peek_checks
+            let mut peeked = 0;
+            #peek_impl
+            peeked == #peek_count
+        },
+        quote! {
+            crate::parser::parse::calculate_span([#span_impl])
+        }
+    )
+}
+
 impl ToTokens for ParseReceiver {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         match &self.data {
             ast::Data::Struct(data) => {
-                let mut span_impl = quote! {};
-                let mut parse_impl = quote! {};
-                let mut peek_checks = quote! {};
-                let mut peek_impl = quote! {};
-
                 if self.expected.is_some() {
-                    parse_impl.extend(
+                    tokens.extend(
                         syn::Error::new(
                             self.expected.span(),
                             "cannot use \"expected\" on a struct"
                         ).to_compile_error()
                     );
                 }
-
-                // Find peek point if it was manually set
-                let mut encountered_peek_end = false;
-                let mut peek_count = 0;
-                for field in data.iter() {
-                    if field.peek_point {
-                        if extract_type_from_option(&field.ty).is_some() {
-                            parse_impl.extend(
-                                syn::Error::new(
-                                    field.ty.span(),
-                                    "peek point may not be an optional field"
-                                ).to_compile_error()
-                            );
-                        }
-                        if encountered_peek_end {
-                            parse_impl.extend(
-                                syn::Error::new(
-                                    field.ident.span(),
-                                    "only one field may be marked as the peek point"
-                                ).to_compile_error()
-                            );
-                        }
-                        encountered_peek_end = true;
-                        peek_count += 1;
-                    }
-                    else if !encountered_peek_end {
-                        peek_count += 1;
-                    }
-                }
-                // Automatically figure out peek point if it wasn't manually set
-                if !self.no_peek && !encountered_peek_end {
-                    peek_count = 0;
-                    for field in data.iter() {
-                        peek_count += 1;
-                        // Break unless the type is optional, in which case 
-                        // continue peeking since an optional field is not 
-                        // enough to determine exhaustively
-                        if extract_type_from_option(&field.ty).is_none() {
-                            break;
-                        }
-                    }
-                }
-
-                peek_checks.extend(quote! {
-                    static_assertions::const_assert!(
-                        #peek_count <= crate::parser::tokenizer::MAX_PEEK_COUNT
-                    );
-                });
-                
-                // Generate parse and peek impls
-                let mut peek_ix = 0usize;
-                for field in data.iter() {
-                    let i = field.ident.as_ref().unwrap();
-                    let t = &field.ty;
-                    parse_impl.extend(quote! {
-                        #i: Parse::parse(src.clone(), tokenizer)?,
-                    });
-                    span_impl.extend(quote! { self.#i.span(), });
-                    if peek_ix < peek_count {
-                        // if we are peeking more than 1 member, all but last must be 
-                        // tokens
-                        if peek_ix < peek_count - 1 {
-                            peek_checks.extend(quote_spanned! {
-                                t.span() => <#t as crate::parser::parse::IsToken>::is_token();
-                            });
-                        }
-                        peek_impl.extend(quote! {
-                            if <#t>::peek(#peek_ix, tokenizer) {
-                                peeked += 1;
-                            }
-                        });
-                        peek_ix += 1;
-                    }
-                }
-
+                // note to self: don't call `self.span()` - it causes rustc to crash
+                let (parse, peek, span) = field_to_tokens(
+                    data, Path::from_string("Self").unwrap()
+                );
                 tokens.extend(impl_ast_item(
                     &quote!{}, &self.ident, &self.generics,
-                    quote! {
-                        use crate::parser::parse::Parse;
-                        use crate::shared::src::ArcSpan;
-                        Ok(Self {
-                            #parse_impl
-                        })
-                    },
-                    quote! {
-                        #peek_checks
-                        let mut peeked = 0;
-                        #peek_impl
-                        peeked == #peek_count
-                    },
-                    quote! {
-                        crate::parser::parse::calculate_span([#span_impl])
-                    }
+                    parse,
+                    if self.no_peek { quote! { false } } else { peek },
+                    span
                 ));
             }
             ast::Data::Enum(data) => {
@@ -368,41 +396,45 @@ impl ToTokens for ParseReceiver {
                 let mut span_impl = quote! {};
                 for variant in data {
                     let v = &variant.ident;
-                    parse_impl.extend(quote! {
-                        if <#v>::peek(0, tokenizer) {
-                            return Ok(Self::#v(Box::from(<#v>::parse(src.clone(), tokenizer)?)));
-                        }
-                    });
-                    peek_impl.extend(quote! {
-                        if <#v>::peek(pos, tokenizer) {
-                            return true;
-                        }
-                    });
                     if variant.fields.is_unit() {
                         span_impl.extend(quote! { Self::#v => None, });
+                        // No peeking or parsing unit variants
                     }
                     else {
+                        let (parse, peek, _) = field_to_tokens(
+                            &variant.fields,
+                            Path::from_string(&format!("Self::{v}")).unwrap()
+                        );
+                        parse_impl.extend(quote! {
+                            if { #peek } {
+                                return { #parse };
+                            }
+                        });
+                        peek_impl.extend(quote! {
+                            if { #peek } {
+                                return true;
+                            }
+                        });
+                        let destruct;
                         let mut names = quote! {};
                         let mut spans = quote! {};
                         if variant.fields.is_struct() {
-                            for c in variant.fields.fields.iter().map(|f| f.ident.as_ref().unwrap()) {
-                                names.extend(quote! { #c, });
-                                spans.extend(quote! { #c.span(), });
+                            for field in variant.fields.fields.iter() {
+                                let name = &field.ident;
+                                names.extend(quote! { #name, });
+                                spans.extend(quote! { #name.span(), });
                             }
+                            destruct = quote! { {#names} };
                         }
                         else {
+                            // todo: parse and peek impls
                             for c in variant.fields.fields.iter().zip(
                                 ('a'..='z').map(|c| Ident::new(&c.to_string(), v.span()))
                             ).map(|(_, c)| c) {
                                 names.extend(quote! { #c, });
                                 spans.extend(quote! { #c.span(), });
                             }
-                        };
-                        let destruct = if variant.fields.is_struct() {
-                            quote! { {#names} }
-                        }
-                        else {
-                            quote! { (#names) }
+                            destruct = quote! { (#names) };
                         };
                         span_impl.extend(quote! {
                             Self::#v #destruct => crate::parser::parse::calculate_span([#spans]),
@@ -419,9 +451,14 @@ impl ToTokens for ParseReceiver {
                         tokenizer.expected(#expected);
                         Err(crate::parser::parse::FatalParseError)
                     },
-                    quote! {
-                        #peek_impl
-                        false
+                    if self.no_peek {
+                        quote! { false }
+                    }
+                    else {
+                        quote! {
+                            #peek_impl
+                            false
+                        }
                     },
                     quote! {
                         match self {

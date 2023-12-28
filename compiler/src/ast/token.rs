@@ -15,11 +15,37 @@ pub(crate) mod kw {
 }
 
 pub(crate) mod lit {
-    use dash_macros::token;
+    use dash_macros::{token, Parse};
+
+    #[token(kind = "Keyword", raw = "void")]
+    pub struct Void {}
+
+    #[token(kind = "Keyword", raw = "true")]
+    pub struct True {}
+
+    #[token(kind = "Keyword", raw = "false")]
+    pub struct False {}
+
+    #[derive(Debug, Parse)]
+    #[parse(expected = "boolean")]
+    pub enum Bool {
+        True(True),
+        False(False),
+    }
 
     #[token(kind = "Int(_)")]
     pub struct Int {
         value: i64,
+    }
+
+    #[token(kind = "Float(_)")]
+    pub struct Float {
+        value: f64,
+    }
+
+    #[token(kind = "String(_)")]
+    pub struct String {
+        value: std::string::String,
     }
 }
 

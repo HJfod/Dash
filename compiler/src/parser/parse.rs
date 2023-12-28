@@ -97,6 +97,24 @@ impl_tuple_parse!(A; B; C);
 impl_tuple_parse!(A; B; C; D);
 impl_tuple_parse!(A; B; C; D; E);
 
+impl<T: Parse> Parse for Box<T> {
+    fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
+        where I: Iterator<Item = Token<'s>>
+    {
+        T::parse(src, tokenizer).map(Box::from)
+    }
+
+    fn peek<'s, I>(pos: usize, tokenizer: &TokenIterator<'s, I>) -> bool
+        where I: Iterator<Item = Token<'s>>
+    {
+        T::peek(pos, tokenizer)
+    }
+
+    fn span(&self) -> Option<ArcSpan> {
+        T::span(self)
+    }
+}
+
 impl<T: Parse> Parse for Option<T> {
     fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
         where I: Iterator<Item = Token<'s>>
