@@ -36,6 +36,16 @@ macro_rules! add_compile_message {
 
 pub struct FatalParseError;
 
+pub trait ParseFn<'s, I, T>: FnMut(Arc<Src>, &mut TokenIterator<'s, I>) -> Result<T, FatalParseError>
+    where I: Iterator<Item = Token<'s>>
+{}
+
+impl<'s, I, T, F> ParseFn<'s, I, T> for F
+    where
+        I: Iterator<Item = Token<'s>>,
+        F: FnMut(Arc<Src>, &mut TokenIterator<'s, I>) -> Result<T, FatalParseError>
+{}
+
 pub trait Parse: Sized {
     /// Parse this type from the token stream
     fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>

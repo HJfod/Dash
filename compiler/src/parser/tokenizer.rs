@@ -1,5 +1,6 @@
 
 use std::fmt::Display;
+use std::ops::Range;
 
 use crate::shared::char_iter::CharIter;
 use crate::shared::src::{Src, Span};
@@ -356,7 +357,7 @@ impl<'s> Iterator for Tokenizer<'s> {
                 src: self.src,
                 items,
                 start_offset: start,
-                eof_char: closing_paren(opening),
+                eof: self.offset() - 1..self.offset(),
                 logger: self.logger.clone(),
             };
             return make_token!(match opening {
@@ -376,7 +377,7 @@ pub struct TokenTree<'s> {
     src: &'s Src,
     items: Vec<Token<'s>>,
     start_offset: usize,
-    eof_char: char,
+    eof: Range<usize>,
     logger: LoggerRef,
 }
 
@@ -386,7 +387,7 @@ pub struct TokenIterator<'s, I: Iterator<Item = Token<'s>>> {
     peek: [Option<Token<'s>>; MAX_PEEK_COUNT],
     start_of_last_token: usize,
     last_was_braced: bool,
-    eof_char: Option<char>,
+    eof: Option<Range<usize>>,
     logger: LoggerRef,
 }
 
@@ -394,14 +395,14 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenIterator<'s, I> {
     fn new(
         src: &'s Src,
         start_offset: usize,
-        eof_char: Option<char>,
+        eof: Option<Range<usize>>,
         logger: LoggerRef,
         mut iter: I,
     ) -> Self {
         let peek = core::array::from_fn(|_| iter.next());
         Self {
             src, logger, iter, peek,
-            start_of_last_token: start_offset, eof_char,
+            start_of_last_token: start_offset, eof,
             last_was_braced: false,
         }
     }
@@ -412,7 +413,17 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenIterator<'s, I> {
         self.last_was_braced
     }
     fn eof_span(&self) -> Span<'s> {
-        Span(self.src, self.start_of_last_token - 1..self.start_of_last_token)
+        if let Some(r) = self.eof.clone() {
+            Span(self.src, r)
+        }
+        else {
+            Span(self.src, self.start_of_last_token - 1..self.start_of_last_token)
+        }
+    }
+    fn eof_name(&self) -> String {
+        self.eof.as_ref()
+            .map(|c| self.src.data().chars().skip(c.start).take(c.end - c.start).collect::<String>())
+            .unwrap_or(String::from("end-of-file"))
     }
     pub(crate) fn logger(&self) -> LoggerRef {
         self.logger.clone()
@@ -430,14 +441,11 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenIterator<'s, I> {
             format!("Expected {expected}, got {token}")
         }
         else {
-            format!("Expected {expected}, got end-of-file")
+            format!("Expected {expected}, got {}", self.eof_name())
         })
     }
     pub fn expected_eof(&mut self) {
-        self.expected(self.eof_char
-            .map(|c| format!("'{c}'"))
-            .unwrap_or(String::from("end-of-file"))
-        )
+        self.expected(self.eof_name())
     }
     /// Constructs an empty TokenTree. Exists for the sake of the #[token] 
     /// attribute being able to construct TokenKinds with subtrees
@@ -446,7 +454,7 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenIterator<'s, I> {
             src: self.src,
             items: vec![],
             start_offset: 0,
-            eof_char: '\0',
+            eof: 0..0,
             logger: self.logger.clone(),
         }
     }
@@ -474,6 +482,6 @@ impl<'s> From<Tokenizer<'s>> for TokenIterator<'s, Tokenizer<'s>> {
 
 impl<'s> From<TokenTree<'s>> for TokenIterator<'s, std::vec::IntoIter<Token<'s>>> {
     fn from(value: TokenTree<'s>) -> Self {
-        TokenIterator::new(value.src, value.start_offset, Some(value.eof_char), value.logger.clone(), value.items.into_iter())
+        TokenIterator::new(value.src, value.start_offset, Some(value.eof), value.logger.clone(), value.items.into_iter())
     }
 }

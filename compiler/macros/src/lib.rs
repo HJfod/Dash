@@ -348,6 +348,11 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
                 })
             }
         }
+        else if data.is_unit() {
+            quote! {
+                Ok(#self_name)
+            }
+        }
         else {
             quote! {
                 use crate::parser::parse::Parse;

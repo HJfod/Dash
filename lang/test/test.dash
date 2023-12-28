@@ -6,7 +6,7 @@ fun what(a: int, b: int) -> int {
         return;
     }
     else {
-        return a - b
+        return a - b;
     }
 }
 

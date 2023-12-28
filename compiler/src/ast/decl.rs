@@ -15,7 +15,7 @@ pub struct LetDecl {
 #[derive(Debug, Parse)]
 pub struct NamedParam {
     name: IdentPath,
-    ty: Option<(punct::Colon, TypeExpr)>,
+    ty: (punct::Colon, TypeExpr),
     default_value: Option<(op::Seq, Expr)>,
 }
 

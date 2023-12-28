@@ -9,16 +9,19 @@ pub(crate) mod kw {
 
     #[token(kind = "Keyword", raw = "let")]
     pub struct Let {}
-
     #[token(kind = "Keyword", raw = "fun")]
     pub struct Fun {}
-
+    #[token(kind = "Keyword", raw = "if")]
+    pub struct If {}
+    #[token(kind = "Keyword", raw = "else")]
+    pub struct Else {}
     #[token(kind = "Keyword", raw = "this")]
     pub struct This {}
+    #[token(kind = "Keyword", raw = "return")]
+    pub struct Return {}
 
     #[token(kind = "Ident", raw = "get")]
     pub struct Get {}
-
     #[token(kind = "Ident", raw = "set")]
     pub struct Set {}
 }
@@ -137,27 +140,102 @@ pub(crate) mod punct {
 
 pub(crate) mod op {
     use dash_macros::{token, Parse};
+    use crate::parser::parse::Parse;
+    use crate::parser::tokenizer::{TokenIterator, Token};
 
+    #[token(kind = "Punct", raw = "!")]
+    pub struct Not {}
+    #[token(kind = "Punct", raw = "?")]
+    pub struct Question {}
+    
+    #[token(kind = "Punct", raw = "==")]
+    pub struct Eq {}
+    #[token(kind = "Punct", raw = "!=")]
+    pub struct Neq {}
+    
+    #[token(kind = "Punct", raw = "&&")]
+    pub struct And {}
+    #[token(kind = "Punct", raw = "||")]
+    pub struct Or {}
+    
     #[token(kind = "Punct", raw = "=")]
     pub struct Seq {}
 
     #[token(kind = "Punct", raw = "+")]
     pub struct Add {}
-
     #[token(kind = "Punct", raw = "-")]
     pub struct Sub {}
 
+    #[token(kind = "Punct", raw = "*")]
+    pub struct Mul {}
+    #[token(kind = "Punct", raw = "/")]
+    pub struct Div {}
+    #[token(kind = "Punct", raw = "%")]
+    pub struct Mod {}
+
+    #[token(kind = "Punct", raw = ">")]
+    pub struct Grt {}
+    #[token(kind = "Punct", raw = "<")]
+    pub struct Less {}
+    #[token(kind = "Punct", raw = ">=")]
+    pub struct Geq {}
+    #[token(kind = "Punct", raw = "<=")]
+    pub struct Leq {}
+
     #[derive(Debug, Parse)]
     #[parse(expected = "operator")]
-    pub enum BinOp {
-        Seq(Box<Seq>),
-        Add(Box<Add>),
-        Sub(Box<Sub>),
+    pub enum Binary {
+        Eq(Eq), Neq(Neq),
+        Seq(Seq),
+        Add(Add), Sub(Sub),
+        Mul(Mul), Div(Div), Mod(Mod),
+        Grt(Grt), Less(Less), Geq(Geq), Leq(Leq),
+        And(And), Or(Or),
+    }
+
+    #[derive(Debug, Parse)]
+    #[parse(expected = "operator")]
+    pub enum Unary {
+        Plus(Add),
+        Neg(Sub),
+        Not(Not),
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    pub enum Prec {
+        Mul,
+        Add,
+        Ord,
+        Eq,
+        And,
+        Or,
+        Seq,
+    }
+
+    impl Prec {
+        pub(crate) const fn order() -> [Prec; 7] {
+            [Prec::Mul, Prec::Add, Prec::Ord, Prec::Eq, Prec::And, Prec::Or, Prec::Seq]
+        }
+        pub fn peek<'s, I>(&self, tokenizer: &TokenIterator<'s, I>) -> bool
+            where I: Iterator<Item = Token<'s>>
+        {
+            match self {
+                Prec::Mul => Mul::peek(0, tokenizer) || Div::peek(0, tokenizer) ||
+                             Mod::peek(0, tokenizer),
+                Prec::Ord => Grt::peek(0, tokenizer) || Less::peek(0, tokenizer) ||
+                             Geq::peek(0, tokenizer) || Leq::peek(0, tokenizer),
+                Prec::Add => Add::peek(0, tokenizer) || Sub::peek(0, tokenizer),
+                Prec::Eq  => Eq::peek(0, tokenizer) || Neq::peek(0, tokenizer),
+                Prec::And => And::peek(0, tokenizer),
+                Prec::Or  => Or::peek(0, tokenizer),
+                Prec::Seq => Seq::peek(0, tokenizer),
+            }
+        }
     }
 }
 
 pub(crate) mod delim {
-    use dash_macros::token;
+    use dash_macros::{token, Parse};
 
     use crate::parser::parse::Parse;
 
@@ -175,4 +253,8 @@ pub(crate) mod delim {
     pub struct Braced<T: Parse> {
         value: T,
     }
+
+    /// Placeholder used for peeking delimiters
+    #[derive(Debug, Parse)]
+    pub struct P;
 }
