@@ -1,7 +1,7 @@
 
 use dash_macros::Parse;
-use crate::parser::parse::{Separated, OneOrMore};
-use super::{decl::Decl, token::{Ident, punct}, atom::Atom};
+use crate::parser::parse::Separated;
+use super::{decl::Decl, token::{Ident, punct::{self, TerminatingSemicolon}}, atom::Atom};
 
 #[derive(Debug, Parse)]
 pub struct IdentPath {
@@ -18,5 +18,5 @@ pub enum Expr {
 
 #[derive(Debug, Parse)]
 pub struct ExprList {
-    exprs: Vec<(Expr, OneOrMore<punct::Semicolon>)>,
+    exprs: Vec<(Expr, TerminatingSemicolon)>,
 }

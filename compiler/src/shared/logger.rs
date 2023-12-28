@@ -13,6 +13,16 @@ pub enum Level {
     Error,
 }
 
+impl Level {
+    pub fn underline_style(&self) -> Underline {
+        match self {
+            Self::Error => Underline::Squiggle,
+            Self::Warning => Underline::Highlight,
+            Self::Info => Underline::Normal,
+        }
+    }
+}
+
 impl Display for Level {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", match self {
@@ -87,7 +97,7 @@ impl Display for Message<'_> {
         f.write_fmt(format_args!(
             "{}:\n{}{}\n{}",
             self.level,
-            self.span.underlined(Underline::Squiggle),
+            self.span.underlined(self.level.underline_style()),
             self.info,
             self.notes
                 .iter()

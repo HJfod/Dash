@@ -59,13 +59,68 @@ pub(crate) mod lit {
 }
 
 pub(crate) mod punct {
+    use std::sync::Arc;
+
     use dash_macros::token;
+
+    use crate::{shared::{src::{ArcSpan, Src}, logger::{Message, Level}}, parser::{parse::{Parse, FatalParseError, calculate_span}, tokenizer::{TokenIterator, Token}}};
 
     #[token(kind = "Punct", raw = ",")]
     pub struct Comma {}
 
     #[token(kind = "Punct", raw = ";")]
     pub struct Semicolon {}
+
+    #[derive(Debug)]
+    pub struct TerminatingSemicolon;
+
+    impl Parse for TerminatingSemicolon {
+        fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
+            where I: Iterator<Item = Token<'s>>
+        {
+            let last_was_braced = tokenizer.last_was_braced();
+            let mut found = vec![];
+            while let Some(s) = Semicolon::peek_and_parse(src.clone(), tokenizer)? {
+                found.push(s.span());
+            }
+            // If the last token was a Braced then allow omitting semicolon
+            if found.is_empty() && !last_was_braced {
+                tokenizer.expected("semicolon");
+            }
+            // Warn if there were multiple semicolons
+            if !found.is_empty() && last_was_braced {
+                tokenizer.logger().lock().unwrap().log(Message::new(
+                    Level::Warning,
+                    if found.len() > 1 {
+                        "Unnecessary semicolons"
+                    }
+                    else {
+                        "Unnecessary semicolon"
+                    },
+                    calculate_span(found).unwrap().as_ref()
+                ));
+            }
+            else if found.len() > 1 {
+                tokenizer.logger().lock().unwrap().log(Message::new(
+                    Level::Warning,
+                    "Unnecessary semicolons",
+                    calculate_span(found.iter().skip(1).cloned()).unwrap().as_ref()
+                ));
+            }
+            // Missing semicolon is not a fatal parsing error
+            Ok(Self)
+        }
+
+        fn peek<'s, I>(pos: usize, tokenizer: &TokenIterator<'s, I>) -> bool
+            where I: Iterator<Item = Token<'s>>
+        {
+            Semicolon::peek(pos, tokenizer)
+        }
+
+        fn span(&self) -> Option<ArcSpan> {
+            None
+        }
+    }
 
     #[token(kind = "Punct", raw = ":")]
     pub struct Colon {}

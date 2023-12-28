@@ -385,6 +385,7 @@ pub struct TokenIterator<'s, I: Iterator<Item = Token<'s>>> {
     iter: I,
     peek: [Option<Token<'s>>; MAX_PEEK_COUNT],
     start_of_last_token: usize,
+    last_was_braced: bool,
     eof_char: Option<char>,
     logger: LoggerRef,
 }
@@ -398,19 +399,23 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenIterator<'s, I> {
         mut iter: I,
     ) -> Self {
         let peek = core::array::from_fn(|_| iter.next());
-        Self { src, logger, iter, peek, start_of_last_token: start_offset, eof_char }
+        Self {
+            src, logger, iter, peek,
+            start_of_last_token: start_offset, eof_char,
+            last_was_braced: false,
+        }
     }
     pub fn peek(&self, n: usize) -> Option<&Token<'s>> {
         self.peek[n].as_ref()
     }
-    // pub fn start_offset(&self) -> usize {
-    //     self.peek(0).as_ref().map(|t| t.span.1.start).unwrap_or(0)
-    // }
-    // pub fn end_offset(&self) -> usize {
-    //     self.start_of_last_token
-    // }
+    pub(crate) fn last_was_braced(&self) -> bool {
+        self.last_was_braced
+    }
     fn eof_span(&self) -> Span<'s> {
         Span(self.src, self.start_of_last_token - 1..self.start_of_last_token)
+    }
+    pub(crate) fn logger(&self) -> LoggerRef {
+        self.logger.clone()
     }
     pub fn error<S: Display>(&mut self, msg: S) {
         if let Some(token) = self.next() {
@@ -451,8 +456,10 @@ impl<'s, I: Iterator<Item = Token<'s>>> Iterator for TokenIterator<'s, I> {
     type Item = Token<'s>;
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.iter.next();
-        if let Some(offset) = self.peek(0).as_ref().map(|t| t.span.1.end) {
-            self.start_of_last_token = offset;
+        if let Some(peek) = self.peek(0) {
+            (self.last_was_braced, self.start_of_last_token) = (
+                matches!(peek.kind, TokenKind::Braces(_)), peek.span.1.end
+            );
         }
         self.peek.rotate_left(1);
         std::mem::replace(self.peek.last_mut().unwrap(), next)
