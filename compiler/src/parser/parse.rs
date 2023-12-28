@@ -276,7 +276,8 @@ impl<T: Parse, S: Parse> Parse for SeparatedWithTrailing<T, S> {
     }
 
     fn span(&self) -> Option<ArcSpan> {
-        self.items.span()
+        calculate_span(self.items.iter().map(|i| i.span())
+            .chain(self.trailing.as_ref().map(|t| t.span())))
     }
 }
 
