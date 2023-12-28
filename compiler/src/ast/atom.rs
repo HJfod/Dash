@@ -1,11 +1,13 @@
 
 use dash_macros::Parse;
-use super::{expr::{Expr, IdentPath, ExprList}, token::lit};
+use super::{expr::{Expr, IdentPath, ExprList}, token::{lit, kw}};
 use crate::ast::token::delim;
 
 #[derive(Debug, Parse)]
-pub struct ItemUse {
-    path: IdentPath,
+#[parse(expected = "identifier")]
+pub enum ItemUse {
+    This(kw::This),
+    Ident(IdentPath),
 }
 
 #[derive(Debug, Parse)]

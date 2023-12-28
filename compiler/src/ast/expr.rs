@@ -3,20 +3,32 @@ use std::sync::Arc;
 
 use dash_macros::Parse;
 use crate::{parser::{parse::{Separated, Parse, FatalParseError, ParseFn}, tokenizer::{TokenIterator, Token}}, shared::src::{Src, ArcSpan}};
-use super::{decl::Decl, token::{Ident, punct::{self, TerminatingSemicolon}, op::{Prec, self}, delim}, atom::Atom, flow::{If, Return}, ops::{BinOp, UnOp, Call, Index}};
+use super::{
+    decl::Decl,
+    token::{Ident, punct::{self, TerminatingSemicolon}, op::{Prec, self}, delim},
+    atom::Atom,
+    flow::Flow,
+    ops::{BinOp, UnOp, Call, Index}
+};
+
+#[derive(Debug, Parse)]
+#[parse(expected = "identifier")]
+pub enum IdentComponent {
+    Attribute(punct::At, Ident),
+    Ident(Ident),
+}
 
 #[derive(Debug, Parse)]
 pub struct IdentPath {
     absolute: Option<punct::Namespace>,
-    path: Separated<Ident, punct::Namespace>,
+    path: Separated<IdentComponent, punct::Namespace>,
 }
 
 #[derive(Debug, Parse)]
 #[parse(expected = "expression")]
 pub enum ScalarExpr {
     Decl(Decl),
-    If(If),
-    Return(Return),
+    Flow(Flow),
     Atom(Atom),
 }
 

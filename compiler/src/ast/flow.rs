@@ -1,6 +1,7 @@
 
 use dash_macros::Parse;
-use super::{token::{kw, delim}, expr::{Expr, ExprList}};
+use crate::parser::parse::{Separated, SeparatedWithTrailing};
+use super::{token::{kw, delim, punct}, expr::{Expr, ExprList, IdentPath, IdentComponent}};
 
 #[derive(Debug, Parse)]
 pub struct If {
@@ -19,6 +20,33 @@ pub enum Else {
 
 #[derive(Debug, Parse)]
 pub struct Return {
-    return_rw: kw::Return,
+    return_kw: kw::Return,
     expr: Option<Expr>,
+}
+
+#[derive(Debug, Parse)]
+#[parse(expected = "identifier")]
+pub enum UsingComponent {
+    Multi(delim::Braced<SeparatedWithTrailing<UsingComponent, punct::Comma>>),
+    Single(IdentComponent),
+}
+
+#[derive(Debug, Parse)]
+pub struct UsingPath {
+    absolute: Option<punct::Namespace>,
+    path: Separated<UsingComponent, punct::Namespace>,
+}
+
+#[derive(Debug, Parse)]
+pub struct UsingItem {
+    using_kw: kw::Using,
+    path: UsingPath,
+}
+
+#[derive(Debug, Parse)]
+#[parse(expected = "control flow expression")]
+pub enum Flow {
+    If(If),
+    Return(Return),
+    UsingItem(UsingItem),
 }

@@ -19,6 +19,8 @@ pub(crate) mod kw {
     pub struct This {}
     #[token(kind = "Keyword", raw = "return")]
     pub struct Return {}
+    #[token(kind = "Keyword", raw = "using")]
+    pub struct Using {}
 
     #[token(kind = "Ident", raw = "get")]
     pub struct Get {}
@@ -137,6 +139,9 @@ pub(crate) mod punct {
 
     #[token(kind = "Punct", raw = "=>")]
     pub struct FatArrow {}
+
+    #[token(kind = "Punct", raw = "@")]
+    pub struct At {}
 }
 
 pub(crate) mod op {
