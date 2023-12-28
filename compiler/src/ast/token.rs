@@ -86,8 +86,9 @@ pub(crate) mod punct {
             while let Some(s) = Semicolon::peek_and_parse(src.clone(), tokenizer)? {
                 found.push(s.span());
             }
-            // If the last token was a Braced then allow omitting semicolon
-            if found.is_empty() && !last_was_braced {
+            // If the last token was a Braced or we're at EOF of this tree 
+            // then allow omitting semicolon
+            if found.is_empty() && !last_was_braced && tokenizer.peek(0).is_some() {
                 tokenizer.expected("semicolon");
             }
             // Warn if there were multiple semicolons
