@@ -25,6 +25,10 @@ pub enum Ty {
         params: Vec<(String, Ty)>,
         ret_ty: Box<Ty>,
     },
+    /// Optional type
+    Option {
+        ty: Box<Ty>,
+    },
     /// Alias for another type. Can be implicitly converted to the other type
     Alias {
         name: String,
@@ -84,6 +88,7 @@ impl Ty {
             Ty::Float => ArcSpan::builtin(),
             Ty::String => ArcSpan::builtin(),
             Ty::Function { params: _, ret_ty: _ } => ArcSpan::builtin(),
+            Ty::Option { ty: _ } => ArcSpan::builtin(),
             Ty::Alias { name: _, ty: _, decl_span } |
             Ty::Named { name: _, ty: _, decl_span } => decl_span.clone(),
         }
@@ -100,14 +105,16 @@ impl Display for Ty {
             Self::Int => f.write_str("int"),
             Self::Float => f.write_str("float"),
             Self::String => f.write_str("string"),
-            Self::Function { params, ret_ty } => f.write_fmt(format_args!(
+            Self::Function { params, ret_ty } => write!(
+                f,
                 "fun({}) -> {ret_ty}", params.iter()
                     .map(|(p, t)| format!("{p}: {t}"))
                     .collect::<Vec<_>>()
                     .join(", ")
-            )),
-            Self::Alias { name, ty: _, decl_span: _ } => f.write_str(name),
-            Self::Named { name, ty: _, decl_span: _ } => f.write_str(name),
+            ),
+            Self::Option { ty } => write!(f, "{ty}?"),
+            Self::Alias { name, ty: _, decl_span: _ } => write!(f, "{name}"),
+            Self::Named { name, ty: _, decl_span: _ } => write!(f, "{name}"),
         }
     }
 }

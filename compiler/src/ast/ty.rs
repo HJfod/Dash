@@ -1,8 +1,12 @@
 
 use std::sync::Arc;
 
-use dash_macros::Parse;
-use crate::{parser::{parse::{Parse, FatalParseError, calculate_span}, tokenizer::{TokenIterator, Token}}, shared::src::{Src, ArcSpan}};
+use dash_macros::{Parse, Resolve};
+use crate::{
+    parser::{parse::{Parse, FatalParseError, calculate_span}, tokenizer::{TokenIterator, Token}},
+    shared::src::{Src, ArcSpan},
+    checker::{resolve::Resolve, coherency::Checker, ty::Ty}
+};
 use super::{expr::IdentPath, token::op};
 
 #[derive(Debug)]
@@ -36,7 +40,18 @@ impl Parse for TypeExpr {
     }
 }
 
-#[derive(Debug, Parse)]
+impl Resolve for TypeExpr {
+    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        match self {
+            TypeExpr::Optional(opt, _) => Some(Ty::Option {
+                ty: Box::new(opt.try_resolve(checker)?)
+            }),
+            TypeExpr::Atom(atom) => atom.try_resolve(checker),
+        }
+    }
+}
+
+#[derive(Debug, Parse, Resolve)]
 #[parse(expected = "type")]
 pub enum TypeAtom {
     TypeIdent(TypeIdent),
@@ -45,4 +60,10 @@ pub enum TypeAtom {
 #[derive(Debug, Parse)]
 pub struct TypeIdent {
     name: IdentPath,
+}
+
+impl Resolve for TypeIdent {
+    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        todo!()
+    }
 }

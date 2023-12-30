@@ -1,7 +1,7 @@
 
 use std::sync::Arc;
 use dash_macros::Parse;
-use crate::{parser::{parse::{Parse, FatalParseError, calculate_span, ParseFn, SeparatedWithTrailing}, tokenizer::{TokenIterator, Token}}, shared::src::{Src, ArcSpan}};
+use crate::{parser::{parse::{Parse, FatalParseError, calculate_span, ParseFn, SeparatedWithTrailing}, tokenizer::{TokenIterator, Token}}, shared::src::{Src, ArcSpan}, checker::{resolve::Resolve, coherency::Checker, ty::Ty}};
 
 use super::{expr::Expr, token::{op, delim, Ident, punct}};
 
@@ -10,6 +10,12 @@ use super::{expr::Expr, token::{op, delim, Ident, punct}};
 pub enum Arg {
     Named(Ident, #[parse(peek_point)] punct::Colon, Expr),
     Unnamed(Expr),
+}
+
+impl Resolve for Arg {
+    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        todo!()
+    }
 }
 
 #[derive(Debug)]
@@ -34,6 +40,12 @@ impl Call {
     }
     pub fn span(&self) -> Option<ArcSpan> {
         calculate_span([self.target.span(), self.args.span()])
+    }
+}
+
+impl Resolve for Call {
+    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        todo!()
     }
 }
 
@@ -64,6 +76,12 @@ impl Index {
     }
 }
 
+impl Resolve for Index {
+    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        todo!()
+    }
+}
+
 #[derive(Debug)]
 pub struct UnOp {
     op: op::Unary,
@@ -87,6 +105,12 @@ impl UnOp {
     }
     pub fn span(&self) -> Option<ArcSpan> {
         calculate_span([self.op.span(), self.target.span()])
+    }
+}
+
+impl Resolve for UnOp {
+    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        todo!()
     }
 }
 
@@ -116,5 +140,11 @@ impl BinOp {
     }
     pub fn span(&self) -> Option<ArcSpan> {
         calculate_span([self.lhs.span(), self.op.span(), self.rhs.span()])
+    }
+}
+
+impl Resolve for BinOp {
+    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        todo!()
     }
 }

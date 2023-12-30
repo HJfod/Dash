@@ -1,8 +1,8 @@
 
 use std::sync::Arc;
 
-use dash_macros::Parse;
-use crate::{parser::{parse::{Separated, Parse, FatalParseError, ParseFn}, tokenizer::{TokenIterator, Token}}, shared::src::{Src, ArcSpan}};
+use dash_macros::{Parse, Resolve};
+use crate::{parser::{parse::{Separated, Parse, FatalParseError, ParseFn}, tokenizer::{TokenIterator, Token}}, shared::src::{Src, ArcSpan}, checker::{resolve::Resolve, coherency::Checker, ty::Ty}};
 use super::{
     decl::Decl,
     token::{Ident, punct::{self, TerminatingSemicolon}, op::{Prec, self}, delim},
@@ -24,7 +24,7 @@ pub struct IdentPath {
     path: Separated<IdentComponent, punct::Namespace>,
 }
 
-#[derive(Debug, Parse)]
+#[derive(Debug, Parse, Resolve)]
 #[parse(expected = "expression")]
 pub enum ScalarExpr {
     Decl(Decl),
@@ -32,7 +32,7 @@ pub enum ScalarExpr {
     Atom(Atom),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Resolve)]
 pub enum Expr {
     BinOp(Box<BinOp>),
     UnOp(Box<UnOp>),
@@ -129,4 +129,16 @@ impl Parse for Expr {
 #[derive(Debug, Parse)]
 pub struct ExprList {
     exprs: Vec<(Expr, TerminatingSemicolon)>,
+}
+
+impl Resolve for ExprList {
+    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        self.exprs.iter_mut()
+            .map(|(e, c)| (e.try_resolve(checker), c.has_semicolon()))
+            .map(|(e, c)| e.map(|e| (e, c)))
+            .collect::<Option<Vec<_>>>()?
+            .into_iter()
+            .last()
+            .and_then(|(e, c)| (!c).then_some(e).or(Some(Ty::Void)))
+    }
 }

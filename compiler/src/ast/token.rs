@@ -31,8 +31,16 @@ pub(crate) mod kw {
 pub(crate) mod lit {
     use dash_macros::{token, Parse};
 
+    use crate::checker::{resolve::Resolve, coherency::Checker, ty::Ty};
+
     #[token(kind = "Keyword", raw = "void")]
     pub struct Void {}
+
+    impl Resolve for Void {
+        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+            Some(Ty::Void)
+        }
+    }
 
     #[token(kind = "Keyword", raw = "true")]
     pub struct True {}
@@ -47,9 +55,21 @@ pub(crate) mod lit {
         False(False),
     }
 
+    impl Resolve for Bool {
+        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+            Some(Ty::Bool)
+        }
+    }
+
     #[token(kind = "Int(_)")]
     pub struct Int {
         value: i64,
+    }
+
+    impl Resolve for Int {
+        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+            Some(Ty::Int)
+        }
     }
 
     #[token(kind = "Float(_)")]
@@ -57,9 +77,21 @@ pub(crate) mod lit {
         value: f64,
     }
 
+    impl Resolve for Float {
+        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+            Some(Ty::Float)
+        }
+    }
+
     #[token(kind = "String(_)")]
     pub struct String {
         value: std::string::String,
+    }
+
+    impl Resolve for String {
+        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+            Some(Ty::String)
+        }
     }
 }
 
@@ -68,7 +100,13 @@ pub(crate) mod punct {
 
     use dash_macros::token;
 
-    use crate::{shared::{src::{ArcSpan, Src}, logger::{Message, Level}}, parser::{parse::{Parse, FatalParseError, calculate_span}, tokenizer::{TokenIterator, Token}}};
+    use crate::{
+        shared::{src::{ArcSpan, Src}, logger::{Message, Level}},
+        parser::{
+            parse::{Parse, FatalParseError, calculate_span},
+            tokenizer::{TokenIterator, Token}
+        }
+    };
 
     #[token(kind = "Punct", raw = ",")]
     pub struct Comma {}
@@ -77,7 +115,15 @@ pub(crate) mod punct {
     pub struct Semicolon {}
 
     #[derive(Debug)]
-    pub struct TerminatingSemicolon;
+    pub struct TerminatingSemicolon {
+        semicolons: Vec<Semicolon>,
+    }
+
+    impl TerminatingSemicolon {
+        pub fn has_semicolon(&self) -> bool {
+            !self.semicolons.is_empty()
+        }
+    }
 
     impl Parse for TerminatingSemicolon {
         fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
@@ -86,7 +132,7 @@ pub(crate) mod punct {
             let last_was_braced = tokenizer.last_was_braced();
             let mut found = vec![];
             while let Some(s) = Semicolon::peek_and_parse(src.clone(), tokenizer)? {
-                found.push(s.span());
+                found.push(s);
             }
             // If the last token was a Braced or we're at EOF of this tree 
             // then allow omitting semicolon
@@ -103,18 +149,18 @@ pub(crate) mod punct {
                     else {
                         "Unnecessary semicolon"
                     },
-                    calculate_span(found).unwrap().as_ref()
+                    calculate_span(found.iter().map(|s| s.span())).unwrap().as_ref()
                 ));
             }
             else if found.len() > 1 {
                 tokenizer.logger().lock().unwrap().log(Message::new(
                     Level::Warning,
                     "Unnecessary semicolons",
-                    calculate_span(found.iter().skip(1).cloned()).unwrap().as_ref()
+                    calculate_span(found.iter().skip(1).map(|s| s.span())).unwrap().as_ref()
                 ));
             }
             // Missing semicolon is not a fatal parsing error
-            Ok(Self)
+            Ok(Self { semicolons: found })
         }
 
         fn peek<'s, I>(pos: usize, tokenizer: &TokenIterator<'s, I>) -> bool
@@ -124,7 +170,7 @@ pub(crate) mod punct {
         }
 
         fn span(&self) -> Option<ArcSpan> {
-            None
+            calculate_span(self.semicolons.iter().map(|s| s.span()))
         }
     }
 
@@ -243,16 +289,31 @@ pub(crate) mod op {
 pub(crate) mod delim {
     use dash_macros::{token, Parse};
 
-    use crate::parser::parse::Parse;
+    use crate::{
+        parser::parse::Parse,
+        checker::{resolve::Resolve, coherency::Checker, ty::Ty}
+    };
 
     #[token(kind = "Parentheses(_)", value_is_token_tree)]
     pub struct Parenthesized<T: Parse> {
         value: T,
     }
-    
+
+    impl<T: Parse + Resolve> Resolve for Parenthesized<T> {
+        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+            self.value.try_resolve(checker)
+        }
+    }
+     
     #[token(kind = "Brackets(_)", value_is_token_tree)]
     pub struct Bracketed<T: Parse> {
         value: T,
+    }
+
+    impl<T: Parse + Resolve> Resolve for Bracketed<T> {
+        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+            self.value.try_resolve(checker)
+        }
     }
 
     #[token(kind = "Braces(_)", value_is_token_tree)]
@@ -260,7 +321,19 @@ pub(crate) mod delim {
         value: T,
     }
 
+    impl<T: Parse + Resolve> Resolve for Braced<T> {
+        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+            self.value.try_resolve(checker)
+        }
+    }
+
     /// Placeholder used for peeking delimiters
     #[derive(Debug, Parse)]
     pub struct P;
+
+    impl Resolve for P {
+        fn try_resolve(&mut self, _: &mut Checker) -> Option<Ty> {
+            Some(Ty::Invalid)
+        }
+    }
 }

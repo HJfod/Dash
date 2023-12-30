@@ -4,6 +4,9 @@ use std::fmt::Display;
 pub mod path;
 pub mod ty;
 pub mod pool;
+pub mod resolve;
+pub mod entity;
+pub mod coherency;
 
 pub(crate) trait Ice: Sized {
     type R;

@@ -479,7 +479,7 @@ impl ToTokens for ParseReceiver {
 }
 
 #[proc_macro_derive(Parse, attributes(parse))]
-pub fn derive(input: TokenStream) -> TokenStream {
+pub fn derive_parse(input: TokenStream) -> TokenStream {
     match ParseReceiver::from_derive_input(&syn::parse(input).expect("Couldn't parse item")) {
         Ok(v) => v,
         Err(e) => {
@@ -488,3 +488,65 @@ pub fn derive(input: TokenStream) -> TokenStream {
     }.to_token_stream().into()
 }
 
+#[derive(FromDeriveInput)]
+#[darling(supports(enum_newtype))]
+struct ResolveReceiver {
+    ident: syn::Ident,
+    generics: syn::Generics,
+    data: ast::Data<ResolveVariant, ()>,
+}
+
+#[derive(FromVariant)]
+struct ResolveVariant {
+    ident: syn::Ident,
+}
+
+impl ToTokens for ResolveReceiver {
+    fn to_tokens(&self, tokens: &mut TokenStream2) {
+        let try_resolve_impl;
+
+        match &self.data {
+            ast::Data::Struct(_) => {
+                unimplemented!("structs not yet supported")
+            }
+            ast::Data::Enum(data) => {
+                let mut matches = quote! {};
+                for v in data {
+                    let ident = &v.ident;
+                    matches.extend(quote_spanned! {
+                        v.ident.span() =>
+                        Self::#ident(value) => crate::checker::resolve::Resolve::try_resolve(value, checker),
+                    });
+                }
+                try_resolve_impl = quote! {
+                    match self {
+                        #matches
+                    }
+                };
+            }
+        }
+
+        let name = &self.ident;
+        let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
+        tokens.extend(quote! {
+            impl #impl_generics crate::checker::resolve::Resolve for #name #ty_generics #where_clause {
+                fn try_resolve(
+                    &mut self,
+                    checker: &mut crate::checker::coherency::Checker
+                ) -> Option<crate::checker::ty::Ty> {
+                    #try_resolve_impl
+                }
+            }
+        });
+    }
+}
+
+#[proc_macro_derive(Resolve)]
+pub fn derive_resolve(input: TokenStream) -> TokenStream {
+    match ResolveReceiver::from_derive_input(&syn::parse(input).expect("Couldn't parse item")) {
+        Ok(v) => v,
+        Err(e) => {
+            return e.write_errors().into();
+        }
+    }.to_token_stream().into()
+}
