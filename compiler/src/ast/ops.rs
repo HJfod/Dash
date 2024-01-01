@@ -3,7 +3,7 @@ use std::sync::Arc;
 use dash_macros::Parse;
 use crate::{
     parser::{parse::{Parse, FatalParseError, calculate_span, ParseFn, SeparatedWithTrailing}, tokenizer::{TokenIterator, Token}},
-    shared::{src::{Src, ArcSpan}, logger::{Message, Level}},
+    shared::{src::{Src, ArcSpan}, logger::{Message, Level, Note}},
     checker::{resolve::Resolve, coherency::Checker, ty::Ty, path}, ice
 };
 
@@ -47,20 +47,37 @@ impl Resolve for Call {
         let args = self.args.value.iter_mut()
             .map(|arg| match arg {
                 Arg::Unnamed(value) => {
-                    (None, value.try_resolve(checker))
+                    (None, value.try_resolve(checker), value.span())
                 }
                 Arg::Named(name, _, value) => {
-                    (Some(name), value.try_resolve(checker))
+                    (Some(name), value.try_resolve(checker), value.span())
                 }
             })
-            .map(|(name, expr)| expr.map(|e| (name, e)))
+            .map(|(name, expr, span)| expr.map(|e| (name, e, span)))
             .collect::<Option<Vec<_>>>()?;
         match target {
             Ty::Function { params, ret_ty } => {
                 let mut arg_ix = 0usize;
-                for (name, ty) in args {
-                    
-                    arg_ix += 1;
+                let mut encountered_named = None;
+                for (name, ty, span) in args {
+                    if let Some(name) = name {
+                        encountered_named = Some(span.clone());
+                    }
+                    else {
+                        arg_ix += 1;
+                        if let Some(e_span) = encountered_named.clone() {
+                            checker.logger().lock().unwrap().log(Message::new(
+                                Level::Error,
+                                "Cannot pass positional arguments after named arguments \
+                                have been passed",
+                                span.into()
+                            ).note(Note::new_at(
+                                // todo: make this a hint
+                                "Move this named argument to the end of the arguments list",
+                                e_span.into()
+                            )));
+                        }
+                    }
                 }
                 Some(ret_ty.as_ref().clone())
             }
