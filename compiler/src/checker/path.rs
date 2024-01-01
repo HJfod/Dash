@@ -1,10 +1,16 @@
 
 use std::fmt::Display;
 
+use crate::ast::token::op;
+
+use super::ty::Ty;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct Ident {
-    name: String,
-    decorator: bool,
+pub(crate) enum Ident {
+    Name(String),
+    Decorator(String),
+    UnOp(op::Unary, Ty),
+    BinOp(Ty, op::Binary, Ty),
 }
 
 impl From<&str> for Ident {
@@ -16,17 +22,22 @@ impl From<&str> for Ident {
 impl From<String> for Ident {
     fn from(value: String) -> Self {
         if let Some(name) = value.strip_prefix('@') {
-            Self { name: name.to_string(), decorator: true }
+            Self::Decorator(name.to_string())
         }
         else {
-            Self { name: value, decorator: false }
+            Self::Name(value)
         }
     }
 }
 
 impl Display for Ident {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}{}", if self.decorator { "@" } else { "" }, self.name)
+        match self {
+            Self::Name(name) => write!(f, "{name}"),
+            Self::Decorator(name) => write!(f, "@{name}"),
+            Self::UnOp(op, t) => write!(f, "unop`{op}{t}`"),
+            Self::BinOp(a, op, b) => write!(f, "binop`{a}{op}{b}`"),
+        }
     }
 }
 
@@ -40,20 +51,20 @@ impl IdentPath {
     pub fn new<T: Into<Vec<Ident>>>(path: T, absolute: bool) -> Self {
         Self { components: path.into(), absolute }
     }
-    pub fn parse(mut value: &str) -> Self {
-        let absolute;
-        if let Some(relative) = value.strip_prefix("::") {
-            absolute = true;
-            value = relative;
-        }
-        else {
-            absolute = false;
-        }
-        Self {
-            components: value.split("::").map(Ident::from).collect(),
-            absolute
-        }
-    }
+    // pub fn parse(mut value: &str) -> Self {
+    //     let absolute;
+    //     if let Some(relative) = value.strip_prefix("::") {
+    //         absolute = true;
+    //         value = relative;
+    //     }
+    //     else {
+    //         absolute = false;
+    //     }
+    //     Self {
+    //         components: value.split("::").map(Ident::from).collect(),
+    //         absolute
+    //     }
+    // }
     pub fn to_full(&self) -> FullIdentPath {
         FullIdentPath::new(self.components.clone())
     }

@@ -1,6 +1,6 @@
 
 use dash_macros::{Parse, Resolve};
-use crate::{parser::parse::{Separated, SeparatedWithTrailing}, checker::resolve::Resolve};
+use crate::{parser::parse::{Separated, SeparatedWithTrailing, Parse}, checker::{resolve::Resolve, ty::Ty, coherency::Checker}};
 use super::{token::{kw, delim, punct}, expr::{Expr, ExprList, IdentComponent}};
 
 #[derive(Debug, Parse)]
@@ -12,8 +12,17 @@ pub struct If {
 }
 
 impl Resolve for If {
-    fn try_resolve(&mut self, checker: &mut crate::checker::coherency::Checker) -> Option<crate::checker::ty::Ty> {
-        todo!()
+    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        let cond = self.cond.try_resolve(checker)?;
+        let truthy = self.truthy.try_resolve(checker)?;
+        let falsy = if let Some((_, e)) = &mut self.falsy {
+            e.try_resolve(checker)?
+        }
+        else {
+            Ty::Invalid
+        };
+        checker.expect_ty_eq(cond, Ty::Bool, self.cond.span());
+        checker.expect_ty_eq(truthy, falsy, self.span()).into()
     }
 }
 

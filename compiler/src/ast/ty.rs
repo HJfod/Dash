@@ -64,6 +64,18 @@ pub struct TypeIdent {
 
 impl Resolve for TypeIdent {
     fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
-        todo!()
+        for scope in checker.scopes() {
+            if let Some(ty) = scope.types().find(
+                &self.name.to_path(),
+                checker.namespace_stack()
+            ) {
+                return Some(ty.clone());
+            }
+        }
+        checker.push_unresolved(
+            format!("Unknown type {}", self.name.to_path()),
+            self.name.span()
+        );
+        None
     }
 }

@@ -1,8 +1,16 @@
 
+use std::fmt::Display;
+
 use dash_macros::token;
 
-#[token(kind = "Ident")]
+#[token(kind = "Ident", include_raw)]
 pub struct Ident {}
+
+impl Display for Ident {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.raw)
+    }
+}
 
 pub(crate) mod kw {
     use dash_macros::token;
@@ -37,7 +45,7 @@ pub(crate) mod lit {
     pub struct Void {}
 
     impl Resolve for Void {
-        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        fn try_resolve(&mut self, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Void)
         }
     }
@@ -56,7 +64,7 @@ pub(crate) mod lit {
     }
 
     impl Resolve for Bool {
-        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        fn try_resolve(&mut self, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Bool)
         }
     }
@@ -67,7 +75,7 @@ pub(crate) mod lit {
     }
 
     impl Resolve for Int {
-        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        fn try_resolve(&mut self, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Int)
         }
     }
@@ -78,7 +86,7 @@ pub(crate) mod lit {
     }
 
     impl Resolve for Float {
-        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        fn try_resolve(&mut self, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Float)
         }
     }
@@ -89,7 +97,7 @@ pub(crate) mod lit {
     }
 
     impl Resolve for String {
-        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        fn try_resolve(&mut self, _: &mut Checker) -> Option<Ty> {
             Some(Ty::String)
         }
     }
@@ -191,50 +199,68 @@ pub(crate) mod punct {
 }
 
 pub(crate) mod op {
+    use std::fmt::Display;
+
     use dash_macros::{token, Parse};
     use crate::parser::parse::Parse;
     use crate::parser::tokenizer::{TokenIterator, Token};
 
-    #[token(kind = "Punct", raw = "!")]
+    #[token(kind = "Punct", raw = "!", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Not {}
-    #[token(kind = "Punct", raw = "?")]
+    #[token(kind = "Punct", raw = "?", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Question {}
     
-    #[token(kind = "Punct", raw = "==")]
+    #[token(kind = "Punct", raw = "==", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Eq {}
-    #[token(kind = "Punct", raw = "!=")]
+    #[token(kind = "Punct", raw = "!=", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Neq {}
     
-    #[token(kind = "Punct", raw = "&&")]
+    #[token(kind = "Punct", raw = "&&", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct And {}
-    #[token(kind = "Punct", raw = "||")]
+    #[token(kind = "Punct", raw = "||", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Or {}
     
-    #[token(kind = "Punct", raw = "=")]
+    #[token(kind = "Punct", raw = "=", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Seq {}
 
-    #[token(kind = "Punct", raw = "+")]
+    #[token(kind = "Punct", raw = "+", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Add {}
-    #[token(kind = "Punct", raw = "-")]
+    #[token(kind = "Punct", raw = "-", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Sub {}
 
-    #[token(kind = "Punct", raw = "*")]
+    #[token(kind = "Punct", raw = "*", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Mul {}
-    #[token(kind = "Punct", raw = "/")]
+    #[token(kind = "Punct", raw = "/", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Div {}
-    #[token(kind = "Punct", raw = "%")]
+    #[token(kind = "Punct", raw = "%", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Mod {}
 
-    #[token(kind = "Punct", raw = ">")]
+    #[token(kind = "Punct", raw = ">", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Grt {}
-    #[token(kind = "Punct", raw = "<")]
+    #[token(kind = "Punct", raw = "<", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Less {}
-    #[token(kind = "Punct", raw = ">=")]
+    #[token(kind = "Punct", raw = ">=", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Geq {}
-    #[token(kind = "Punct", raw = "<=")]
+    #[token(kind = "Punct", raw = "<=", include_raw)]
+    #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Leq {}
 
-    #[derive(Debug, Parse)]
+    #[derive(Clone, Debug, Parse, PartialEq, Eq, Hash)]
     #[parse(expected = "operator")]
     pub enum Binary {
         Eq(Eq), Neq(Neq),
@@ -245,12 +271,43 @@ pub(crate) mod op {
         And(And), Or(Or),
     }
 
-    #[derive(Debug, Parse)]
+    impl Display for Binary {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(match self {
+                Self::Eq(e) => &e.raw,
+                Self::Neq(e) => &e.raw,
+                Self::Seq(e) => &e.raw,
+                Self::Add(e) => &e.raw,
+                Self::Sub(e) => &e.raw,
+                Self::Mul(e) => &e.raw,
+                Self::Div(e) => &e.raw,
+                Self::Mod(e) => &e.raw,
+                Self::Grt(e) => &e.raw,
+                Self::Less(e) => &e.raw,
+                Self::Geq(e) => &e.raw,
+                Self::Leq(e) => &e.raw,
+                Self::And(e) => &e.raw,
+                Self::Or(e) => &e.raw,
+            })
+        }
+    }
+
+    #[derive(Clone, Debug, Parse, PartialEq, Eq, Hash)]
     #[parse(expected = "operator")]
     pub enum Unary {
         Plus(Add),
         Neg(Sub),
         Not(Not),
+    }
+
+    impl Display for Unary {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str(match self {
+                Self::Plus(e) => &e.raw,
+                Self::Neg(e) => &e.raw,
+                Self::Not(e) => &e.raw,
+            })
+        }
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -296,7 +353,7 @@ pub(crate) mod delim {
 
     #[token(kind = "Parentheses(_)", value_is_token_tree)]
     pub struct Parenthesized<T: Parse> {
-        value: T,
+        pub value: T,
     }
 
     impl<T: Parse + Resolve> Resolve for Parenthesized<T> {
@@ -307,7 +364,7 @@ pub(crate) mod delim {
      
     #[token(kind = "Brackets(_)", value_is_token_tree)]
     pub struct Bracketed<T: Parse> {
-        value: T,
+        pub value: T,
     }
 
     impl<T: Parse + Resolve> Resolve for Bracketed<T> {
@@ -318,7 +375,7 @@ pub(crate) mod delim {
 
     #[token(kind = "Braces(_)", value_is_token_tree)]
     pub struct Braced<T: Parse> {
-        value: T,
+        pub value: T,
     }
 
     impl<T: Parse + Resolve> Resolve for Braced<T> {

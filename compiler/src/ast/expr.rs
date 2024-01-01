@@ -1,8 +1,12 @@
 
-use std::sync::Arc;
+use std::{sync::Arc, ptr::NonNull};
 
 use dash_macros::{Parse, Resolve};
-use crate::{parser::{parse::{Separated, Parse, FatalParseError, ParseFn}, tokenizer::{TokenIterator, Token}}, shared::src::{Src, ArcSpan}, checker::{resolve::Resolve, coherency::Checker, ty::Ty}};
+use crate::{
+    parser::{parse::{Separated, Parse, FatalParseError, ParseFn}, tokenizer::{TokenIterator, Token}},
+    shared::src::{Src, ArcSpan},
+    checker::{resolve::Resolve, coherency::{Checker, Scope}, ty::Ty, path}
+};
 use super::{
     decl::Decl,
     token::{Ident, punct::{self, TerminatingSemicolon}, op::{Prec, self}, delim},
@@ -22,6 +26,18 @@ pub enum IdentComponent {
 pub struct IdentPath {
     absolute: Option<punct::Namespace>,
     path: Separated<IdentComponent, punct::Namespace>,
+}
+
+impl IdentPath {
+    pub(crate) fn to_path(&self) -> path::IdentPath {
+        path::IdentPath::new(
+            self.path.iter().map(|i| path::Ident::from(match i {
+                IdentComponent::Ident(i) => i.to_string(),
+                IdentComponent::Attribute(_, i) => format!("@{i}"),
+            })).collect::<Vec<_>>(),
+            self.absolute.is_some()
+        )
+    }
 }
 
 #[derive(Debug, Parse, Resolve)]
@@ -129,10 +145,13 @@ impl Parse for Expr {
 #[derive(Debug, Parse)]
 pub struct ExprList {
     exprs: Vec<(Expr, TerminatingSemicolon)>,
+    #[parse(skip = "None")]
+    scope: Option<NonNull<Scope>>,
 }
 
 impl Resolve for ExprList {
     fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        let _handle = checker.enter_scope(&mut self.scope);
         self.exprs.iter_mut()
             .map(|(e, c)| (e.try_resolve(checker), c.has_semicolon()))
             .map(|(e, c)| e.map(|e| (e, c)))

@@ -1,5 +1,5 @@
 
-use crate::{shared::logger::Message, parser::parse::{DontExpect, CompileMessage, Parse}};
+use crate::parser::parse::{DontExpect, CompileMessage, Parse};
 use super::{ty::Ty, coherency::Checker};
 
 pub trait Resolve {
@@ -17,10 +17,4 @@ impl<T: Parse, M: CompileMessage> Resolve for DontExpect<T, M> {
     fn try_resolve(&mut self, _: &mut Checker) -> Option<Ty> {
         Some(Ty::Invalid)
     }
-}
-
-pub trait Unresolved {
-    /// If resolving everything wasn't succesful and this node caused it, 
-    /// return a Message describing why it wasn't resolved
-    fn unresolved_due_to(&self) -> Message;
 }

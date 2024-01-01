@@ -26,6 +26,6 @@ impl<T> Ice for Option<T> {
 #[macro_export]
 macro_rules! ice {
     ($msg:literal $($rest:tt)*) => {
-        panic!("Internal compiler error: {}", format!($msg, $($rest)*))
+        panic!("Internal compiler error: {}", format!($msg $($rest)*))
     };
 }

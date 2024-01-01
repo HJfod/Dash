@@ -232,6 +232,15 @@ pub struct Separated<T: Parse, S: Parse> {
     _phantom: PhantomData<S>,
 }
 
+impl<T: Parse, S: Parse> Separated<T, S> {
+    pub fn iter(&self) -> std::slice::Iter<'_, T> {
+        self.items.iter()
+    }
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
+        self.items.iter_mut()
+    }
+}
+
 impl<T: Parse, S: Parse> Parse for Separated<T, S> {
     fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
         where I: Iterator<Item = Token<'s>>
@@ -259,6 +268,15 @@ pub struct SeparatedWithTrailing<T: Parse, S: Parse> {
     items: Vec<T>,
     trailing: Option<S>,
     _phantom: PhantomData<S>,
+}
+
+impl<T: Parse, S: Parse> SeparatedWithTrailing<T, S> {
+    pub fn iter(&self) -> std::slice::Iter<'_, T> {
+        self.items.iter()
+    }
+    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
+        self.items.iter_mut()
+    }
 }
 
 impl<T: Parse, S: Parse> Parse for SeparatedWithTrailing<T, S> {

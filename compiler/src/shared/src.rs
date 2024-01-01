@@ -1,5 +1,5 @@
 
-use std::{path::PathBuf, sync::Arc, fs, fmt::{Debug, Display}, ops::Range, ffi::OsStr, cmp::max};
+use std::{path::PathBuf, sync::Arc, fs, fmt::{Debug, Display}, ops::Range, ffi::OsStr, cmp::max, hash::Hash};
 use line_col::LineColLookup;
 use colored::{Color, Colorize};
 
@@ -101,7 +101,7 @@ impl Display for Span<'_> {
         }
     }
 }
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, Hash)]
 pub struct ArcSpan(pub Arc<Src>, pub Range<usize>);
 
 impl ArcSpan {
@@ -119,9 +119,9 @@ impl Debug for ArcSpan {
     }
 }
 
-impl PartialEq for ArcSpan {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0 && self.1 == other.1
+impl From<Option<ArcSpan>> for Span<'_> {
+    fn from(value: Option<ArcSpan>) -> Self {
+        value.into()
     }
 }
 
@@ -183,6 +183,17 @@ impl PartialEq for Src {
             (Src::Builtin, Src::Builtin) => true,
             (Src::File { path: a, data: _ }, Self::File { path: b, data: _ }) => a == b,
             (_, _) => false
+        }
+    }
+}
+
+impl Eq for Src {}
+
+impl Hash for Src {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Src::Builtin => 0.hash(state),
+            Src::File { path, data: _ } => path.hash(state),
         }
     }
 }

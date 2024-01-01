@@ -1,6 +1,11 @@
 
-use crate::{parser::parse::{SeparatedWithTrailing, DontExpect}, add_compile_message, checker::{resolve::Resolve, coherency::Checker, ty::Ty}};
-
+use crate::{
+    parser::parse::{SeparatedWithTrailing, DontExpect, Parse},
+    add_compile_message,
+    checker::{resolve::Resolve, coherency::Checker, ty::Ty, entity::Entity},
+    try_resolve,
+    shared::src::ArcSpan
+};
 use super::{token::{kw, op, punct, delim}, ty::TypeExpr, expr::{Expr, IdentPath, ExprList}};
 use dash_macros::{Parse, Resolve};
 
@@ -14,7 +19,24 @@ pub struct LetDecl {
 
 impl Resolve for LetDecl {
     fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
-        todo!()
+        let ty = try_resolve!(self.ty, checker, Some((_, ty)) => ty);
+        let value = try_resolve!(self.value, checker, Some((_, v)) => v);
+        let vty = checker.expect_ty_eq(value, ty, self.span());
+        checker.scope().entities().try_push(
+            &self.name.to_path(),
+            Entity::new(
+                (self.ty.is_some() || self.value.is_some())
+                    .then_some(vty)
+                    .unwrap_or(Ty::Undecided(
+                        self.name.to_path().to_string(),
+                        self.span().unwrap_or(ArcSpan::builtin())
+                    )),
+                self.span().unwrap_or(ArcSpan::builtin()),
+                true
+            ),
+            checker.namespace_stack()
+        );
+        Some(Ty::Void)
     }
 }
 

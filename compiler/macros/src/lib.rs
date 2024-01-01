@@ -10,6 +10,7 @@ use darling::{FromMeta, ast::NestedMeta};
 use proc_macro::TokenStream;
 use proc_macro2::{TokenStream as TokenStream2, Ident};
 use quote::{quote, quote_spanned, ToTokens};
+use syn::parse::Parse;
 use syn::{Generics, Type, Path};
 use syn::spanned::Spanned;
 use syn::{parse_macro_input, ItemStruct, parse::Parser, Fields, Field};
@@ -137,6 +138,8 @@ struct TokenArgs {
     raw: Option<String>,
     #[darling(default)]
     value_is_token_tree: bool,
+    #[darling(default)]
+    include_raw: bool,
 }
 
 #[proc_macro_attribute]
@@ -183,6 +186,15 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
     else {
         quote! { true }
     };
+    let raw_field = if args.include_raw {
+        get_named_fields!(&mut target).push(
+            Field::parse_named.parse2(quote! { raw: String }).unwrap()
+        );
+        quote! { raw: token.raw.to_string(), }
+    }
+    else {
+        quote! {}
+    };
     let r: TokenStream2 = impl_ast_struct(&mut target,
         quote! {
             use crate::parser::tokenizer::TokenKind;
@@ -194,6 +206,7 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
                         let TokenKind::#destruct_kind = token.kind else { unreachable!() };
                         return Ok(Self {
                             #value_field
+                            #raw_field
                             span: ArcSpan(src, token.span.1)
                         });
                     }
@@ -248,6 +261,8 @@ struct ParseField {
     ty: Type,
     #[darling(default)]
     peek_point: bool,
+    #[darling(default)]
+    skip: Option<String>,
 }
 
 fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStream2, TokenStream2, TokenStream2) {
@@ -259,7 +274,7 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
     // Find peek point if it was manually set
     let mut encountered_peek_end = false;
     let mut peek_count = 0;
-    for field in data.iter() {
+    for field in data.iter().filter(|d| d.skip.is_none()) {
         if field.peek_point {
             if extract_type_from_option(&field.ty).is_some() {
                 parse_impl.extend(
@@ -307,34 +322,52 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
     // Generate parse and peek impls
     let mut peek_ix = 0usize;
     for (field_ix, field) in data.iter().enumerate() {
-        let t = &field.ty;
-        if let Some(ref i) = field.ident {
-            parse_impl.extend(quote! {
-                #i: Parse::parse(src.clone(), tokenizer)?,
-            });
-            span_impl.extend(quote! { self.#i.span(), });
+        if let Some(ref skip) = field.skip {
+            match syn::Expr::parse.parse_str(skip) {
+                Ok(skip) => {
+                    if let Some(ref i) = field.ident {
+                        parse_impl.extend(quote! { #i: #skip, });
+                    }
+                    else {
+                        parse_impl.extend(quote! { #skip, });
+                    }
+                }
+                Err(e) => {
+                    let e = e.to_compile_error().to_token_stream();
+                    parse_impl.extend(quote_spanned!(skip.span() => #e));
+                }
+            }
         }
         else {
-            parse_impl.extend(quote! {
-                Parse::parse(src.clone(), tokenizer)?,
-            });
-            span_impl.extend(quote! { self.#field_ix.span(), });
-        }
-        if peek_ix < peek_count {
-            // if we are peeking more than 1 member, all but last must be 
-            // tokens
-            if peek_ix < peek_count - 1 {
-                peek_checks.extend(quote_spanned! {
-                    t.span() => <#t as crate::parser::parse::IsToken>::is_token();
+            let t = &field.ty;
+            if let Some(ref i) = field.ident {
+                parse_impl.extend(quote! {
+                    #i: Parse::parse(src.clone(), tokenizer)?,
                 });
+                span_impl.extend(quote! { self.#i.span(), });
             }
-            peek_impl.extend(quote! {
-                if <#t>::peek(#peek_ix, tokenizer) {
-                    peeked += 1;
+            else {
+                parse_impl.extend(quote! {
+                    Parse::parse(src.clone(), tokenizer)?,
+                });
+                span_impl.extend(quote! { self.#field_ix.span(), });
+            }
+            if peek_ix < peek_count {
+                // if we are peeking more than 1 member, all but last must be 
+                // tokens
+                if peek_ix < peek_count - 1 {
+                    peek_checks.extend(quote_spanned! {
+                        t.span() => <#t as crate::parser::parse::IsToken>::is_token();
+                    });
                 }
-            });
-            if extract_type_from_option(t).is_none() {
-                peek_ix += 1;
+                peek_impl.extend(quote! {
+                    if <#t>::peek(#peek_ix, tokenizer) {
+                        peeked += 1;
+                    }
+                });
+                if extract_type_from_option(t).is_none() {
+                    peek_ix += 1;
+                }
             }
         }
     }
@@ -428,18 +461,28 @@ impl ToTokens for ParseReceiver {
                         if variant.fields.is_struct() {
                             for field in variant.fields.fields.iter() {
                                 let name = &field.ident;
-                                names.extend(quote! { #name, });
-                                spans.extend(quote! { #name.span(), });
+                                if field.skip.is_some() {
+                                    names.extend(quote! { #name: _, });
+                                }
+                                else {
+                                    names.extend(quote! { #name, });
+                                    spans.extend(quote! { #name.span(), });
+                                }
                             }
                             destruct = quote! { {#names} };
                         }
                         else {
                             // todo: parse and peek impls
-                            for c in variant.fields.fields.iter().zip(
+                            for (field, c) in variant.fields.fields.iter().zip(
                                 ('a'..='z').map(|c| Ident::new(&c.to_string(), v.span()))
-                            ).map(|(_, c)| c) {
-                                names.extend(quote! { #c, });
-                                spans.extend(quote! { #c.span(), });
+                            ) {
+                                if field.skip.is_some() {
+                                    names.extend(quote! { _, });
+                                }
+                                else {
+                                    names.extend(quote! { #c, });
+                                    spans.extend(quote! { #c.span(), });
+                                }
                             }
                             destruct = quote! { (#names) };
                         };

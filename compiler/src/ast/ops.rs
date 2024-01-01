@@ -1,7 +1,11 @@
 
 use std::sync::Arc;
 use dash_macros::Parse;
-use crate::{parser::{parse::{Parse, FatalParseError, calculate_span, ParseFn, SeparatedWithTrailing}, tokenizer::{TokenIterator, Token}}, shared::src::{Src, ArcSpan}, checker::{resolve::Resolve, coherency::Checker, ty::Ty}};
+use crate::{
+    parser::{parse::{Parse, FatalParseError, calculate_span, ParseFn, SeparatedWithTrailing}, tokenizer::{TokenIterator, Token}},
+    shared::{src::{Src, ArcSpan}, logger::{Message, Level}},
+    checker::{resolve::Resolve, coherency::Checker, ty::Ty, path}, ice
+};
 
 use super::{expr::Expr, token::{op, delim, Ident, punct}};
 
@@ -10,12 +14,6 @@ use super::{expr::Expr, token::{op, delim, Ident, punct}};
 pub enum Arg {
     Named(Ident, #[parse(peek_point)] punct::Colon, Expr),
     Unnamed(Expr),
-}
-
-impl Resolve for Arg {
-    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
-        todo!()
-    }
 }
 
 #[derive(Debug)]
@@ -45,7 +43,31 @@ impl Call {
 
 impl Resolve for Call {
     fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
-        todo!()
+        let target = self.target.try_resolve(checker)?;
+        let args = self.args.value.iter_mut()
+            .map(|arg| match arg {
+                Arg::Unnamed(value) => {
+                    (None, value.try_resolve(checker))
+                }
+                Arg::Named(name, _, value) => {
+                    (Some(name), value.try_resolve(checker))
+                }
+            })
+            .map(|(name, expr)| expr.map(|e| (name, e)))
+            .collect::<Option<Vec<_>>>()?;
+        match target {
+            Ty::Function { params, ret_ty } => {
+                Some(ret_ty.as_ref().clone())
+            }
+            other => {
+                checker.logger().lock().unwrap().log(Message::new(
+                    Level::Error,
+                    format!("Cannot call an expression of type {other}"),
+                    self.span().into()
+                ));
+                Some(Ty::Invalid)
+            }
+        }
     }
 }
 
@@ -110,7 +132,29 @@ impl UnOp {
 
 impl Resolve for UnOp {
     fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
-        todo!()
+        let target = self.target.try_resolve(checker)?;
+        let op = self.op.clone();
+        if target.is_unreal() {
+            return Some(Ty::Invalid);
+        }
+        for scope in checker.scopes() {
+            let name = path::IdentPath::new([path::Ident::UnOp(op.clone(), target.clone())], false);
+            if let Some(fun) = scope.entities().find(&name, checker.namespace_stack()) {
+                match fun.ty() {
+                    Ty::Function { params: _, ret_ty } => return Some(ret_ty.as_ref().clone()),
+                    _ => ice!(
+                        "encountered entity with unop name '{name}' \
+                        that wasn't a function type, but {}",
+                        fun.ty()
+                    )
+                }
+            }
+        }
+        checker.push_unresolved(
+            format!("Cannot use operator '{op}' on type {target}"),
+            self.span()
+        );
+        None
     }
 }
 
@@ -145,6 +189,29 @@ impl BinOp {
 
 impl Resolve for BinOp {
     fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
-        todo!()
+        let a = self.lhs.try_resolve(checker)?;
+        let b = self.rhs.try_resolve(checker)?;
+        let op = self.op.clone();
+        if a.is_unreal() || b.is_unreal() {
+            return Some(Ty::Invalid);
+        }
+        for scope in checker.scopes() {
+            let name = path::IdentPath::new([path::Ident::BinOp(a.clone(), op.clone(), b.clone())], false);
+            if let Some(fun) = scope.entities().find(&name, checker.namespace_stack()) {
+                match fun.ty() {
+                    Ty::Function { params: _, ret_ty } => return Some(ret_ty.as_ref().clone()),
+                    _ => ice!(
+                        "encountered entity with binop name '{name}' \
+                        that wasn't a function type, but {}",
+                        fun.ty()
+                    )
+                }
+            }
+        }
+        checker.push_unresolved(
+            format!("Cannot use operator '{op}' on types {a} and {b}"),
+            self.span()
+        );
+        None
     }
 }

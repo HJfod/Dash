@@ -3,8 +3,10 @@ use std::fmt::Display;
 use crate::ice;
 use crate::shared::src::ArcSpan;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Ty {
+    /// The type of a variable whose real type has not yet been inferred
+    Undecided(String, ArcSpan),
     /// Represents that an error occurred during typechecking, or the 
     /// checked statement results in no type
     Invalid,
@@ -22,7 +24,7 @@ pub enum Ty {
     String,
     /// Function type
     Function {
-        params: Vec<(String, Ty)>,
+        params: Vec<(Option<String>, Ty)>,
         ret_ty: Box<Ty>,
     },
     /// Optional type
@@ -57,8 +59,12 @@ impl Ty {
         }
     }
 
+    pub fn is_undecided(&self) -> bool {
+        matches!(self, Ty::Undecided(_, _))
+    }
+
     /// Whether this type is one that can't exist as a value (`invalid` or `never`)
-    pub fn unreal(&self) -> bool {
+    pub fn is_unreal(&self) -> bool {
         matches!(self, Ty::Invalid | Ty::Never)
     }
 
@@ -75,11 +81,12 @@ impl Ty {
     /// 
     /// In most cases this means equality
     pub fn convertible(&self, other: &Ty) -> bool {
-        self.unreal() || other.unreal() || *self.reduce() == *other.reduce()
+        self.is_unreal() || other.is_unreal() || *self.reduce() == *other.reduce()
     }
 
     pub fn span(&self) -> ArcSpan {
         match self {
+            Ty::Undecided(_, span) => span.clone(),
             Ty::Invalid => ArcSpan::builtin(),
             Ty::Never => ArcSpan::builtin(),
             Ty::Void => ArcSpan::builtin(),
@@ -93,12 +100,18 @@ impl Ty {
             Ty::Named { name: _, ty: _, decl_span } => decl_span.clone(),
         }
     }
+
+    /// Returns this if this type is not unreal, or the other if it is
+    pub fn or(self, other: Ty) -> Ty {
+        if self.is_unreal() { other } else { self }
+    }
 }
 
 impl Display for Ty {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Invalid => f.write_str("invalid"),
+            Self::Undecided(name, _) => write!(f, "unknown ({name})"),
+            Self::Invalid => f.write_str("unknown"),
             Self::Never => f.write_str("never"),
             Self::Void => f.write_str("void"),
             Self::Bool => f.write_str("bool"),
@@ -108,7 +121,12 @@ impl Display for Ty {
             Self::Function { params, ret_ty } => write!(
                 f,
                 "fun({}) -> {ret_ty}", params.iter()
-                    .map(|(p, t)| format!("{p}: {t}"))
+                    .map(|(p, t)| if let Some(p) = p {
+                        format!("{p}: {t}")
+                    }
+                    else {
+                        t.to_string()
+                    })
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
