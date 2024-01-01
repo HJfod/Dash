@@ -50,7 +50,9 @@ pub(crate) trait Resolve {
                     cache.resolved.clone()
                 }
                 else {
-                    checker.mark_unresolved(cache.id);
+                    if let Some((msg, span)) = std::mem::take(&mut cache.unresolved_msg) {
+                        checker.mark_unresolved(cache.id, msg, span);
+                    }
                     None
                 }
             }

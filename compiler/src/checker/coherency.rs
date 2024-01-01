@@ -1,5 +1,5 @@
 
-use std::{pin::Pin, ptr::NonNull, collections::{HashMap, HashSet}};
+use std::{pin::Pin, ptr::NonNull, collections::HashMap};
 use crate::shared::{logger::{LoggerRef, Message, Level, Note}, ptr_iter::PtrChainIter, src::{ArcSpan, Span}};
 use super::{ty::Ty, path::{FullIdentPath, IdentPath, Ident}, entity::Entity, pool::AST, resolve::Resolve};
 
@@ -107,7 +107,7 @@ impl Drop for LeaveScope {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct NodeID(usize);
+pub(crate) struct NodeID(usize);
 
 impl NodeID {
     #[allow(clippy::new_without_default)]
@@ -118,12 +118,19 @@ impl NodeID {
     }
 }
 
+#[derive(PartialEq, Eq)]
+struct UnresolvedData {
+    msg: String,
+    span: ArcSpan,
+}
+
 pub(crate) struct Checker {
     logger: LoggerRef,
     current_scope: NonNull<Scope>,
+    // wait this isn't a stable memory location...
     scopes: Vec<Scope>,
     namespace_stack: FullIdentPath,
-    unresolved_nodes: HashSet<NodeID>,
+    unresolved_nodes: HashMap<NodeID, UnresolvedData>,
 }
 
 impl Checker {
@@ -133,14 +140,14 @@ impl Checker {
             current_scope: NonNull::dangling(),
             scopes: Vec::from([Scope::root()]),
             namespace_stack: FullIdentPath::default(),
-            unresolved_nodes: HashSet::new(),
+            unresolved_nodes: HashMap::new(),
         });
         ret.current_scope = NonNull::from(ret.scopes.first_mut().unwrap());
         ret
     }
     pub fn try_resolve(ast: &mut AST, logger: LoggerRef) -> Ty {
         let mut checker = Checker::new(logger);
-        let mut unresolved = checker.unresolved_nodes.clone();
+        let mut unresolved = checker.unresolved_nodes.keys().copied().collect::<Vec<_>>();
         for i in 0.. {
             // todo: allow customizing max loop count via a compiler option
             if i > 1000 {
@@ -157,9 +164,17 @@ impl Checker {
             if let Some(r) = ast.try_resolve(&mut checker) {
                 return r;
             }
-            if unresolved == checker.unresolved_nodes {
-                
+            if unresolved.into_iter().eq(checker.unresolved_nodes.keys().copied()) {
+                for err in checker.unresolved_nodes.values() {
+                    checker.logger.lock().unwrap().log(Message::new(
+                        Level::Error,
+                        err.msg.clone(),
+                        err.span.as_ref()
+                    ));
+                }
+                return Ty::Invalid;
             }
+            unresolved = checker.unresolved_nodes.keys().copied().collect::<Vec<_>>();
         }
         unreachable!()
     }
@@ -199,10 +214,10 @@ impl Checker {
         self.namespace_stack.pop();
     }
 
-    pub fn mark_unresolved(&mut self, id: NodeID) {
-        self.unresolved_nodes.insert(id);
+    pub(super) fn mark_unresolved(&mut self, id: NodeID, msg: String, span: ArcSpan) {
+        self.unresolved_nodes.insert(id, UnresolvedData { msg, span });
     }
-    pub fn mark_resolved(&mut self, id: NodeID) {
+    pub(super) fn mark_resolved(&mut self, id: NodeID) {
         self.unresolved_nodes.remove(&id);
     }
 

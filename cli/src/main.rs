@@ -5,7 +5,7 @@ use dash_compiler::{
     shared::src::SrcPool,
     parser::parse::Parse,
     tokenize,
-    checker::pool::ASTPool,
+    checker::pool::ASTPool, check_coherency,
     // check_coherency
 };
 use normalize_path::NormalizePath;
@@ -50,7 +50,7 @@ fn main() {
     if args.no_ast {
         return;
     }
-    let ast_pool = ASTPool::parse_src_pool(
+    let mut ast_pool = ASTPool::parse_src_pool(
         &src_pool, logger.clone(),
     );
 
