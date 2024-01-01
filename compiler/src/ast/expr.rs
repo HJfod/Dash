@@ -5,7 +5,7 @@ use dash_macros::{Parse, Resolve};
 use crate::{
     parser::{parse::{Separated, Parse, FatalParseError, ParseFn}, tokenizer::{TokenIterator, Token}},
     shared::src::{Src, ArcSpan},
-    checker::{resolve::Resolve, coherency::{Checker, Scope}, ty::Ty, path}
+    checker::{resolve::{Resolve, ResolveCache}, coherency::{Checker, Scope}, ty::Ty, path}
 };
 use super::{
     decl::Decl,
@@ -145,12 +145,14 @@ impl Parse for Expr {
 #[derive(Debug, Parse)]
 pub struct ExprList {
     exprs: Vec<(Expr, TerminatingSemicolon)>,
-    #[parse(skip = "None")]
+    #[parse(skip)]
     scope: Option<NonNull<Scope>>,
+    #[parse(skip)]
+    cache: ResolveCache,
 }
 
 impl Resolve for ExprList {
-    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
         let _handle = checker.enter_scope(&mut self.scope);
         self.exprs.iter_mut()
             .map(|(e, c)| (e.try_resolve(checker), c.has_semicolon()))
@@ -159,5 +161,8 @@ impl Resolve for ExprList {
             .into_iter()
             .last()
             .and_then(|(e, c)| (!c).then_some(e).or(Some(Ty::Void)))
+    }
+    fn cache(&mut self) -> Option<&mut ResolveCache> {
+        Some(&mut self.cache)
     }
 }

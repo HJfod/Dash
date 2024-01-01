@@ -3,39 +3,49 @@ use dash_macros::{Parse, Resolve};
 use super::{expr::{Expr, IdentPath, ExprList}, token::{lit, kw}};
 use crate::{
     ast::token::delim,
-    checker::{resolve::Resolve, coherency::Checker, ty::Ty, path}
+    checker::{resolve::{Resolve, ResolveCache}, coherency::Checker, ty::Ty, path}, parser::parse::Parse
 };
-use crate::parser::parse::Parse;
 
 #[derive(Debug, Parse)]
 #[parse(expected = "identifier")]
 pub enum ItemUse {
-    This(kw::This),
-    Ident(IdentPath),
+    This(
+        kw::This,
+        #[parse(skip)]
+        ResolveCache
+    ),
+    Ident(
+        IdentPath,
+        #[parse(skip)]
+        ResolveCache
+    ),
 }
 
 impl Resolve for ItemUse {
-    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
         for scope in checker.scopes() {
             if let Some(ent) = scope.entities().find(
                 &match self {
-                    Self::Ident(i) => i.to_path(),
-                    Self::This(_) => path::IdentPath::new([path::Ident::from("this")], false)
+                    Self::Ident(i, _) => i.to_path(),
+                    Self::This(_, _) => path::IdentPath::new([path::Ident::from("this")], false)
                 },
                 checker.namespace_stack()
             ) {
                 return Some(ent.ty());
             }
         }
-        match self {
-            Self::Ident(i) => checker.push_unresolved(
-                format!("Unknown item {}", i.to_path()), i.span()
-            ),
-            Self::This(kw) => checker.push_unresolved(
-                "'this' is not valid in this scope", kw.span()
-            ),
-        }
+        let msg_span = match self {
+            Self::Ident(i, _) => (format!("Unknown item {}", i.to_path()), i.span()),
+            Self::This(kw, _) => ("'this' is not valid in this scope".into(), kw.span()),
+        };
+        self.cache().unwrap().set_unresolved(msg_span.0, msg_span.1);
         None
+    }
+
+    fn cache(&mut self) -> Option<&mut ResolveCache> {
+        match self {
+            Self::Ident(_, c) | Self::This(_, c) => Some(c),
+        }
     }
 }
 

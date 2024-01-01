@@ -1,7 +1,7 @@
 
-use std::{pin::Pin, ptr::NonNull, fmt::Display, collections::HashMap};
-use crate::shared::{logger::{LoggerRef, Message, Level, Note}, ptr_iter::PtrChainIter, src::ArcSpan};
-use super::{ty::Ty, path::{FullIdentPath, IdentPath, Ident}, entity::Entity};
+use std::{pin::Pin, ptr::NonNull, collections::{HashMap, HashSet}};
+use crate::shared::{logger::{LoggerRef, Message, Level, Note}, ptr_iter::PtrChainIter, src::{ArcSpan, Span}};
+use super::{ty::Ty, path::{FullIdentPath, IdentPath, Ident}, entity::Entity, pool::AST, resolve::Resolve};
 
 pub(crate) struct ItemSpace<T> {
     items: HashMap<FullIdentPath, T>,
@@ -106,34 +106,71 @@ impl Drop for LeaveScope {
     }
 }
 
-pub struct Checker {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct NodeID(usize);
+
+impl NodeID {
+    #[allow(clippy::new_without_default)]
+    pub fn new() -> Self {
+        use std::sync::atomic::AtomicUsize;
+        static mut COUNTER: AtomicUsize = AtomicUsize::new(0);
+        Self(unsafe { &COUNTER }.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+    }
+}
+
+pub(crate) struct Checker {
     logger: LoggerRef,
     current_scope: NonNull<Scope>,
     scopes: Vec<Scope>,
     namespace_stack: FullIdentPath,
-    unresolved_nodes: Vec<(String, ArcSpan)>,
+    unresolved_nodes: HashSet<NodeID>,
 }
 
 impl Checker {
-    pub fn new(logger: LoggerRef) -> Pin<Box<Self>> {
+    fn new(logger: LoggerRef) -> Pin<Box<Self>> {
         let mut ret = Box::pin(Self {
             logger: logger.clone(),
             current_scope: NonNull::dangling(),
             scopes: Vec::from([Scope::root()]),
             namespace_stack: FullIdentPath::default(),
-            unresolved_nodes: Vec::new(),
+            unresolved_nodes: HashSet::new(),
         });
         ret.current_scope = NonNull::from(ret.scopes.first_mut().unwrap());
         ret
     }
+    pub fn try_resolve(ast: &mut AST, logger: LoggerRef) -> Ty {
+        let mut checker = Checker::new(logger);
+        let mut unresolved = checker.unresolved_nodes.clone();
+        for i in 0.. {
+            // todo: allow customizing max loop count via a compiler option
+            if i > 1000 {
+                checker.logger.lock().unwrap().log(Message::new(
+                    Level::Error,
+                    "Internal error: maximum check loop count reached (1000)",
+                    Span::builtin()
+                ).note(Note::new(
+                    "Try simplifying your codebase, moving definitions of types \
+                    and functions before their uses", true
+                )));
+                return Ty::Invalid;
+            }
+            if let Some(r) = ast.try_resolve(&mut checker) {
+                return r;
+            }
+            if unresolved == checker.unresolved_nodes {
+                
+            }
+        }
+        unreachable!()
+    }
 
-    pub(crate) fn scopes(&self) -> impl Iterator<Item = &mut Scope> {
+    pub fn scopes(&self) -> impl Iterator<Item = &mut Scope> {
         PtrChainIter::new(self.current_scope, |s| s.parent)
     }
-    pub(crate) fn scope<'a>(&mut self) -> &'a mut Scope {
+    pub fn scope<'a>(&mut self) -> &'a mut Scope {
         unsafe { self.current_scope.as_mut() }
     }
-    pub(crate) fn enter_scope(&mut self, scope: &mut Option<NonNull<Scope>>) -> LeaveScope {
+    pub fn enter_scope(&mut self, scope: &mut Option<NonNull<Scope>>) -> LeaveScope {
         match scope {
             Some(scope) => self.current_scope = *scope,
             None => {
@@ -152,42 +189,45 @@ impl Checker {
         }
     }
 
-    pub(crate) fn namespace_stack(&self) -> &FullIdentPath {
+    pub fn namespace_stack(&self) -> &FullIdentPath {
         &self.namespace_stack
     }
-    pub(crate) fn enter_namespace(&mut self, name: Ident) {
+    pub fn enter_namespace(&mut self, name: Ident) {
         self.namespace_stack.push(name);
     }
-    pub(crate) fn leave_namespace(&mut self) {
+    pub fn leave_namespace(&mut self) {
         self.namespace_stack.pop();
     }
 
-    pub(crate) fn push_unresolved<S: Display>(&mut self, cause: S, span: Option<ArcSpan>) {
-        self.unresolved_nodes.push((cause.to_string(), span.unwrap_or(ArcSpan::builtin())));
+    pub fn mark_unresolved(&mut self, id: NodeID) {
+        self.unresolved_nodes.insert(id);
+    }
+    pub fn mark_resolved(&mut self, id: NodeID) {
+        self.unresolved_nodes.remove(&id);
     }
 
-    pub(crate) fn expect_ty_decided(&self, a: Ty, span: Option<ArcSpan>) -> bool {
+    pub fn expect_ty_decided(&self, a: Ty, span: Option<ArcSpan>) -> bool {
         if let Ty::Undecided(name, a_span) = a {
             self.logger.lock().unwrap().log(Message::new(
                 Level::Error,
                 format!("The type of {name} needs to be known at this point"),
-                span.into()
+                span.unwrap_or(ArcSpan::builtin()).as_ref()
             ).note(Note::new_at(
                 format!("Declaration of {name} here"),
-                Some(a_span).into()
+                a_span.as_ref()
             )));
             return false;
         }
         true
     }
-    pub(crate) fn expect_ty_eq(&self, a: Ty, b: Ty, span: Option<ArcSpan>) -> Ty {
+    pub fn expect_ty_eq(&self, a: Ty, b: Ty, span: Option<ArcSpan>) -> Ty {
         if self.expect_ty_decided(a.clone(), span.clone()) &&
             self.expect_ty_decided(b.clone(), span.clone()) {
             if !b.convertible(&a) {
                 self.logger.lock().unwrap().log(Message::new(
                     Level::Error,
                     format!("Cannot convert from type {b} to {a}"),
-                    span.into()
+                    span.unwrap_or(ArcSpan::builtin()).as_ref()
                 ));
             }
             a.or(b)
@@ -196,7 +236,7 @@ impl Checker {
             Ty::Invalid
         }
     }
-    pub(crate) fn logger(&self) -> LoggerRef {
+    pub fn logger(&self) -> LoggerRef {
         self.logger.clone()
     }
 }

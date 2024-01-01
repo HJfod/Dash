@@ -1,4 +1,6 @@
 
+#![warn(clippy::todo)]
+
 use parser::tokenizer::{Tokenizer, Token};
 use shared::logger::LoggerRef;
 use shared::src::Src;

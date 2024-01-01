@@ -61,9 +61,9 @@ fn main() {
         }
     }
 
-    // for ast in &mut ast_pool {
-    //     check_coherency(ast, logger.clone());
-    // }
+    for ast in &mut ast_pool {
+        check_coherency(ast, logger.clone());
+    }
 
     let ref_logger = logger.lock().unwrap();
     println!(

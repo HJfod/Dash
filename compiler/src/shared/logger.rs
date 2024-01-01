@@ -34,31 +34,64 @@ impl Display for Level {
 }
 
 #[derive(Debug)]
+enum NoteKind {
+    Note,
+    Hint,
+}
+
+impl NoteKind {
+    fn underline_style(&self) -> Underline {
+        match self {
+            Self::Note => Underline::Normal,
+            Self::Hint => Underline::Highlight,
+        }
+    }
+}
+
+impl Display for NoteKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Hint => f.write_str("Hint"),
+            Self::Note => f.write_str("Note"),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Note<'s> {
     info: String,
     at: Option<Span<'s>>,
+    kind: NoteKind,
 }
 
 impl<'s> Note<'s> {
-    pub fn new<S: Into<String>>(info: S) -> Self {
-        Self { info: info.into(), at: None }
+    pub fn new<S: Into<String>>(info: S, hint: bool) -> Self {
+        Self { info: info.into(), at: None, kind: if hint { NoteKind::Hint } else { NoteKind::Note } }
     }
     pub fn new_at<S: Into<String>>(info: S, span: Span<'s>) -> Self {
-        Self { info: info.into(), at: Some(span) }
+        Self { info: info.into(), at: Some(span), kind: NoteKind::Note }
+    }
+    pub fn hint<S: Into<String>>(info: S, span: Span<'s>) -> Self {
+        Self { info: info.into(), at: Some(span), kind: NoteKind::Hint }
     }
 }
 
 impl Display for Note<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ref span) = self.at {
-            f.write_fmt(format_args!(
-                "{}:\n{}{}",
-                "Note".bold(),
-                span.underlined(Underline::Normal),
+            write!(
+                f, "{}:\n{}{}",
+                self.kind.to_string().bold(),
+                span.underlined(self.kind.underline_style()),
                 self.info
-            ))
-        } else {
-            f.write_fmt(format_args!("{} {}", "Note:".bold().black(), self.info))
+            )
+        }
+        else {
+            write!(
+                f, "{}: {}",
+                self.kind.to_string().bold(),
+                self.info
+            )
         }
     }
 }

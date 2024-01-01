@@ -1,12 +1,14 @@
 
+use std::ptr::NonNull;
+
 use crate::{
-    parser::parse::{SeparatedWithTrailing, DontExpect, Parse},
+    parser::parse::{SeparatedWithTrailing, DontExpect, Parse, calculate_span},
     add_compile_message,
-    checker::{resolve::Resolve, coherency::Checker, ty::Ty, entity::Entity},
+    checker::{resolve::{Resolve, ResolveCache}, coherency::{Checker, Scope}, ty::Ty, entity::Entity, path},
     try_resolve,
-    shared::src::ArcSpan
+    shared::{src::ArcSpan, logger::{Message, Level, Note}}
 };
-use super::{token::{kw, op, punct, delim}, ty::TypeExpr, expr::{Expr, IdentPath, ExprList}};
+use super::{token::{kw, op, punct, delim, Ident}, ty::TypeExpr, expr::{Expr, IdentPath, ExprList}};
 use dash_macros::{Parse, Resolve};
 
 #[derive(Debug, Parse)]
@@ -15,28 +17,45 @@ pub struct LetDecl {
     name: IdentPath,
     ty: Option<(punct::Colon, TypeExpr)>,
     value: Option<(op::Seq, Expr)>,
+    #[parse(skip)]
+    cache: ResolveCache,
 }
 
 impl Resolve for LetDecl {
-    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
-        let ty = try_resolve!(self.ty, checker, Some((_, ty)) => ty);
-        let value = try_resolve!(self.value, checker, Some((_, v)) => v);
+    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
+        let ty = try_resolve!(&mut self.ty, checker, Some((_, ty)) => ty);
+        let value = try_resolve!(&mut self.value, checker, Some((_, v)) => v);
         let vty = checker.expect_ty_eq(value, ty, self.span());
-        checker.scope().entities().try_push(
+        match checker.scope().entities().try_push(
             &self.name.to_path(),
             Entity::new(
-                (self.ty.is_some() || self.value.is_some())
-                    .then_some(vty)
-                    .unwrap_or(Ty::Undecided(
-                        self.name.to_path().to_string(),
-                        self.span().unwrap_or(ArcSpan::builtin())
-                    )),
-                self.span().unwrap_or(ArcSpan::builtin()),
+                if self.ty.is_some() || self.value.is_some() {
+                    vty
+                }
+                else {
+                    Ty::Undecided(self.name.to_path().to_string(), self.span_or_builtin())
+                },
+                self.span_or_builtin(),
                 true
             ),
             checker.namespace_stack()
-        );
+        ) {
+            Ok(_) => {}
+            Err(old) => {
+                checker.logger().lock().unwrap().log(Message::new(
+                    Level::Error,
+                    format!("Item {} has already been defined in this scope", self.name.to_path()),
+                    self.span_or_builtin().as_ref()
+                ).note(Note::new_at(
+                    "Previous definition here",
+                    old.span().as_ref()
+                )));
+            }
+        }
         Some(Ty::Void)
+    }
+    fn cache(&mut self) -> Option<&mut ResolveCache> {
+        Some(&mut self.cache)
     }
 }
 
@@ -44,24 +63,18 @@ impl Resolve for LetDecl {
 add_compile_message!(ThisParamMayNotHaveValue: "the 'this' parameter may not have a default value");
 
 #[derive(Debug, Parse)]
-pub struct NamedParam {
-    name: IdentPath,
-    ty: (punct::Colon, TypeExpr),
-    default_value: Option<(op::Seq, Expr)>,
-}
-
-#[derive(Debug, Parse)]
-pub struct ThisParam {
-    this_kw: kw::This,
-    ty: Option<(punct::Colon, TypeExpr)>,
-    _invalid_value: DontExpect<(op::Seq, Expr), ThisParamMayNotHaveValue>,
-}
-
-#[derive(Debug, Parse)]
 #[parse(expected = "parameter")]
 pub enum FunParam {
-    NamedParam(NamedParam),
-    ThisParam(ThisParam),
+    NamedParam {
+        name: Ident,
+        ty: (punct::Colon, TypeExpr),
+        default_value: Option<(op::Seq, Expr)>,
+    },
+    ThisParam {
+        this_kw: kw::This,
+        ty: Option<(punct::Colon, TypeExpr)>,
+        _invalid_value: DontExpect<(op::Seq, Expr), ThisParamMayNotHaveValue>,
+    },
 }
 
 #[derive(Debug, Parse)]
@@ -71,11 +84,74 @@ pub struct FunDecl {
     params: delim::Parenthesized<SeparatedWithTrailing<FunParam, punct::Comma>>,
     ret_ty: Option<(punct::Arrow, TypeExpr)>,
     body: delim::Braced<ExprList>,
+    #[parse(skip)]
+    scope: Option<NonNull<Scope>>,
+    #[parse(skip)]
+    cache: ResolveCache,
 }
 
 impl Resolve for FunDecl {
-    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
-        todo!()
+    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
+        let mut params = Vec::new();
+        for param in self.params.value.iter_mut() {
+            match param {
+                FunParam::NamedParam { name, ty, default_value } => {
+                    let span = calculate_span([name.span(), ty.span(), default_value.span()]);
+                    let ty = ty.1.try_resolve(checker)?;
+                    let v = try_resolve!(default_value, checker, Some((_, d)) => d);
+                    checker.expect_ty_eq(ty.clone(), v, span.clone());
+                    params.push((name.to_string(), ty, span.unwrap_or(ArcSpan::builtin())));
+                }
+                FunParam::ThisParam { this_kw: _, ty, _invalid_value: _ } => todo!()
+            }
+        }
+        let ret_ty = try_resolve!(&mut self.ret_ty, checker, Some((_, ty)) => ty else Ty::Void);
+        let body = {
+            let _scope = checker.enter_scope(&mut self.scope);
+            for (name, ty, span) in &params {
+                if let Err(old) = checker.scope().entities().try_push(
+                    &path::IdentPath::new([path::Ident::from(name.as_str())], false),
+                    Entity::new(ty.clone(), self.span_or_builtin(), true),
+                    checker.namespace_stack()
+                ) {
+                    checker.logger().lock().unwrap().log(Message::new(
+                        Level::Error,
+                        format!("Parameter {name} defined multiple times"),
+                        span.as_ref()
+                    ).note(Note::new_at(
+                        "Previous definition here",
+                        old.span().as_ref()
+                    )));
+                }
+            }
+            self.body.value.try_resolve(checker)?
+        };
+        checker.expect_ty_eq(body.clone(), ret_ty.clone(), self.body.span());
+        
+        let fty = Ty::Function {
+            params: params.into_iter().map(|p| (Some(p.0), p.1)).collect(),
+            ret_ty: ret_ty.into(),
+        };
+        if let Some(ref name) = self.name {
+            if let Err(old) = checker.scope().entities().try_push(
+                &name.to_path(),
+                Entity::new(fty.clone(), self.span_or_builtin(), false),
+                checker.namespace_stack()
+            ) {
+                checker.logger().lock().unwrap().log(Message::new(
+                    Level::Error,
+                    format!("Name {} has already been defined", name.to_path()),
+                    self.span_or_builtin().as_ref()
+                ).note(Note::new_at(
+                    "Previous definition here",
+                    old.span().as_ref()
+                )));
+            }
+        }
+        Some(fty)
+    }
+    fn cache(&mut self) -> Option<&mut ResolveCache> {
+        Some(&mut self.cache)
     }
 }
 

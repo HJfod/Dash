@@ -25,7 +25,7 @@ pub trait CompileMessage {
 macro_rules! add_compile_message {
     ($ident: ident: $msg: literal) => {
         #[derive(Debug)]
-        struct $ident;
+        pub struct $ident;
         impl $crate::parser::parse::CompileMessage for $ident {
             fn get_msg() -> &'static str {
                 $msg
@@ -85,6 +85,10 @@ pub trait Parse: Sized {
             // returning Err(FatalParseError)
         }
         Ok(res)
+    }
+
+    fn span_or_builtin(&self) -> ArcSpan {
+        self.span().unwrap_or(ArcSpan::builtin())
     }
 }
 

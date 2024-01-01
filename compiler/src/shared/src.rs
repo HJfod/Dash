@@ -1,5 +1,14 @@
 
-use std::{path::PathBuf, sync::Arc, fs, fmt::{Debug, Display}, ops::Range, ffi::OsStr, cmp::max, hash::Hash};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    fs,
+    fmt::{Debug, Display},
+    ops::Range,
+    ffi::OsStr,
+    cmp::max,
+    hash::Hash
+};
 use line_col::LineColLookup;
 use colored::{Color, Colorize};
 
@@ -116,12 +125,6 @@ impl ArcSpan {
 impl Debug for ArcSpan {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_ref())
-    }
-}
-
-impl From<Option<ArcSpan>> for Span<'_> {
-    fn from(value: Option<ArcSpan>) -> Self {
-        value.into()
     }
 }
 

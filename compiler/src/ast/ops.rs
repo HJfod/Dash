@@ -1,12 +1,11 @@
 
-use std::sync::Arc;
+use std::{sync::Arc, collections::HashMap};
 use dash_macros::Parse;
 use crate::{
     parser::{parse::{Parse, FatalParseError, calculate_span, ParseFn, SeparatedWithTrailing}, tokenizer::{TokenIterator, Token}},
     shared::{src::{Src, ArcSpan}, logger::{Message, Level, Note}},
-    checker::{resolve::Resolve, coherency::Checker, ty::Ty, path}, ice
+    checker::{resolve::{Resolve, ResolveCache}, coherency::Checker, ty::Ty, path}, ice
 };
-
 use super::{expr::Expr, token::{op, delim, Ident, punct}};
 
 #[derive(Debug, Parse)]
@@ -20,6 +19,7 @@ pub enum Arg {
 pub struct Call {
     target: Expr,
     args: delim::Parenthesized<SeparatedWithTrailing<Arg, punct::Comma>>,
+    cache: ResolveCache,
 }
 
 impl Call {
@@ -33,7 +33,8 @@ impl Call {
     {
         Ok(Self {
             target,
-            args: Parse::parse(src, tokenizer)?
+            args: Parse::parse(src, tokenizer)?,
+            cache: Default::default(),
         })
     }
     pub fn span(&self) -> Option<ArcSpan> {
@@ -42,7 +43,7 @@ impl Call {
 }
 
 impl Resolve for Call {
-    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
         let target = self.target.try_resolve(checker)?;
         let args = self.args.value.iter_mut()
             .map(|arg| match arg {
@@ -50,7 +51,7 @@ impl Resolve for Call {
                     (None, value.try_resolve(checker), value.span())
                 }
                 Arg::Named(name, _, value) => {
-                    (Some(name), value.try_resolve(checker), value.span())
+                    (Some(name.to_string()), value.try_resolve(checker), value.span())
                 }
             })
             .map(|(name, expr, span)| expr.map(|e| (name, e, span)))
@@ -59,25 +60,84 @@ impl Resolve for Call {
             Ty::Function { params, ret_ty } => {
                 let mut arg_ix = 0usize;
                 let mut encountered_named = None;
-                for (name, ty, span) in args {
+                let mut passed: HashMap<String, ArcSpan> = HashMap::new();
+                for (name, ty, span) in &args {
+                    arg_ix += 1;
                     if let Some(name) = name {
                         encountered_named = Some(span.clone());
-                    }
-                    else {
-                        arg_ix += 1;
-                        if let Some(e_span) = encountered_named.clone() {
-                            checker.logger().lock().unwrap().log(Message::new(
-                                Level::Error,
-                                "Cannot pass positional arguments after named arguments \
-                                have been passed",
-                                span.into()
-                            ).note(Note::new_at(
-                                // todo: make this a hint
-                                "Move this named argument to the end of the arguments list",
-                                e_span.into()
-                            )));
+                        match passed.get(name) {
+                            Some(old) => {
+                                checker.logger().lock().unwrap().log(Message::new(
+                                    Level::Error,
+                                    format!("Parameter '{name}' has already been passed"),
+                                    span.clone().unwrap_or(ArcSpan::builtin()).as_ref()
+                                ).note(Note::new_at(
+                                    "Previous passing here",
+                                    old.as_ref()
+                                )));
+                            }
+                            None => {
+                                match params.iter().find(|p| p.0.as_ref() == Some(name)) {
+                                    Some((_, pty)) => {
+                                        checker.expect_ty_eq(ty.clone(), pty.clone(), span.clone());
+                                    }
+                                    None => {
+                                        checker.logger().lock().unwrap().log(Message::new(
+                                            Level::Error,
+                                            format!("Unknown parameter '{name}'"),
+                                            span.clone().unwrap_or(ArcSpan::builtin()).as_ref()
+                                        ));
+                                    }
+                                }
+                                passed.insert(name.clone(), span.clone().unwrap_or(ArcSpan::builtin()));
+                            }
                         }
                     }
+                    else {
+                        match encountered_named.clone() {
+                            Some(e_span) => {
+                                checker.logger().lock().unwrap().log(Message::new(
+                                    Level::Error,
+                                    "Cannot pass positional arguments after named arguments \
+                                    have been passed",
+                                    span.clone().unwrap_or(ArcSpan::builtin()).as_ref()
+                                ).note(Note::hint(
+                                    "Move this named argument to the end of the arguments list",
+                                    e_span.unwrap_or(ArcSpan::builtin()).as_ref()
+                                )));
+                            }
+                            None => {
+                                match params.get(arg_ix) {
+                                    Some((name, pty)) => {
+                                        if let Some(name) = name {
+                                            passed.insert(name.clone(), span.clone().unwrap_or(ArcSpan::builtin()));
+                                        }
+                                        checker.expect_ty_eq(ty.clone(), pty.clone(), span.clone());
+                                    }
+                                    None => {
+                                        checker.logger().lock().unwrap().log(Message::new(
+                                            Level::Error,
+                                            "Too many positional arguments",
+                                            span.clone().unwrap_or(ArcSpan::builtin()).as_ref()
+                                        ).note(Note::new(format!(
+                                            "Function has only {} parameters, but {} were passed",
+                                            params.len(), args.len()
+                                        ), false)));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if arg_ix < params.len() {
+                    checker.logger().lock().unwrap().log(Message::new(
+                        Level::Error,
+                        "Missing arguments",
+                        self.span().unwrap_or(ArcSpan::builtin()).as_ref()
+                    ).note(Note::new(format!(
+                        "Function has {} parameters, but only {} were passed",
+                        params.len(), args.len()
+                    ), false)));
                 }
                 Some(ret_ty.as_ref().clone())
             }
@@ -85,11 +145,14 @@ impl Resolve for Call {
                 checker.logger().lock().unwrap().log(Message::new(
                     Level::Error,
                     format!("Cannot call an expression of type {other}"),
-                    self.span().into()
+                    self.span().unwrap_or(ArcSpan::builtin()).as_ref()
                 ));
                 Some(Ty::Invalid)
             }
         }
+    }
+    fn cache(&mut self) -> Option<&mut ResolveCache> {
+        Some(&mut self.cache)
     }
 }
 
@@ -121,7 +184,10 @@ impl Index {
 }
 
 impl Resolve for Index {
-    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
+        todo!()
+    }
+    fn cache(&mut self) -> Option<&mut ResolveCache> {
         todo!()
     }
 }
@@ -130,6 +196,7 @@ impl Resolve for Index {
 pub struct UnOp {
     op: op::Unary,
     target: Expr,
+    cache: ResolveCache,
 }
 
 impl UnOp {
@@ -145,6 +212,7 @@ impl UnOp {
         Ok(Self {
             op: Parse::parse(src.clone(), tokenizer)?,
             target: target(src, tokenizer)?,
+            cache: Default::default(),
         })
     }
     pub fn span(&self) -> Option<ArcSpan> {
@@ -153,7 +221,7 @@ impl UnOp {
 }
 
 impl Resolve for UnOp {
-    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
         let target = self.target.try_resolve(checker)?;
         let op = self.op.clone();
         if target.is_unreal() {
@@ -172,11 +240,14 @@ impl Resolve for UnOp {
                 }
             }
         }
-        checker.push_unresolved(
+        self.cache.set_unresolved(
             format!("Cannot use operator '{op}' on type {target}"),
             self.span()
         );
         None
+    }
+    fn cache(&mut self) -> Option<&mut ResolveCache> {
+        Some(&mut self.cache)
     }
 }
 
@@ -185,6 +256,7 @@ pub struct BinOp {
     lhs: Expr,
     op: op::Binary,
     rhs: Expr,
+    cache: ResolveCache,
 }
 
 impl BinOp {
@@ -202,6 +274,7 @@ impl BinOp {
             lhs,
             op: Parse::parse(src.clone(), tokenizer)?,
             rhs: rhs(src, tokenizer)?,
+            cache: Default::default(),
         })
     }
     pub fn span(&self) -> Option<ArcSpan> {
@@ -210,7 +283,7 @@ impl BinOp {
 }
 
 impl Resolve for BinOp {
-    fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
         let a = self.lhs.try_resolve(checker)?;
         let b = self.rhs.try_resolve(checker)?;
         let op = self.op.clone();
@@ -230,10 +303,13 @@ impl Resolve for BinOp {
                 }
             }
         }
-        checker.push_unresolved(
+        self.cache.set_unresolved(
             format!("Cannot use operator '{op}' on types {a} and {b}"),
             self.span()
         );
         None
+    }
+    fn cache(&mut self) -> Option<&mut ResolveCache> {
+        Some(&mut self.cache)
     }
 }

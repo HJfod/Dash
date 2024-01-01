@@ -262,7 +262,9 @@ struct ParseField {
     #[darling(default)]
     peek_point: bool,
     #[darling(default)]
-    skip: Option<String>,
+    skip: bool,
+    #[darling(default)]
+    skip_with: Option<String>,
 }
 
 fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStream2, TokenStream2, TokenStream2) {
@@ -274,7 +276,7 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
     // Find peek point if it was manually set
     let mut encountered_peek_end = false;
     let mut peek_count = 0;
-    for field in data.iter().filter(|d| d.skip.is_none()) {
+    for field in data.iter().filter(|d| !d.skip && d.skip_with.is_none()) {
         if field.peek_point {
             if extract_type_from_option(&field.ty).is_some() {
                 parse_impl.extend(
@@ -322,7 +324,7 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
     // Generate parse and peek impls
     let mut peek_ix = 0usize;
     for (field_ix, field) in data.iter().enumerate() {
-        if let Some(ref skip) = field.skip {
+        if let Some(ref skip) = field.skip_with {
             match syn::Expr::parse.parse_str(skip) {
                 Ok(skip) => {
                     if let Some(ref i) = field.ident {
@@ -336,6 +338,14 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
                     let e = e.to_compile_error().to_token_stream();
                     parse_impl.extend(quote_spanned!(skip.span() => #e));
                 }
+            }
+        }
+        else if field.skip {
+            if let Some(ref i) = field.ident {
+                parse_impl.extend(quote! { #i: Default::default(), });
+            }
+            else {
+                parse_impl.extend(quote! { Default::default(), });
             }
         }
         else {
@@ -461,7 +471,7 @@ impl ToTokens for ParseReceiver {
                         if variant.fields.is_struct() {
                             for field in variant.fields.fields.iter() {
                                 let name = &field.ident;
-                                if field.skip.is_some() {
+                                if field.skip || field.skip_with.is_some() {
                                     names.extend(quote! { #name: _, });
                                 }
                                 else {
@@ -476,7 +486,7 @@ impl ToTokens for ParseReceiver {
                             for (field, c) in variant.fields.fields.iter().zip(
                                 ('a'..='z').map(|c| Ident::new(&c.to_string(), v.span()))
                             ) {
-                                if field.skip.is_some() {
+                                if field.skip || field.skip_with.is_some() {
                                     names.extend(quote! { _, });
                                 }
                                 else {
@@ -547,23 +557,34 @@ struct ResolveVariant {
 impl ToTokens for ResolveReceiver {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         let try_resolve_impl;
+        let cache_impl;
 
         match &self.data {
             ast::Data::Struct(_) => {
                 unimplemented!("structs not yet supported")
             }
             ast::Data::Enum(data) => {
-                let mut matches = quote! {};
+                let mut try_resolve_matches = quote! {};
+                let mut cache_matches = quote! {};
                 for v in data {
                     let ident = &v.ident;
-                    matches.extend(quote_spanned! {
+                    try_resolve_matches.extend(quote_spanned! {
                         v.ident.span() =>
                         Self::#ident(value) => crate::checker::resolve::Resolve::try_resolve(value, checker),
+                    });
+                    cache_matches.extend(quote_spanned! {
+                        v.ident.span() =>
+                        Self::#ident(value) => crate::checker::resolve::Resolve::cache(value),
                     });
                 }
                 try_resolve_impl = quote! {
                     match self {
-                        #matches
+                        #try_resolve_matches
+                    }
+                };
+                cache_impl = quote! {
+                    match self {
+                        #cache_matches
                     }
                 };
             }
@@ -573,11 +594,15 @@ impl ToTokens for ResolveReceiver {
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         tokens.extend(quote! {
             impl #impl_generics crate::checker::resolve::Resolve for #name #ty_generics #where_clause {
-                fn try_resolve(
+                fn try_resolve_impl(
                     &mut self,
                     checker: &mut crate::checker::coherency::Checker
                 ) -> Option<crate::checker::ty::Ty> {
                     #try_resolve_impl
+                }
+
+                fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
+                    #cache_impl
                 }
             }
         });

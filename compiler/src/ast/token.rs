@@ -45,8 +45,11 @@ pub(crate) mod lit {
     pub struct Void {}
 
     impl Resolve for Void {
-        fn try_resolve(&mut self, _: &mut Checker) -> Option<Ty> {
+        fn try_resolve_impl(&mut self, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Void)
+        }
+        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
+            None
         }
     }
 
@@ -64,8 +67,11 @@ pub(crate) mod lit {
     }
 
     impl Resolve for Bool {
-        fn try_resolve(&mut self, _: &mut Checker) -> Option<Ty> {
+        fn try_resolve_impl(&mut self, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Bool)
+        }
+        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
+            None
         }
     }
 
@@ -75,8 +81,11 @@ pub(crate) mod lit {
     }
 
     impl Resolve for Int {
-        fn try_resolve(&mut self, _: &mut Checker) -> Option<Ty> {
+        fn try_resolve_impl(&mut self, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Int)
+        }
+        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
+            None
         }
     }
 
@@ -86,8 +95,11 @@ pub(crate) mod lit {
     }
 
     impl Resolve for Float {
-        fn try_resolve(&mut self, _: &mut Checker) -> Option<Ty> {
+        fn try_resolve_impl(&mut self, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Float)
+        }
+        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
+            None
         }
     }
 
@@ -97,8 +109,11 @@ pub(crate) mod lit {
     }
 
     impl Resolve for String {
-        fn try_resolve(&mut self, _: &mut Checker) -> Option<Ty> {
+        fn try_resolve_impl(&mut self, _: &mut Checker) -> Option<Ty> {
             Some(Ty::String)
+        }
+        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
+            None
         }
     }
 }
@@ -357,8 +372,11 @@ pub(crate) mod delim {
     }
 
     impl<T: Parse + Resolve> Resolve for Parenthesized<T> {
-        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
             self.value.try_resolve(checker)
+        }
+        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
+            self.value.cache()
         }
     }
      
@@ -368,8 +386,11 @@ pub(crate) mod delim {
     }
 
     impl<T: Parse + Resolve> Resolve for Bracketed<T> {
-        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
             self.value.try_resolve(checker)
+        }
+        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
+            self.value.cache()
         }
     }
 
@@ -379,8 +400,11 @@ pub(crate) mod delim {
     }
 
     impl<T: Parse + Resolve> Resolve for Braced<T> {
-        fn try_resolve(&mut self, checker: &mut Checker) -> Option<Ty> {
+        fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
             self.value.try_resolve(checker)
+        }
+        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
+            self.value.cache()
         }
     }
 
@@ -389,8 +413,11 @@ pub(crate) mod delim {
     pub struct P;
 
     impl Resolve for P {
-        fn try_resolve(&mut self, _: &mut Checker) -> Option<Ty> {
+        fn try_resolve_impl(&mut self, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Invalid)
+        }
+        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
+            None
         }
     }
 }
