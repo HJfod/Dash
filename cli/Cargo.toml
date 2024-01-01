@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-clap = { version = "4.3.23", features = ["derive"] }
+clap = { version = "4.4.12", features = ["derive"] }
 dash-compiler = { path = "../compiler" }
 normalize-path = "0.2.1"

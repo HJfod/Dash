@@ -57,6 +57,11 @@ impl Resolve for Call {
             .collect::<Option<Vec<_>>>()?;
         match target {
             Ty::Function { params, ret_ty } => {
+                let mut arg_ix = 0usize;
+                for (name, ty) in args {
+                    
+                    arg_ix += 1;
+                }
                 Some(ret_ty.as_ref().clone())
             }
             other => {
