@@ -1,6 +1,6 @@
 
-use std::{pin::Pin, ptr::NonNull, collections::HashMap};
-use crate::shared::{logger::{LoggerRef, Message, Level, Note}, ptr_iter::PtrChainIter, src::{ArcSpan, Span}};
+use std::collections::HashMap;
+use crate::shared::{logger::{LoggerRef, Message, Level, Note}, src::{ArcSpan, Span}};
 use super::{ty::Ty, path::{FullIdentPath, IdentPath, Ident}, entity::Entity, pool::AST, resolve::Resolve};
 
 pub(crate) struct ItemSpace<T> {
@@ -10,21 +10,6 @@ pub(crate) struct ItemSpace<T> {
 impl<T> ItemSpace<T> {
     fn new<H: Into<HashMap<FullIdentPath, T>>>(values: H) -> Self {
         Self { items: values.into() }
-    }
-    pub fn try_push(&mut self, name: &IdentPath, item: T, namespace_stack: &FullIdentPath) -> Result<&T, &T> {
-        // The full name for this item is the current topmost namespace name 
-        // joined with the name of the item
-        let full_name = namespace_stack.join(name);
-        // Check if this name already exists in this scope
-        // Can't just do `if let Some` because the borrow checker then complains 
-        // that you can't mutate self.items in the `else` branch afterwards
-        if self.items.contains_key(&full_name) {
-            Err(self.items.get(&full_name).unwrap())
-        }
-        else {
-            self.items.insert(full_name.clone(), item);
-            Ok(self.items.get(&full_name).unwrap())
-        }
     }
     /// Try to find an item in this scope with a fully resolved name
     pub fn get(&self, full_name: &FullIdentPath) -> Option<&T> {
@@ -61,22 +46,48 @@ impl<T> Default for ItemSpace<T> {
     }
 }
 
+pub(crate) struct ItemSpaceWithStack<'s, T> {
+    space: &'s mut ItemSpace<T>,
+    stack: &'s FullIdentPath,
+}
+
+impl<'s, T> ItemSpaceWithStack<'s, T> {
+    pub fn try_push(self, name: &IdentPath, item: T) -> Result<&'s T, &'s T> {
+        // The full name for this item is the current topmost namespace name 
+        // joined with the name of the item
+        let full_name = self.stack.join(name);
+        // Check if this name already exists in this scope
+        // Can't just do `if let Some` because the borrow checker then complains 
+        // that you can't mutate self.items in the `else` branch afterwards
+        if self.space.items.contains_key(&full_name) {
+            Err(self.space.items.get(&full_name).unwrap())
+        }
+        else {
+            self.space.items.insert(full_name.clone(), item);
+            Ok(self.space.items.get(&full_name).unwrap())
+        }
+    }
+}
+
 pub(crate) struct Scope {
-    parent: Option<NonNull<Scope>>,
+    id: ScopeID,
+    parent: Option<ScopeID>,
     types: ItemSpace<Ty>,
     entities: ItemSpace<Entity>,
 }
 
 impl Scope {
-    fn new(checker: &mut Checker) -> Self {
+    fn new(id: ScopeID, parent: ScopeID) -> Self {
         Self {
-            parent: Some(NonNull::from(checker.scope())),
+            id,
+            parent: Some(parent),
             types: Default::default(),
             entities: Default::default(),
         }
     }
     fn root() -> Self {
         Self {
+            id: ScopeID(0),
             parent: None,
             types: ItemSpace::new(
                 [Ty::Never, Ty::Void, Ty::Bool, Ty::Int, Ty::Float, Ty::String]
@@ -85,14 +96,28 @@ impl Scope {
             entities: Default::default(),
         }
     }
-    pub fn types(&mut self) -> &mut ItemSpace<Ty> {
-        &mut self.types
+    pub fn types(&self) -> &ItemSpace<Ty> {
+        &self.types
     }
-    pub fn entities(&mut self) -> &mut ItemSpace<Entity> {
-        &mut self.entities
+    pub fn entities(&self) -> &ItemSpace<Entity> {
+        &self.entities
     }
     fn drop_ephemeral(&mut self) {
         self.entities.items.retain(|_, v| !v.ephemeral())
+    }
+}
+
+pub(crate) struct ScopeWithStack<'s> {
+    scope: &'s mut Scope,
+    stack: &'s FullIdentPath,
+}
+
+impl<'s> ScopeWithStack<'s> {
+    pub fn types(self) -> ItemSpaceWithStack<'s, Ty> {
+        ItemSpaceWithStack { space: &mut self.scope.types, stack: self.stack }
+    }
+    pub fn entities(self) -> ItemSpaceWithStack<'s, Entity> {
+        ItemSpaceWithStack { space: &mut self.scope.entities, stack: self.stack }
     }
 }
 
@@ -118,32 +143,52 @@ impl NodeID {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ScopeID(usize);
+
 #[derive(PartialEq, Eq)]
 struct UnresolvedData {
     msg: String,
     span: ArcSpan,
 }
 
+pub(crate) struct ScopeIter<'s> {
+    current: Option<ScopeID>,
+    scopes: &'s Vec<Scope>,
+}
+
+impl<'s> ScopeIter<'s> {
+    fn new(first: ScopeID, scopes: &'s Vec<Scope>) -> Self {
+        Self { current: Some(first), scopes }
+    }
+}
+
+impl<'s> Iterator for ScopeIter<'s> {
+    type Item = &'s Scope;
+    fn next(&mut self) -> Option<Self::Item> {
+        let ret = self.scopes.get(self.current?.0).unwrap();
+        self.current = ret.parent;
+        Some(ret)
+    }
+}
+
 pub(crate) struct Checker {
     logger: LoggerRef,
-    current_scope: NonNull<Scope>,
-    // wait this isn't a stable memory location...
+    current_scope: ScopeID,
     scopes: Vec<Scope>,
     namespace_stack: FullIdentPath,
     unresolved_nodes: HashMap<NodeID, UnresolvedData>,
 }
 
 impl Checker {
-    fn new(logger: LoggerRef) -> Pin<Box<Self>> {
-        let mut ret = Box::pin(Self {
+    fn new(logger: LoggerRef) -> Self {
+        Self {
             logger: logger.clone(),
-            current_scope: NonNull::dangling(),
+            current_scope: ScopeID(0),
             scopes: Vec::from([Scope::root()]),
             namespace_stack: FullIdentPath::default(),
             unresolved_nodes: HashMap::new(),
-        });
-        ret.current_scope = NonNull::from(ret.scopes.first_mut().unwrap());
-        ret
+        }
     }
     pub fn try_resolve(ast: &mut AST, logger: LoggerRef) -> Ty {
         let mut checker = Checker::new(logger);
@@ -179,27 +224,30 @@ impl Checker {
         unreachable!()
     }
 
-    pub fn scopes(&self) -> impl Iterator<Item = &mut Scope> {
-        PtrChainIter::new(self.current_scope, |s| s.parent)
+    pub fn scopes(&self) -> impl Iterator<Item = &Scope> {
+        ScopeIter::new(self.current_scope, &self.scopes)
     }
-    pub fn scope<'a>(&mut self) -> &'a mut Scope {
-        unsafe { self.current_scope.as_mut() }
+    pub fn scope(&mut self) -> ScopeWithStack {
+        ScopeWithStack {
+            scope: self.scopes.get_mut(self.current_scope.0).unwrap(),
+            stack: &self.namespace_stack
+        }
     }
-    pub fn enter_scope(&mut self, scope: &mut Option<NonNull<Scope>>) -> LeaveScope {
+    pub fn enter_scope(&mut self, scope: &mut Option<ScopeID>) -> LeaveScope {
         match scope {
             Some(scope) => self.current_scope = *scope,
             None => {
-                let s = Scope::new(self);
-                self.scopes.push(s);
-                *scope = Some(NonNull::from(self.scopes.last_mut().unwrap()));
+                let id = ScopeID(self.scopes.len());
+                self.scopes.push(Scope::new(id, self.current_scope));
+                *scope = Some(id);
                 self.current_scope = scope.unwrap();
             }
         }
         LeaveScope { checker: self }
     }
     fn leave_scope(&mut self) {
-        if let Some(parent) = self.scope().parent {
-            self.scope().drop_ephemeral();
+        if let Some(parent) = self.scope().scope.parent {
+            self.scope().scope.drop_ephemeral();
             self.current_scope = parent;
         }
     }

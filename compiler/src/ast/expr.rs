@@ -1,11 +1,11 @@
 
-use std::{sync::Arc, ptr::NonNull};
+use std::sync::Arc;
 
 use dash_macros::{Parse, Resolve};
 use crate::{
     parser::{parse::{Separated, Parse, FatalParseError, ParseFn}, tokenizer::{TokenIterator, Token}},
     shared::src::{Src, ArcSpan},
-    checker::{resolve::{Resolve, ResolveCache}, coherency::{Checker, Scope}, ty::Ty, path}
+    checker::{resolve::{Resolve, ResolveCache}, coherency::{Checker, ScopeID}, ty::Ty, path}
 };
 use super::{
     decl::Decl,
@@ -146,7 +146,7 @@ impl Parse for Expr {
 pub struct ExprList {
     exprs: Vec<(Expr, TerminatingSemicolon)>,
     #[parse(skip)]
-    scope: Option<NonNull<Scope>>,
+    scope: Option<ScopeID>,
     #[parse(skip)]
     cache: ResolveCache,
 }

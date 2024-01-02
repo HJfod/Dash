@@ -1,10 +1,8 @@
 
-use std::ptr::NonNull;
-
 use crate::{
     parser::parse::{SeparatedWithTrailing, DontExpect, Parse, calculate_span},
     add_compile_message,
-    checker::{resolve::{Resolve, ResolveCache}, coherency::{Checker, Scope}, ty::Ty, entity::Entity, path},
+    checker::{resolve::{Resolve, ResolveCache}, coherency::{Checker, ScopeID}, ty::Ty, entity::Entity, path},
     try_resolve,
     shared::{src::ArcSpan, logger::{Message, Level, Note}}
 };
@@ -37,19 +35,16 @@ impl Resolve for LetDecl {
                 },
                 self.span_or_builtin(),
                 true
-            ),
-            checker.namespace_stack()
+            )
         ) {
             Ok(_) => {}
             Err(old) => {
+                let old_span = old.span();
                 checker.logger().lock().unwrap().log(Message::new(
                     Level::Error,
                     format!("Item {} has already been defined in this scope", self.name.to_path()),
                     self.span_or_builtin().as_ref()
-                ).note(Note::new_at(
-                    "Previous definition here",
-                    old.span().as_ref()
-                )));
+                ).note(Note::new_at("Previous definition here", old_span.as_ref())));
             }
         }
         Some(Ty::Void)
@@ -85,7 +80,7 @@ pub struct FunDecl {
     ret_ty: Option<(punct::Arrow, TypeExpr)>,
     body: delim::Braced<ExprList>,
     #[parse(skip)]
-    scope: Option<NonNull<Scope>>,
+    scope: Option<ScopeID>,
     #[parse(skip)]
     cache: ResolveCache,
 }
@@ -111,17 +106,14 @@ impl Resolve for FunDecl {
             for (name, ty, span) in &params {
                 if let Err(old) = checker.scope().entities().try_push(
                     &path::IdentPath::new([path::Ident::from(name.as_str())], false),
-                    Entity::new(ty.clone(), self.span_or_builtin(), true),
-                    checker.namespace_stack()
+                    Entity::new(ty.clone(), self.span_or_builtin(), true)
                 ) {
+                    let old_span = old.span();
                     checker.logger().lock().unwrap().log(Message::new(
                         Level::Error,
                         format!("Parameter {name} defined multiple times"),
                         span.as_ref()
-                    ).note(Note::new_at(
-                        "Previous definition here",
-                        old.span().as_ref()
-                    )));
+                    ).note(Note::new_at("Previous definition here", old_span.as_ref())));
                 }
             }
             self.body.value.try_resolve(checker)?
@@ -135,17 +127,14 @@ impl Resolve for FunDecl {
         if let Some(ref name) = self.name {
             if let Err(old) = checker.scope().entities().try_push(
                 &name.to_path(),
-                Entity::new(fty.clone(), self.span_or_builtin(), false),
-                checker.namespace_stack()
+                Entity::new(fty.clone(), self.span_or_builtin(), false)
             ) {
+                let old_span = old.span();
                 checker.logger().lock().unwrap().log(Message::new(
                     Level::Error,
                     format!("Name {} has already been defined", name.to_path()),
                     self.span_or_builtin().as_ref()
-                ).note(Note::new_at(
-                    "Previous definition here",
-                    old.span().as_ref()
-                )));
+                ).note(Note::new_at("Previous definition here", old_span.as_ref())));
             }
         }
         Some(fty)
