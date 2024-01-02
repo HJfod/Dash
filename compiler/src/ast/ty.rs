@@ -73,10 +73,7 @@ pub struct TypeIdent {
 impl Resolve for TypeIdent {
     fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
         for scope in checker.scopes() {
-            if let Some(ty) = scope.types().find(
-                &self.name.to_path(),
-                checker.namespace_stack()
-            ) {
+            if let Some(ty) = scope.types().find(&self.name.to_path()) {
                 return Some(ty.clone());
             }
         }

@@ -122,6 +122,12 @@ impl ArcSpan {
     }
 }
 
+impl Default for ArcSpan {
+    fn default() -> Self {
+        Self::builtin()
+    }
+}
+
 impl Debug for ArcSpan {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_ref())

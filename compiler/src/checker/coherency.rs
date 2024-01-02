@@ -1,9 +1,10 @@
 
 use std::collections::HashMap;
-use crate::shared::{logger::{LoggerRef, Message, Level, Note}, src::{ArcSpan, Span}};
+use crate::{shared::{logger::{LoggerRef, Message, Level, Note}, src::{ArcSpan, Span}}, ast::token::op};
 use super::{ty::Ty, path::{FullIdentPath, IdentPath, Ident}, entity::Entity, pool::AST, resolve::Resolve};
 
-pub(crate) struct ItemSpace<T> {
+#[derive(Debug)]
+struct ItemSpace<T> {
     items: HashMap<FullIdentPath, T>,
 }
 
@@ -12,11 +13,11 @@ impl<T> ItemSpace<T> {
         Self { items: values.into() }
     }
     /// Try to find an item in this scope with a fully resolved name
-    pub fn get(&self, full_name: &FullIdentPath) -> Option<&T> {
+    fn get(&self, full_name: &FullIdentPath) -> Option<&T> {
         self.items.get(full_name)
     }
     /// Try to find an item in this scope with an unresolved name
-    pub fn find(&self, name: &IdentPath, namespace_stack: &FullIdentPath) -> Option<&T> {
+    fn find(&self, name: &IdentPath, stack: &FullIdentPath) -> Option<&T> {
         // This is an optimization; the else branch would also do this since 
         // FullIdentPath::join would just return `name` every time
         if name.is_absolute() {
@@ -25,7 +26,7 @@ impl<T> ItemSpace<T> {
         else {
             // Try joining the path to the namespace stack. If not found, check 
             // that namespace's parent namespace, all the way down to root
-            let mut temp = namespace_stack.clone();
+            let mut temp = stack.clone();
             while !temp.is_empty() {
                 if let Some(found) = self.get(&temp.join(name)) {
                     return Some(found);
@@ -34,6 +35,21 @@ impl<T> ItemSpace<T> {
             }
             // Check root namespace
             self.get(&name.to_full())
+        }
+    }
+    fn try_push(&mut self, name: &IdentPath, item: T, stack: &FullIdentPath) -> Result<&T, &T> {
+        // The full name for this item is the current topmost namespace name 
+        // joined with the name of the item
+        let full_name = stack.join(name);
+        // Check if this name already exists in this scope
+        // Can't just do `if let Some` because the borrow checker then complains 
+        // that you can't mutate self.items in the `else` branch afterwards
+        if self.items.contains_key(&full_name) {
+            Err(self.items.get(&full_name).unwrap())
+        }
+        else {
+            self.items.insert(full_name.clone(), item);
+            Ok(self.items.get(&full_name).unwrap())
         }
     }
 }
@@ -46,54 +62,116 @@ impl<T> Default for ItemSpace<T> {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct ItemSpaceWithStack<'s, T> {
-    space: &'s mut ItemSpace<T>,
+    space: &'s ItemSpace<T>,
     stack: &'s FullIdentPath,
 }
 
 impl<'s, T> ItemSpaceWithStack<'s, T> {
-    pub fn try_push(self, name: &IdentPath, item: T) -> Result<&'s T, &'s T> {
-        // The full name for this item is the current topmost namespace name 
-        // joined with the name of the item
-        let full_name = self.stack.join(name);
-        // Check if this name already exists in this scope
-        // Can't just do `if let Some` because the borrow checker then complains 
-        // that you can't mutate self.items in the `else` branch afterwards
-        if self.space.items.contains_key(&full_name) {
-            Err(self.space.items.get(&full_name).unwrap())
-        }
-        else {
-            self.space.items.insert(full_name.clone(), item);
-            Ok(self.space.items.get(&full_name).unwrap())
-        }
+    /// Try to find an item in this scope with an unresolved name
+    pub fn find(self, name: &IdentPath) -> Option<&'s T> {
+        self.space.find(name, self.stack)
     }
 }
 
-pub(crate) struct Scope {
-    id: ScopeID,
+#[derive(Debug)]
+pub(crate) struct ItemSpaceWithStackMut<'s, T> {
+    space: &'s mut ItemSpace<T>,
+    stack: &'s FullIdentPath,
+}
+
+impl<'s, T> ItemSpaceWithStackMut<'s, T> {
+    /// Try to find an item in this scope with an unresolved name
+    pub fn find(self, name: &IdentPath) -> Option<&'s T> {
+        self.space.find(name, self.stack)
+    }
+    pub fn try_push(self, name: &IdentPath, item: T) -> Result<&'s T, &'s T> {
+        self.space.try_push(name, item, self.stack)
+    }
+}
+
+#[derive(Debug)]
+struct Scope {
     parent: Option<ScopeID>,
     types: ItemSpace<Ty>,
     entities: ItemSpace<Entity>,
 }
 
 impl Scope {
-    fn new(id: ScopeID, parent: ScopeID) -> Self {
+    fn new(parent: ScopeID) -> Self {
         Self {
-            id,
             parent: Some(parent),
             types: Default::default(),
             entities: Default::default(),
         }
     }
     fn root() -> Self {
+        macro_rules! decl_binop {
+            ($a: ident $op: ident $b: ident => $r: ident) => {
+                (Ty::$a, op::Binary::$op(op::$op::builtin()), Ty::$b, Ty::$r)
+            };
+        }
+
         Self {
-            id: ScopeID(0),
             parent: None,
             types: ItemSpace::new(
                 [Ty::Never, Ty::Void, Ty::Bool, Ty::Int, Ty::Float, Ty::String]
                     .map(|t| (FullIdentPath::new([t.to_string().into()]), t))
             ),
-            entities: Default::default(),
+            entities: ItemSpace::new(
+                [
+                    decl_binop!(Int Eq  Int => Bool),
+                    decl_binop!(Int Neq Int => Bool),
+                    decl_binop!(Int Less Int => Bool),
+                    decl_binop!(Int Leq Int => Bool),
+                    decl_binop!(Int Grt Int => Bool),
+                    decl_binop!(Int Geq Int => Bool),
+                    decl_binop!(Int Add Int => Int),
+                    decl_binop!(Int Sub Int => Int),
+                    decl_binop!(Int Mul Int => Int),
+                    decl_binop!(Int Div Int => Int),
+                    decl_binop!(Int Mod Int => Int),
+                    
+                    decl_binop!(Float Eq  Float => Bool),
+                    decl_binop!(Float Neq Float => Bool),
+                    decl_binop!(Float Less Float => Bool),
+                    decl_binop!(Float Leq Float => Bool),
+                    decl_binop!(Float Grt Float => Bool),
+                    decl_binop!(Float Geq Float => Bool),
+                    decl_binop!(Float Add Float => Float),
+                    decl_binop!(Float Sub Float => Float),
+                    decl_binop!(Float Mul Float => Float),
+                    decl_binop!(Float Div Float => Float),
+                    decl_binop!(Float Mod Float => Float),
+
+                    decl_binop!(Int Add Float => Float),
+                    decl_binop!(Int Sub Float => Float),
+                    decl_binop!(Int Mul Float => Float),
+                    decl_binop!(Int Div Float => Float),
+                    decl_binop!(Int Mod Float => Int),
+                    decl_binop!(Float Mod Int => Float),
+
+                    decl_binop!(String Eq String => Bool),
+                    decl_binop!(String Neq String => Bool),
+                    decl_binop!(String Add String => String),
+                    decl_binop!(String Mul Int => String),
+
+                    decl_binop!(Bool And Bool => Bool),
+                    decl_binop!(Bool Or Bool => Bool),
+                ]
+                .map(|(a, op, b, ret)| (
+                    FullIdentPath::new([Ident::BinOp(a.clone(), op, b.clone())]),
+                    Entity::new(
+                        Ty::Function {
+                            params: vec![(None, a), (None, b)],
+                            ret_ty: Box::from(ret)
+                        },
+                        ArcSpan::builtin(),
+                        false
+                    )
+                ))
+            ),
         }
     }
     pub fn types(&self) -> &ItemSpace<Ty> {
@@ -107,17 +185,42 @@ impl Scope {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct ScopeWithStack<'s> {
-    scope: &'s mut Scope,
+    scope: &'s Scope,
     stack: &'s FullIdentPath,
 }
 
 impl<'s> ScopeWithStack<'s> {
+    pub fn types(&self) -> ItemSpaceWithStack<'s, Ty> {
+        ItemSpaceWithStack { space: &self.scope.types, stack: self.stack }
+    }
+    pub fn entities(&self) -> ItemSpaceWithStack<'s, Entity> {
+        ItemSpaceWithStack { space: &self.scope.entities, stack: self.stack }
+    }
+}
+
+/// Used to pass the namespace stack from the checker to 
+/// `ItemSpaceWithStack::try_push`, since it needs to know what the current 
+/// namespace is to figure out the fully qualified name
+#[derive(Debug)]
+pub(crate) struct ScopeWithStackMut<'s> {
+    scope: &'s mut Scope,
+    stack: &'s FullIdentPath,
+}
+
+impl<'s> ScopeWithStackMut<'s> {
     pub fn types(self) -> ItemSpaceWithStack<'s, Ty> {
-        ItemSpaceWithStack { space: &mut self.scope.types, stack: self.stack }
+        ItemSpaceWithStack { space: &self.scope.types, stack: self.stack }
     }
     pub fn entities(self) -> ItemSpaceWithStack<'s, Entity> {
-        ItemSpaceWithStack { space: &mut self.scope.entities, stack: self.stack }
+        ItemSpaceWithStack { space: &self.scope.entities, stack: self.stack }
+    }
+    pub fn types_mut(self) -> ItemSpaceWithStackMut<'s, Ty> {
+        ItemSpaceWithStackMut { space: &mut self.scope.types, stack: self.stack }
+    }
+    pub fn entities_mut(self) -> ItemSpaceWithStackMut<'s, Entity> {
+        ItemSpaceWithStackMut { space: &mut self.scope.entities, stack: self.stack }
     }
 }
 
@@ -155,20 +258,21 @@ struct UnresolvedData {
 pub(crate) struct ScopeIter<'s> {
     current: Option<ScopeID>,
     scopes: &'s Vec<Scope>,
+    stack: &'s FullIdentPath,
 }
 
 impl<'s> ScopeIter<'s> {
-    fn new(first: ScopeID, scopes: &'s Vec<Scope>) -> Self {
-        Self { current: Some(first), scopes }
+    fn new(first: ScopeID, scopes: &'s Vec<Scope>, stack: &'s FullIdentPath) -> Self {
+        Self { current: Some(first), scopes, stack }
     }
 }
 
 impl<'s> Iterator for ScopeIter<'s> {
-    type Item = &'s Scope;
+    type Item = ScopeWithStack<'s>;
     fn next(&mut self) -> Option<Self::Item> {
         let ret = self.scopes.get(self.current?.0).unwrap();
         self.current = ret.parent;
-        Some(ret)
+        Some(ScopeWithStack { scope: ret, stack: self.stack })
     }
 }
 
@@ -224,11 +328,11 @@ impl Checker {
         unreachable!()
     }
 
-    pub fn scopes(&self) -> impl Iterator<Item = &Scope> {
-        ScopeIter::new(self.current_scope, &self.scopes)
+    pub fn scopes(&self) -> ScopeIter {
+        ScopeIter::new(self.current_scope, &self.scopes, &self.namespace_stack)
     }
-    pub fn scope(&mut self) -> ScopeWithStack {
-        ScopeWithStack {
+    pub fn scope(&mut self) -> ScopeWithStackMut {
+        ScopeWithStackMut {
             scope: self.scopes.get_mut(self.current_scope.0).unwrap(),
             stack: &self.namespace_stack
         }
@@ -237,9 +341,8 @@ impl Checker {
         match scope {
             Some(scope) => self.current_scope = *scope,
             None => {
-                let id = ScopeID(self.scopes.len());
-                self.scopes.push(Scope::new(id, self.current_scope));
-                *scope = Some(id);
+                *scope = Some(ScopeID(self.scopes.len()));
+                self.scopes.push(Scope::new(self.current_scope));
                 self.current_scope = scope.unwrap();
             }
         }
@@ -252,9 +355,6 @@ impl Checker {
         }
     }
 
-    pub fn namespace_stack(&self) -> &FullIdentPath {
-        &self.namespace_stack
-    }
     pub fn enter_namespace(&mut self, name: Ident) {
         self.namespace_stack.push(name);
     }

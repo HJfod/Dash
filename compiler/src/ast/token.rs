@@ -215,67 +215,68 @@ pub(crate) mod punct {
 
 pub(crate) mod op {
     use std::fmt::Display;
+    use std::hash::Hash;
 
     use dash_macros::{token, Parse};
     use crate::parser::parse::Parse;
     use crate::parser::tokenizer::{TokenIterator, Token};
 
-    #[token(kind = "Punct", raw = "!", include_raw)]
+    #[token(kind = "Punct", raw = "!", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Not {}
-    #[token(kind = "Punct", raw = "?", include_raw)]
+    #[token(kind = "Punct", raw = "?", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Question {}
     
-    #[token(kind = "Punct", raw = "==", include_raw)]
+    #[token(kind = "Punct", raw = "==", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Eq {}
-    #[token(kind = "Punct", raw = "!=", include_raw)]
+    #[token(kind = "Punct", raw = "!=", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Neq {}
     
-    #[token(kind = "Punct", raw = "&&", include_raw)]
+    #[token(kind = "Punct", raw = "&&", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct And {}
-    #[token(kind = "Punct", raw = "||", include_raw)]
+    #[token(kind = "Punct", raw = "||", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Or {}
     
-    #[token(kind = "Punct", raw = "=", include_raw)]
+    #[token(kind = "Punct", raw = "=", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Seq {}
 
-    #[token(kind = "Punct", raw = "+", include_raw)]
+    #[token(kind = "Punct", raw = "+", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Add {}
-    #[token(kind = "Punct", raw = "-", include_raw)]
+    #[token(kind = "Punct", raw = "-", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Sub {}
 
-    #[token(kind = "Punct", raw = "*", include_raw)]
+    #[token(kind = "Punct", raw = "*", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Mul {}
-    #[token(kind = "Punct", raw = "/", include_raw)]
+    #[token(kind = "Punct", raw = "/", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Div {}
-    #[token(kind = "Punct", raw = "%", include_raw)]
+    #[token(kind = "Punct", raw = "%", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Mod {}
 
-    #[token(kind = "Punct", raw = ">", include_raw)]
+    #[token(kind = "Punct", raw = ">", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Grt {}
-    #[token(kind = "Punct", raw = "<", include_raw)]
+    #[token(kind = "Punct", raw = "<", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Less {}
-    #[token(kind = "Punct", raw = ">=", include_raw)]
+    #[token(kind = "Punct", raw = ">=", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Geq {}
-    #[token(kind = "Punct", raw = "<=", include_raw)]
+    #[token(kind = "Punct", raw = "<=", include_raw, new_builtin)]
     #[derive(Clone, PartialEq, Eq, Hash)]
     pub struct Leq {}
 
-    #[derive(Clone, Debug, Parse, PartialEq, Eq, Hash)]
+    #[derive(Clone, Debug, Parse, Eq)]
     #[parse(expected = "operator")]
     pub enum Binary {
         Eq(Eq), Neq(Neq),
@@ -284,6 +285,18 @@ pub(crate) mod op {
         Mul(Mul), Div(Div), Mod(Mod),
         Grt(Grt), Less(Less), Geq(Geq), Leq(Leq),
         And(And), Or(Or),
+    }
+
+    impl PartialEq for Binary {
+        fn eq(&self, other: &Self) -> bool {
+            std::mem::discriminant(self) == std::mem::discriminant(other)
+        }
+    }
+
+    impl Hash for Binary {
+        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+            std::mem::discriminant(self).hash(state)
+        }
     }
 
     impl Display for Binary {

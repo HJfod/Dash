@@ -140,6 +140,8 @@ struct TokenArgs {
     value_is_token_tree: bool,
     #[darling(default)]
     include_raw: bool,
+    #[darling(default)]
+    new_builtin: bool,
 }
 
 #[proc_macro_attribute]
@@ -180,7 +182,7 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
             span: crate::shared::src::Span::builtin(),
         } }
     };
-    let test_raw = if let Some(raw) = args.raw {
+    let test_raw = if let Some(ref raw) = args.raw {
         quote! { peek.raw == #raw }
     }
     else {
@@ -230,10 +232,37 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
     ).into();
     let name = target.ident;
     let (impl_generics, ty_generics, where_clause) = target.generics.split_for_impl();
+    let impl_new_default = if args.new_builtin {
+        let raw_field = if args.include_raw {
+            if let Some(raw) = args.raw {
+                quote! { raw: String::from(#raw), }
+            }
+            else {
+                quote! { raw: String::new(), }
+            }
+        }
+        else {
+            quote! {}
+        };
+        quote! {
+            impl #impl_generics #name #ty_generics #where_clause {
+                pub fn builtin() -> Self {
+                    Self {
+                        #raw_field
+                        span: crate::shared::src::ArcSpan::builtin(),
+                    }
+                }
+            }
+        }
+    }
+    else {
+        quote! {}
+    };
     quote! {
         #[derive(Debug)]
         #r
         impl #impl_generics crate::parser::parse::IsToken for #name #ty_generics #where_clause {}
+        #impl_new_default
     }.into()
 }
 

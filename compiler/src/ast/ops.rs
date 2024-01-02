@@ -229,7 +229,7 @@ impl Resolve for UnOp {
         }
         for scope in checker.scopes() {
             let name = path::IdentPath::new([path::Ident::UnOp(op.clone(), target.clone())], false);
-            if let Some(fun) = scope.entities().find(&name, checker.namespace_stack()) {
+            if let Some(fun) = scope.entities().find(&name) {
                 match fun.ty() {
                     Ty::Function { params: _, ret_ty } => return Some(ret_ty.as_ref().clone()),
                     _ => ice!(
@@ -291,8 +291,10 @@ impl Resolve for BinOp {
             return Some(Ty::Invalid);
         }
         for scope in checker.scopes() {
+            // todo: handle symmetrive ops, like a + b <=> b + a
+            // todo: synthesize ops, like a == b <=> a != b
             let name = path::IdentPath::new([path::Ident::BinOp(a.clone(), op.clone(), b.clone())], false);
-            if let Some(fun) = scope.entities().find(&name, checker.namespace_stack()) {
+            if let Some(fun) = scope.entities().find(&name) {
                 match fun.ty() {
                     Ty::Function { params: _, ret_ty } => return Some(ret_ty.as_ref().clone()),
                     _ => ice!(

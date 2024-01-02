@@ -24,7 +24,7 @@ impl Resolve for LetDecl {
         let ty = try_resolve!(&mut self.ty, checker, Some((_, ty)) => ty);
         let value = try_resolve!(&mut self.value, checker, Some((_, v)) => v);
         let vty = checker.expect_ty_eq(value, ty, self.span());
-        match checker.scope().entities().try_push(
+        match checker.scope().entities_mut().try_push(
             &self.name.to_path(),
             Entity::new(
                 if self.ty.is_some() || self.value.is_some() {
@@ -104,7 +104,7 @@ impl Resolve for FunDecl {
         let body = {
             let _scope = checker.enter_scope(&mut self.scope);
             for (name, ty, span) in &params {
-                if let Err(old) = checker.scope().entities().try_push(
+                if let Err(old) = checker.scope().entities_mut().try_push(
                     &path::IdentPath::new([path::Ident::from(name.as_str())], false),
                     Entity::new(ty.clone(), self.span_or_builtin(), true)
                 ) {
@@ -125,7 +125,7 @@ impl Resolve for FunDecl {
             ret_ty: ret_ty.into(),
         };
         if let Some(ref name) = self.name {
-            if let Err(old) = checker.scope().entities().try_push(
+            if let Err(old) = checker.scope().entities_mut().try_push(
                 &name.to_path(),
                 Entity::new(fty.clone(), self.span_or_builtin(), false)
             ) {

@@ -28,8 +28,7 @@ impl Resolve for ItemUse {
                 &match self {
                     Self::Ident(i, _) => i.to_path(),
                     Self::This(_, _) => path::IdentPath::new([path::Ident::from("this")], false)
-                },
-                checker.namespace_stack()
+                }
             ) {
                 return Some(ent.ty());
             }

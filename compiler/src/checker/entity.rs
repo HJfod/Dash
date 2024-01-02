@@ -3,6 +3,7 @@ use crate::shared::src::ArcSpan;
 
 use super::ty::Ty;
 
+#[derive(Debug)]
 pub(crate) struct Entity {
     /// The type of the entity
     ty: Ty,
