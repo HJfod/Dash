@@ -3,87 +3,74 @@ use std::sync::Arc;
 
 use dash_macros::{Parse, Resolve};
 use crate::{
-    parser::{parse::{Parse, FatalParseError, calculate_span}, tokenizer::{TokenIterator, Token}},
+    parser::{parse::{Parse, FatalParseError, calculate_span, RefToNode, NodeList, Node}, tokenizer::TokenIterator},
     shared::src::{Src, ArcSpan},
-    checker::{resolve::{Resolve, ResolveCache}, coherency::Checker, ty::Ty}
+    checker::{resolve::Resolve, coherency::Checker, ty::Ty}
 };
 use super::{expr::IdentPath, token::op};
 
 #[derive(Debug)]
-pub enum TypeExpr {
-    Optional(Box<TypeExpr>, op::Question, ResolveCache),
+pub enum TypeExprItem {
+    Optional(TypeExpr, op::Question),
     Atom(TypeAtom),
 }
+pub type TypeExpr = RefToNode<TypeExprItem>;
 
-impl Parse for TypeExpr {
-    fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
-        where I: Iterator<Item = Token<'s>>
-    {
-        let mut res = TypeExpr::Atom(Parse::parse(src.clone(), tokenizer)?);
-        while let Some(q) = op::Question::peek_and_parse(src.clone(), tokenizer)? {
-            res = TypeExpr::Optional(res.into(), q, Default::default());
-        }
-        Ok(res)
-    }
-
-    fn peek<'s, I>(pos: usize, tokenizer: &TokenIterator<'s, I>) -> bool
-        where I: Iterator<Item = Token<'s>>
-    {
-        TypeAtom::peek(pos, tokenizer)
-    }
-
+impl Node for TypeExprItem {
     fn span(&self) -> Option<ArcSpan> {
         match self {
-            Self::Optional(ty, q, _) => calculate_span([ty.span(), q.span()]),
+            Self::Optional(ty, q) => calculate_span([ty.span(), q.span()]),
             Self::Atom(atom) => atom.span(),
         }
     }
 }
 
-impl Resolve for TypeExpr {
-    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
-        match self {
-            TypeExpr::Optional(opt, _, _) => Some(Ty::Option {
-                ty: Box::new(opt.try_resolve(checker)?)
-            }),
-            TypeExpr::Atom(atom) => atom.try_resolve(checker),
+impl Parse for TypeExprItem {
+    fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError> {
+        let mut res = Self::Atom(Parse::parse(list, src.clone(), tokenizer)?);
+        while let Some(q) = op::Question::peek_and_parse(list, src.clone(), tokenizer)? {
+            res = Self::Optional(list.add(res), q);
         }
+        Ok(res)
     }
-    fn cache(&mut self) -> Option<&mut ResolveCache> {
+    fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool {
+        TypeAtom::peek(pos, tokenizer)
+    }
+}
+
+impl Resolve for TypeExprItem {
+    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
         match self {
-            Self::Optional(_, _, cache) => Some(cache),
-            Self::Atom(atom) => atom.cache(),
+            Self::Optional(opt, _) => Some(Ty::Option {
+                ty: Box::new(opt.try_resolve(list, checker)?)
+            }),
+            Self::Atom(atom) => atom.try_resolve(list, checker),
         }
     }
 }
 
 #[derive(Debug, Parse, Resolve)]
 #[parse(expected = "type")]
-pub enum TypeAtom {
+pub enum TypeAtomItem {
     TypeIdent(TypeIdent),
 }
 
 #[derive(Debug, Parse)]
-pub struct TypeIdent {
+pub struct TypeIdentItem {
     name: IdentPath,
-    #[parse(skip)]
-    cache: ResolveCache,
 }
 
-impl Resolve for TypeIdent {
-    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
+impl Resolve for TypeIdentItem {
+    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
         for scope in checker.scopes() {
-            if let Some(ty) = scope.types().find(&self.name.to_path()) {
+            if let Some(ty) = scope.types().find(&self.name.get(list).as_ref().to_path(list)) {
                 return Some(ty.clone());
             }
         }
-        self.cache.set_unresolved(
-            format!("Unknown type {}", self.name.to_path()),
-            self.name.span()
-        );
+        // self.cache.set_unresolved(
+        //     format!("Unknown type {}", self.name.to_path()),
+        //     self.name.span()
+        // );
         None
-    }
-    fn cache(&mut self) -> Option<&mut ResolveCache> {
-        Some(&mut self.cache)
     }
 }

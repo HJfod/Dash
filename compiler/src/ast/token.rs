@@ -6,7 +6,7 @@ use dash_macros::token;
 #[token(kind = "Ident", include_raw)]
 pub struct Ident {}
 
-impl Display for Ident {
+impl Display for IdentItem {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.raw)
     }
@@ -39,17 +39,14 @@ pub(crate) mod kw {
 pub(crate) mod lit {
     use dash_macros::{token, Parse};
 
-    use crate::checker::{resolve::Resolve, coherency::Checker, ty::Ty};
+    use crate::{checker::{resolve::Resolve, coherency::Checker, ty::Ty}, parser::parse::NodeList};
 
     #[token(kind = "Keyword", raw = "void")]
     pub struct Void {}
 
     impl Resolve for Void {
-        fn try_resolve_impl(&mut self, _: &mut Checker) -> Option<Ty> {
+        fn try_resolve(&mut self, _: &mut NodeList, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Void)
-        }
-        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
-            None
         }
     }
 
@@ -61,17 +58,14 @@ pub(crate) mod lit {
 
     #[derive(Debug, Parse)]
     #[parse(expected = "boolean")]
-    pub enum Bool {
+    pub enum BoolItem {
         True(True),
         False(False),
     }
 
-    impl Resolve for Bool {
-        fn try_resolve_impl(&mut self, _: &mut Checker) -> Option<Ty> {
+    impl Resolve for BoolItem {
+        fn try_resolve(&mut self, _: &mut NodeList, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Bool)
-        }
-        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
-            None
         }
     }
 
@@ -81,11 +75,8 @@ pub(crate) mod lit {
     }
 
     impl Resolve for Int {
-        fn try_resolve_impl(&mut self, _: &mut Checker) -> Option<Ty> {
+        fn try_resolve(&mut self, _: &mut NodeList, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Int)
-        }
-        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
-            None
         }
     }
 
@@ -95,11 +86,8 @@ pub(crate) mod lit {
     }
 
     impl Resolve for Float {
-        fn try_resolve_impl(&mut self, _: &mut Checker) -> Option<Ty> {
+        fn try_resolve(&mut self, _: &mut NodeList, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Float)
-        }
-        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
-            None
         }
     }
 
@@ -109,11 +97,8 @@ pub(crate) mod lit {
     }
 
     impl Resolve for String {
-        fn try_resolve_impl(&mut self, _: &mut Checker) -> Option<Ty> {
+        fn try_resolve(&mut self, _: &mut NodeList, _: &mut Checker) -> Option<Ty> {
             Some(Ty::String)
-        }
-        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
-            None
         }
     }
 }
@@ -126,8 +111,8 @@ pub(crate) mod punct {
     use crate::{
         shared::{src::{ArcSpan, Src}, logger::{Message, Level}},
         parser::{
-            parse::{Parse, FatalParseError, calculate_span},
-            tokenizer::{TokenIterator, Token}
+            parse::{Parse, FatalParseError, calculate_span, NodeList, Node},
+            tokenizer::TokenIterator
         }
     };
 
@@ -148,13 +133,17 @@ pub(crate) mod punct {
         }
     }
 
+    impl Node for TerminatingSemicolon {
+        fn span(&self) -> Option<ArcSpan> {
+            calculate_span(self.semicolons.iter().map(|s| s.span()))
+        }
+    }
+
     impl Parse for TerminatingSemicolon {
-        fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
-            where I: Iterator<Item = Token<'s>>
-        {
+        fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError> {
             let last_was_braced = tokenizer.last_was_braced();
             let mut found = vec![];
-            while let Some(s) = Semicolon::peek_and_parse(src.clone(), tokenizer)? {
+            while let Some(s) = Semicolon::peek_and_parse(list, src.clone(), tokenizer)? {
                 found.push(s);
             }
             // If the last token was a Braced or we're at EOF of this tree 
@@ -185,15 +174,8 @@ pub(crate) mod punct {
             // Missing semicolon is not a fatal parsing error
             Ok(Self { semicolons: found })
         }
-
-        fn peek<'s, I>(pos: usize, tokenizer: &TokenIterator<'s, I>) -> bool
-            where I: Iterator<Item = Token<'s>>
-        {
+        fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool {
             Semicolon::peek(pos, tokenizer)
-        }
-
-        fn span(&self) -> Option<ArcSpan> {
-            calculate_span(self.semicolons.iter().map(|s| s.span()))
         }
     }
 
@@ -219,122 +201,77 @@ pub(crate) mod op {
 
     use dash_macros::{token, Parse};
     use crate::parser::parse::Parse;
-    use crate::parser::tokenizer::{TokenIterator, Token};
+    use crate::parser::tokenizer::TokenIterator;
 
-    #[token(kind = "Punct", raw = "!", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Not {}
-    #[token(kind = "Punct", raw = "?", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Question {}
-    
-    #[token(kind = "Punct", raw = "==", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Eq {}
-    #[token(kind = "Punct", raw = "!=", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Neq {}
-    
-    #[token(kind = "Punct", raw = "&&", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct And {}
-    #[token(kind = "Punct", raw = "||", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Or {}
-    
-    #[token(kind = "Punct", raw = "=", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Seq {}
+    macro_rules! declare_ops {
+        ($group: ident {
+            $($name: ident = $raw: literal),*
+            $(,)?
+        }) => {
+            $(
+                #[token(kind = "Punct", raw = $raw)]
+                pub struct $name {}
+            )*
 
-    #[token(kind = "Punct", raw = "+", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Add {}
-    #[token(kind = "Punct", raw = "-", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Sub {}
+            concat_idents::concat_idents!(op_name = $group, Op {
+                #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+                pub enum op_name {
+                    $($name),*
+                }
 
-    #[token(kind = "Punct", raw = "*", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Mul {}
-    #[token(kind = "Punct", raw = "/", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Div {}
-    #[token(kind = "Punct", raw = "%", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Mod {}
+                impl Display for op_name {
+                    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                        match self {
+                            $(Self::$name => f.write_str($raw)),*
+                        }
+                    }
+                }
 
-    #[token(kind = "Punct", raw = ">", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Grt {}
-    #[token(kind = "Punct", raw = "<", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Less {}
-    #[token(kind = "Punct", raw = ">=", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Geq {}
-    #[token(kind = "Punct", raw = "<=", include_raw, new_builtin)]
-    #[derive(Clone, PartialEq, Eq, Hash)]
-    pub struct Leq {}
+                $(
+                    impl $name {
+                        pub fn op(&self) -> op_name {
+                            op_name::$name
+                        }
+                    }
+                )*
+            });
 
-    #[derive(Clone, Debug, Parse, Eq)]
-    #[parse(expected = "operator")]
-    pub enum Binary {
-        Eq(Eq), Neq(Neq),
-        Seq(Seq),
-        Add(Add), Sub(Sub),
-        Mul(Mul), Div(Div), Mod(Mod),
-        Grt(Grt), Less(Less), Geq(Geq), Leq(Leq),
-        And(And), Or(Or),
+            concat_idents::concat_idents!(item_name = $group, Item {
+                #[derive(Debug, Parse)]
+                #[parse(expected = "operator")]
+                pub enum item_name {
+                    $($name($name)),*
+                }
+                impl item_name {
+                    concat_idents::concat_idents!(op_name = $group, Op {
+                        pub fn op(&self) -> op_name {
+                            match self {
+                                $(Self::$name(a) => a.op()),*
+                            }
+                        }
+                    });
+                }
+            });
+        };
     }
 
-    impl PartialEq for Binary {
-        fn eq(&self, other: &Self) -> bool {
-            std::mem::discriminant(self) == std::mem::discriminant(other)
+    declare_ops! {
+        Unary {
+            Not = "!",
+            Question = "?",
+            Plus = "+",
+            Neg = "-",
         }
     }
 
-    impl Hash for Binary {
-        fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-            std::mem::discriminant(self).hash(state)
-        }
-    }
-
-    impl Display for Binary {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.write_str(match self {
-                Self::Eq(e) => &e.raw,
-                Self::Neq(e) => &e.raw,
-                Self::Seq(e) => &e.raw,
-                Self::Add(e) => &e.raw,
-                Self::Sub(e) => &e.raw,
-                Self::Mul(e) => &e.raw,
-                Self::Div(e) => &e.raw,
-                Self::Mod(e) => &e.raw,
-                Self::Grt(e) => &e.raw,
-                Self::Less(e) => &e.raw,
-                Self::Geq(e) => &e.raw,
-                Self::Leq(e) => &e.raw,
-                Self::And(e) => &e.raw,
-                Self::Or(e) => &e.raw,
-            })
-        }
-    }
-
-    #[derive(Clone, Debug, Parse, PartialEq, Eq, Hash)]
-    #[parse(expected = "operator")]
-    pub enum Unary {
-        Plus(Add),
-        Neg(Sub),
-        Not(Not),
-    }
-
-    impl Display for Unary {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.write_str(match self {
-                Self::Plus(e) => &e.raw,
-                Self::Neg(e) => &e.raw,
-                Self::Not(e) => &e.raw,
-            })
+    declare_ops! {
+        Binary {
+            Eq = "==", Neq = "!=",
+            And = "&&", Or = "||",
+            Seq = "=",
+            Add = "+", Sub = "-",
+            Mul = "*", Div = "/", Mod = "%",
+            Grt = ">", Geq = ">=", Less = "<", Leq = "<=",
         }
     }
 
@@ -353,9 +290,7 @@ pub(crate) mod op {
         pub(crate) const fn order() -> [Prec; 7] {
             [Prec::Mul, Prec::Add, Prec::Ord, Prec::Eq, Prec::And, Prec::Or, Prec::Seq]
         }
-        pub fn peek<'s, I>(&self, tokenizer: &TokenIterator<'s, I>) -> bool
-            where I: Iterator<Item = Token<'s>>
-        {
+        pub fn peek<'s>(&self, tokenizer: &TokenIterator<'s>) -> bool {
             match self {
                 Prec::Mul => Mul::peek(0, tokenizer) || Div::peek(0, tokenizer) ||
                              Mod::peek(0, tokenizer),
@@ -375,7 +310,7 @@ pub(crate) mod delim {
     use dash_macros::{token, Parse};
 
     use crate::{
-        parser::parse::Parse,
+        parser::parse::{Parse, NodeList},
         checker::{resolve::Resolve, coherency::Checker, ty::Ty}
     };
 
@@ -384,12 +319,9 @@ pub(crate) mod delim {
         pub value: T,
     }
 
-    impl<T: Parse + Resolve> Resolve for Parenthesized<T> {
-        fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
-            self.value.try_resolve(checker)
-        }
-        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
-            self.value.cache()
+    impl<T: Parse + Resolve> Resolve for ParenthesizedItem<T> {
+        fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+            self.value.try_resolve(list, checker)
         }
     }
      
@@ -398,12 +330,9 @@ pub(crate) mod delim {
         pub value: T,
     }
 
-    impl<T: Parse + Resolve> Resolve for Bracketed<T> {
-        fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
-            self.value.try_resolve(checker)
-        }
-        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
-            self.value.cache()
+    impl<T: Parse + Resolve> Resolve for BracketedItem<T> {
+        fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+            self.value.try_resolve(list, checker)
         }
     }
 
@@ -412,25 +341,19 @@ pub(crate) mod delim {
         pub value: T,
     }
 
-    impl<T: Parse + Resolve> Resolve for Braced<T> {
-        fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
-            self.value.try_resolve(checker)
-        }
-        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
-            self.value.cache()
+    impl<T: Parse + Resolve> Resolve for BracedItem<T> {
+        fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+            self.value.try_resolve(list, checker)
         }
     }
 
     /// Placeholder used for peeking delimiters
     #[derive(Debug, Parse)]
-    pub struct P;
+    pub struct PItem;
 
-    impl Resolve for P {
-        fn try_resolve_impl(&mut self, _: &mut Checker) -> Option<Ty> {
+    impl Resolve for PItem {
+        fn try_resolve(&mut self, _: &mut NodeList, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Invalid)
-        }
-        fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
-            None
         }
     }
 }

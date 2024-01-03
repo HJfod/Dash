@@ -3,37 +3,37 @@ use std::sync::Arc;
 
 use dash_macros::{Parse, Resolve};
 use crate::{
-    parser::{parse::{Separated, Parse, FatalParseError, ParseFn}, tokenizer::{TokenIterator, Token}},
+    parser::{parse::{Separated, Parse, FatalParseError, ParseFn, RefToNode, NodeList, Node}, tokenizer::TokenIterator},
     shared::src::{Src, ArcSpan},
-    checker::{resolve::{Resolve, ResolveCache}, coherency::{Checker, ScopeID}, ty::Ty, path}
+    checker::{resolve::Resolve, coherency::{Checker, ScopeID}, ty::Ty, path}
 };
 use super::{
     decl::Decl,
     token::{Ident, punct::{self, TerminatingSemicolon}, op::{Prec, self}, delim},
     atom::Atom,
     flow::Flow,
-    ops::{BinOp, UnOp, Call, Index}
+    ops::{BinOp, UnOp, Call, Index, CallItem, IndexItem, UnOpItem, BinOpItem}
 };
 
 #[derive(Debug, Parse)]
 #[parse(expected = "identifier")]
-pub enum IdentComponent {
+pub enum IdentComponentItem {
     Attribute(punct::At, Ident),
     Ident(Ident),
 }
 
 #[derive(Debug, Parse)]
-pub struct IdentPath {
+pub struct IdentPathItem {
     absolute: Option<punct::Namespace>,
     path: Separated<IdentComponent, punct::Namespace>,
 }
 
-impl IdentPath {
-    pub(crate) fn to_path(&self) -> path::IdentPath {
+impl IdentPathItem {
+    pub(crate) fn to_path(&self, list: &NodeList) -> path::IdentPath {
         path::IdentPath::new(
-            self.path.iter().map(|i| path::Ident::from(match i {
-                IdentComponent::Ident(i) => i.to_string(),
-                IdentComponent::Attribute(_, i) => format!("@{i}"),
+            self.path.iter().map(|i| path::Ident::from(match i.get(list).as_ref() {
+                IdentComponentItem::Ident(i) => i.get(list).as_ref().to_string(),
+                IdentComponentItem::Attribute(_, i) => format!("@{}", i.get(list).as_ref()),
             })).collect::<Vec<_>>(),
             self.absolute.is_some()
         )
@@ -42,36 +42,39 @@ impl IdentPath {
 
 #[derive(Debug, Parse, Resolve)]
 #[parse(expected = "expression")]
-pub enum ScalarExpr {
+pub enum ScalarExprItem {
     Decl(Decl),
     Flow(Flow),
     Atom(Atom),
 }
 
 #[derive(Debug, Resolve)]
-pub enum Expr {
-    BinOp(Box<BinOp>),
-    UnOp(Box<UnOp>),
-    Call(Box<Call>),
-    Index(Box<Index>),
-    Scalar(Box<ScalarExpr>),
+pub enum ExprItem {
+    BinOp(BinOp),
+    UnOp(UnOp),
+    Call(Call),
+    Index(Index),
+    Scalar(ScalarExpr),
 }
+pub type Expr = RefToNode<ExprItem>;
 
-impl Expr {
-    fn parse_postfix<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
-        where I: Iterator<Item = Token<'s>>
-    {
-        let mut expr = Self::Scalar(Parse::parse(src.clone(), tokenizer)?);
+impl ExprItem {
+    fn parse_postfix<'s>(
+        list: &mut NodeList,
+        src: Arc<Src>,
+        tokenizer: &mut TokenIterator<'s>
+    ) -> Result<Self, FatalParseError> {
+        let mut expr = Self::Scalar(Parse::parse(list, src.clone(), tokenizer)?);
         loop {
             if delim::Parenthesized::<delim::P>::peek(0, tokenizer) {
-                expr = Expr::Call(Box::from(
-                    Call::parse_with(expr, src.clone(), tokenizer)?
-                ));
+                expr = Self::Call(
+                    CallItem::parse_with(list.add(expr), list, src.clone(), tokenizer)?
+                );
             }
             else if delim::Bracketed::<delim::P>::peek(0, tokenizer) {
-                expr = Expr::Index(Box::from(
-                    Index::parse_with(expr, src.clone(), tokenizer)?
-                ));
+                expr = Self::Index(
+                    IndexItem::parse_with(list.add(expr), list, src.clone(), tokenizer)?
+                );
             }
             else {
                 break;
@@ -79,58 +82,50 @@ impl Expr {
         }
         Ok(expr)
     }
-
-    fn parse_unop<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
-        where I: Iterator<Item = Token<'s>>
-    {
+    fn parse_unop<'s>(
+        list: &mut NodeList,
+        src: Arc<Src>,
+        tokenizer: &mut TokenIterator<'s>
+    ) -> Result<Self, FatalParseError> {
         if op::Unary::peek(0, tokenizer) {
-            Ok(Self::UnOp(Box::from(
-                UnOp::parse_with(Self::parse_postfix, src, tokenizer)?
-            )))
+            Ok(Self::UnOp(
+                UnOpItem::parse_with(
+                    |list, src, tokenizer| {
+                        let t = Self::parse_postfix(list, src, tokenizer)?;
+                        Ok(list.add(t))
+                    },
+                    list, src, tokenizer
+                )?
+            ))
         }
         else {
-            Self::parse_postfix(src, tokenizer)
+            Self::parse_postfix(list, src, tokenizer)
         }
     }
-
-    fn parse_binop_prec<'s, F, I>(
+    fn parse_binop_prec<'s, F>(
         prec: Prec, sides: &mut F,
-        src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>
+        list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>
     ) -> Result<Self, FatalParseError>
-        where
-            I: Iterator<Item = Token<'s>>,
-            F: ParseFn<'s, I, Self>
+        where F: ParseFn<'s, Self>
     {
-        let mut lhs = sides(src.clone(), tokenizer)?;
+        let mut lhs = sides(list, src.clone(), tokenizer)?;
         while prec.peek(tokenizer) {
-            lhs = Expr::BinOp(Box::from(
-                BinOp::parse_with(lhs, |s, t| sides(s, t), src.clone(), tokenizer)?
-            ));
+            lhs = Self::BinOp(
+                BinOpItem::parse_with(
+                    list.add(lhs),
+                    |l, s, t| {
+                        let t = sides(l, s, t)?;
+                        Ok(l.add(t))
+                    },
+                    list, src.clone(), tokenizer
+                )?
+            );
         }
         Ok(lhs)
     }
 }
 
-impl Parse for Expr {
-    fn parse<'s, I>(src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>) -> Result<Self, FatalParseError>
-        where I: Iterator<Item = Token<'s>>
-    {
-        let mut sides: Box<dyn ParseFn<'s, I, Self>> = Box::from(Self::parse_unop);
-        for prec in Prec::order() {
-            sides = Box::from(
-                move |src: Arc<Src>, tokenizer: &mut TokenIterator<'s, I>|
-                    Self::parse_binop_prec(prec, &mut sides, src, tokenizer)
-            );
-        }
-        sides(src, tokenizer)
-    }
-
-    fn peek<'s, I>(pos: usize, tokenizer: &TokenIterator<'s, I>) -> bool
-        where I: Iterator<Item = Token<'s>>
-    {
-        ScalarExpr::peek(pos, tokenizer)
-    }
-
+impl Node for ExprItem {
     fn span(&self) -> Option<ArcSpan> {
         match self {
             Self::BinOp(binop) => binop.span(),
@@ -142,27 +137,38 @@ impl Parse for Expr {
     }
 }
 
+impl Parse for ExprItem {
+    fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError> {
+        let mut sides: Box<dyn ParseFn<'s, Self>> = Box::from(Self::parse_unop);
+        for prec in Prec::order() {
+            sides = Box::from(
+                move |list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>|
+                    Self::parse_binop_prec(prec, &mut sides, list, src, tokenizer)
+            );
+        }
+        sides(list, src, tokenizer)
+    }
+    fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool {
+        ScalarExpr::peek(pos, tokenizer)
+    }
+}
+
 #[derive(Debug, Parse)]
-pub struct ExprList {
+pub struct ExprListItem {
     exprs: Vec<(Expr, TerminatingSemicolon)>,
     #[parse(skip)]
     scope: Option<ScopeID>,
-    #[parse(skip)]
-    cache: ResolveCache,
 }
 
-impl Resolve for ExprList {
-    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
+impl Resolve for ExprListItem {
+    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
         let _handle = checker.enter_scope(&mut self.scope);
         self.exprs.iter_mut()
-            .map(|(e, c)| (e.try_resolve(checker), c.has_semicolon()))
+            .map(|(e, c)| (e.try_resolve(list, checker), c.has_semicolon()))
             .map(|(e, c)| e.map(|e| (e, c)))
             .collect::<Option<Vec<_>>>()?
             .into_iter()
             .last()
             .and_then(|(e, c)| (!c).then_some(e).or(Some(Ty::Void)))
-    }
-    fn cache(&mut self) -> Option<&mut ResolveCache> {
-        Some(&mut self.cache)
     }
 }

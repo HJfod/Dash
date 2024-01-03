@@ -9,7 +9,7 @@ use darling::{FromDeriveInput, ast, FromField, FromVariant};
 use darling::{FromMeta, ast::NestedMeta};
 use proc_macro::TokenStream;
 use proc_macro2::{TokenStream as TokenStream2, Ident};
-use quote::{quote, quote_spanned, ToTokens};
+use quote::{quote, quote_spanned, ToTokens, format_ident};
 use syn::parse::Parse;
 use syn::{Generics, Type, Path};
 use syn::spanned::Spanned;
@@ -92,31 +92,40 @@ fn impl_ast_item(
     parse_impl: TokenStream2, peek_impl: TokenStream2, span_impl: TokenStream2
 ) -> TokenStream2 {
     let (impl_generics, ty_generics, where_clause) = target_generics.split_for_impl();
+    let type_name = match target_name.to_string().strip_suffix("Item") {
+        Some(n) => format_ident!("{n}"),
+        None => return syn::Error::new(
+            target_name.span(),
+            "the name of a Parsed class should be suffixed with 'Item'"
+        ).to_compile_error(),
+    };
     quote! {
         #target
-        impl #impl_generics crate::parser::parse::Parse for #target_name #ty_generics #where_clause {
-            fn parse<'s, I>(
-                src: std::sync::Arc<crate::shared::src::Src>,
-                tokenizer: &mut crate::parser::tokenizer::TokenIterator<'s, I>
-            ) -> Result<Self, crate::parser::parse::FatalParseError>
-                where I: Iterator<Item = crate::parser::tokenizer::Token<'s>>
-            {
-                #parse_impl
-            }
-            
-            fn peek<'s, I>(
-                pos: usize,
-                tokenizer: &crate::parser::tokenizer::TokenIterator<'s, I>
-            ) -> bool
-                where I: Iterator<Item = crate::parser::tokenizer::Token<'s>>
-            {
-                #peek_impl
-            }
-
+        impl #impl_generics crate::parser::parse::Node for #target_name #ty_generics #where_clause {
             fn span(&self) -> Option<crate::shared::src::ArcSpan> {
                 #span_impl
             }
         }
+        impl #impl_generics crate::parser::parse::Parse for #target_name #ty_generics #where_clause {
+            fn parse<'s>(
+                list: &mut crate::parser::parse::NodeList,
+                src: std::sync::Arc<crate::shared::src::Src>,
+                tokenizer: &mut crate::parser::tokenizer::TokenIterator<'s>
+            ) -> Result<Self, crate::parser::parse::FatalParseError>
+                where Self: Sized
+            {
+                #parse_impl
+            }
+            fn peek<'s>(
+                pos: usize,
+                tokenizer: &crate::parser::tokenizer::TokenIterator<'s>
+            ) -> bool
+                where Self: Sized
+            {
+                #peek_impl
+            }
+        }
+        pub type #type_name #impl_generics #where_clause = crate::parser::parse::RefToNode<#target_name #ty_generics>;
     }
 }
 
@@ -150,6 +159,7 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
     let args = unwrap_macro_input!(TokenArgs::from_list(
         &unwrap_macro_input!(NestedMeta::parse_meta_list(args.into()))
     ));
+    target.ident = format_ident!("{}Item", target.ident);
     let expected_construct;
     let value_field;
     let destruct_kind;
@@ -158,7 +168,7 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
         let path = Ident::new(path, args.kind.span());
         if args.value_is_token_tree {
             expected_construct = quote!{ #path(tokenizer.empty_tree()) };
-            value_field = quote! { value: crate::parser::parse::Parse::parse_complete(src.clone(), value)?, };
+            value_field = quote! { value: crate::parser::parse::Parse::parse_complete(list, src.clone(), value)?, };
         }
         else {
             expected_construct = quote!{ #path(Default::default()) };
@@ -197,7 +207,8 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
     else {
         quote! {}
     };
-    let r: TokenStream2 = impl_ast_struct(&mut target,
+    let r: TokenStream2 = impl_ast_struct(
+        &mut target,
         quote! {
             use crate::parser::tokenizer::TokenKind;
             use crate::shared::src::ArcSpan;
@@ -381,13 +392,13 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
             let t = &field.ty;
             if let Some(ref i) = field.ident {
                 parse_impl.extend(quote! {
-                    #i: Parse::parse(src.clone(), tokenizer)?,
+                    #i: Parse::parse(list, src.clone(), tokenizer)?,
                 });
                 span_impl.extend(quote! { self.#i.span(), });
             }
             else {
                 parse_impl.extend(quote! {
-                    Parse::parse(src.clone(), tokenizer)?,
+                    Parse::parse(list, src.clone(), tokenizer)?,
                 });
                 span_impl.extend(quote! { self.#field_ix.span(), });
             }
@@ -413,7 +424,7 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
     (
         if data.is_struct() {
             quote! {
-                use crate::parser::parse::Parse;
+                use crate::parser::parse::Node;
                 use crate::shared::src::ArcSpan;
                 Ok(#self_name {
                     #parse_impl
@@ -427,7 +438,7 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
         }
         else {
             quote! {
-                use crate::parser::parse::Parse;
+                use crate::parser::parse::Node;
                 use crate::shared::src::ArcSpan;
                 Ok(#self_name(
                     #parse_impl
@@ -585,8 +596,7 @@ struct ResolveVariant {
 
 impl ToTokens for ResolveReceiver {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
-        let try_resolve_impl;
-        let cache_impl;
+        let try_resolve;
 
         match &self.data {
             ast::Data::Struct(_) => {
@@ -594,26 +604,16 @@ impl ToTokens for ResolveReceiver {
             }
             ast::Data::Enum(data) => {
                 let mut try_resolve_matches = quote! {};
-                let mut cache_matches = quote! {};
                 for v in data {
                     let ident = &v.ident;
                     try_resolve_matches.extend(quote_spanned! {
                         v.ident.span() =>
-                        Self::#ident(value) => crate::checker::resolve::Resolve::try_resolve(value, checker),
-                    });
-                    cache_matches.extend(quote_spanned! {
-                        v.ident.span() =>
-                        Self::#ident(value) => crate::checker::resolve::Resolve::cache(value),
+                        Self::#ident(value) => crate::checker::resolve::Resolve::try_resolve(value, list, checker),
                     });
                 }
-                try_resolve_impl = quote! {
+                try_resolve = quote! {
                     match self {
                         #try_resolve_matches
-                    }
-                };
-                cache_impl = quote! {
-                    match self {
-                        #cache_matches
                     }
                 };
             }
@@ -623,15 +623,12 @@ impl ToTokens for ResolveReceiver {
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         tokens.extend(quote! {
             impl #impl_generics crate::checker::resolve::Resolve for #name #ty_generics #where_clause {
-                fn try_resolve_impl(
+                fn try_resolve(
                     &mut self,
+                    list: &mut crate::parser::parse::NodeList,
                     checker: &mut crate::checker::coherency::Checker
                 ) -> Option<crate::checker::ty::Ty> {
-                    #try_resolve_impl
-                }
-
-                fn cache(&mut self) -> Option<&mut crate::checker::resolve::ResolveCache> {
-                    #cache_impl
+                    #try_resolve
                 }
             }
         });

@@ -51,6 +51,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "as-any"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b8a30a44e99a1c83ccb2a6298c563c888952a1c9134953db26876528f84c93a"
+
+[[package]]
 name = "clap"
 version = "4.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -107,6 +113,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "concat-idents"
+version = "1.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f76990911f2267d837d9d0ad060aa63aaad170af40904b29461734c339030d4d"
+dependencies = [
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "darling"
 version = "0.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -154,7 +170,9 @@ dependencies = [
 name = "dash-compiler"
 version = "0.1.0"
 dependencies = [
+ "as-any",
  "colored",
+ "concat-idents",
  "dash-macros",
  "line-col",
  "serde",

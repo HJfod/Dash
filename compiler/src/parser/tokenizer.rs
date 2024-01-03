@@ -107,9 +107,9 @@ impl Display for Token<'_> {
 impl std::fmt::Debug for Token<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self, f)?;
-        if let TokenKind::Parentheses(p) | TokenKind::Brackets(p) | TokenKind::Braces(p) = &self.kind {
-            f.debug_list().entries(p.items.iter()).finish()?;
-        }
+        // if let TokenKind::Parentheses(p) | TokenKind::Brackets(p) | TokenKind::Braces(p) = &self.kind {
+            // f.debug_list().entries(p.items).finish()?;
+        // }
         write!(f, " ({}..{})", self.span.1.start, self.span.1.end)?;
         Ok(())
     }
@@ -355,7 +355,7 @@ impl<'s> Iterator for Tokenizer<'s> {
             }
             let tree = TokenTree {
                 src: self.src,
-                items,
+                items: items.into_iter(),
                 start_offset: start,
                 eof: self.offset() - 1..self.offset(),
                 logger: self.logger.clone(),
@@ -375,15 +375,37 @@ impl<'s> Iterator for Tokenizer<'s> {
 
 pub struct TokenTree<'s> {
     src: &'s Src,
-    items: Vec<Token<'s>>,
+    items: std::vec::IntoIter<Token<'s>>,
     start_offset: usize,
     eof: Range<usize>,
     logger: LoggerRef,
 }
 
-pub struct TokenIterator<'s, I: Iterator<Item = Token<'s>>> {
+impl<'s> Iterator for TokenTree<'s> {
+    type Item = Token<'s>;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.items.next()
+    }
+}
+
+enum TokenIterSrc<'s> {
+    Tokenizer(Tokenizer<'s>),
+    Tree(TokenTree<'s>),
+}
+
+impl<'s> Iterator for TokenIterSrc<'s> {
+    type Item = Token<'s>;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Tokenizer(t) => t.next(),
+            Self::Tree(t) => t.next(),
+        }
+    }
+}
+
+pub struct TokenIterator<'s> {
     src: &'s Src,
-    iter: I,
+    iter: TokenIterSrc<'s>,
     peek: [Option<Token<'s>>; MAX_PEEK_COUNT],
     start_of_last_token: usize,
     last_was_braced: bool,
@@ -391,13 +413,13 @@ pub struct TokenIterator<'s, I: Iterator<Item = Token<'s>>> {
     logger: LoggerRef,
 }
 
-impl<'s, I: Iterator<Item = Token<'s>>> TokenIterator<'s, I> {
+impl<'s> TokenIterator<'s> {
     fn new(
         src: &'s Src,
         start_offset: usize,
         eof: Option<Range<usize>>,
         logger: LoggerRef,
-        mut iter: I,
+        mut iter: TokenIterSrc<'s>,
     ) -> Self {
         let peek = core::array::from_fn(|_| iter.next());
         Self {
@@ -452,15 +474,15 @@ impl<'s, I: Iterator<Item = Token<'s>>> TokenIterator<'s, I> {
     pub(crate) fn empty_tree(&self) -> TokenTree<'s> {
         TokenTree {
             src: self.src,
-            items: vec![],
+            items: vec![].into_iter(),
             start_offset: 0,
             eof: 0..0,
-            logger: self.logger.clone(),
+            logger: self.logger.clone()
         }
     }
 }
 
-impl<'s, I: Iterator<Item = Token<'s>>> Iterator for TokenIterator<'s, I> {
+impl<'s> Iterator for TokenIterator<'s> {
     type Item = Token<'s>;
     fn next(&mut self) -> Option<Self::Item> {
         let next = self.iter.next();
@@ -474,14 +496,26 @@ impl<'s, I: Iterator<Item = Token<'s>>> Iterator for TokenIterator<'s, I> {
     }
 }
 
-impl<'s> From<Tokenizer<'s>> for TokenIterator<'s, Tokenizer<'s>> {
+impl<'s> From<Tokenizer<'s>> for TokenIterator<'s> {
     fn from(value: Tokenizer<'s>) -> Self {
-        Self::new(value.src, value.offset(), None, value.logger.clone(), value)
+        Self::new(
+            value.src,
+            value.offset(),
+            None,
+            value.logger.clone(),
+            TokenIterSrc::Tokenizer(value)
+        )
     }
 }
 
-impl<'s> From<TokenTree<'s>> for TokenIterator<'s, std::vec::IntoIter<Token<'s>>> {
+impl<'s> From<TokenTree<'s>> for TokenIterator<'s> {
     fn from(value: TokenTree<'s>) -> Self {
-        TokenIterator::new(value.src, value.start_offset, Some(value.eof), value.logger.clone(), value.items.into_iter())
+        TokenIterator::new(
+            value.src,
+            value.start_offset,
+            Some(value.eof.clone()),
+            value.logger.clone(),
+            TokenIterSrc::Tree(value)
+        )
     }
 }

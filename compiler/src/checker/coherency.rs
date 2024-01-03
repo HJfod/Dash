@@ -1,6 +1,6 @@
 
 use std::collections::HashMap;
-use crate::{shared::{logger::{LoggerRef, Message, Level, Note}, src::{ArcSpan, Span}}, ast::token::op};
+use crate::{shared::{logger::{LoggerRef, Message, Level, Note}, src::{ArcSpan, Span}}, ast::token::op, parser::parse::{NodeID, NodeList}};
 use super::{ty::Ty, path::{FullIdentPath, IdentPath, Ident}, entity::Entity, pool::AST, resolve::Resolve};
 
 #[derive(Debug)]
@@ -87,6 +87,7 @@ impl<'s, T> ItemSpaceWithStackMut<'s, T> {
         self.space.find(name, self.stack)
     }
     pub fn try_push(self, name: &IdentPath, item: T) -> Result<&'s T, &'s T> {
+        println!("pushing {name}");
         self.space.try_push(name, item, self.stack)
     }
 }
@@ -109,7 +110,7 @@ impl Scope {
     fn root() -> Self {
         macro_rules! decl_binop {
             ($a: ident $op: ident $b: ident => $r: ident) => {
-                (Ty::$a, op::Binary::$op(op::$op::builtin()), Ty::$b, Ty::$r)
+                (Ty::$a, op::BinaryOp::$op, Ty::$b, Ty::$r)
             };
         }
 
@@ -181,7 +182,9 @@ impl Scope {
         &self.entities
     }
     fn drop_ephemeral(&mut self) {
-        self.entities.items.retain(|_, v| !v.ephemeral())
+        // println!("dropping ephemeral: {}", self.entities.items.len());
+        self.entities.items.retain(|_, v| !v.ephemeral());
+        // println!("dropped ephemeral: {}", self.entities.items.len());
     }
 }
 
@@ -235,18 +238,6 @@ impl Drop for LeaveScope {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct NodeID(usize);
-
-impl NodeID {
-    #[allow(clippy::new_without_default)]
-    pub fn new() -> Self {
-        use std::sync::atomic::AtomicUsize;
-        static mut COUNTER: AtomicUsize = AtomicUsize::new(0);
-        Self(unsafe { &COUNTER }.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct ScopeID(usize);
 
 #[derive(PartialEq, Eq)]
@@ -294,7 +285,7 @@ impl Checker {
             unresolved_nodes: HashMap::new(),
         }
     }
-    pub fn try_resolve(ast: &mut AST, logger: LoggerRef) -> Ty {
+    pub fn try_resolve(ast: &mut AST, list: &mut NodeList, logger: LoggerRef) -> Ty {
         let mut checker = Checker::new(logger);
         let mut unresolved = checker.unresolved_nodes.keys().copied().collect::<Vec<_>>();
         for i in 0.. {
@@ -310,7 +301,7 @@ impl Checker {
                 )));
                 return Ty::Invalid;
             }
-            if let Some(r) = ast.try_resolve(&mut checker) {
+            if let Some(r) = ast.try_resolve(list, &mut checker) {
                 return r;
             }
             if unresolved.into_iter().eq(checker.unresolved_nodes.keys().copied()) {
@@ -324,6 +315,7 @@ impl Checker {
                 return Ty::Invalid;
             }
             unresolved = checker.unresolved_nodes.keys().copied().collect::<Vec<_>>();
+            println!("going for another round");
         }
         unreachable!()
     }
@@ -399,6 +391,7 @@ impl Checker {
             Ty::Invalid
         }
     }
+    
     pub fn logger(&self) -> LoggerRef {
         self.logger.clone()
     }

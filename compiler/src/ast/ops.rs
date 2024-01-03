@@ -2,56 +2,57 @@
 use std::{sync::Arc, collections::HashMap};
 use dash_macros::Parse;
 use crate::{
-    parser::{parse::{Parse, FatalParseError, calculate_span, ParseFn, SeparatedWithTrailing}, tokenizer::{TokenIterator, Token}},
+    parser::{parse::{Parse, FatalParseError, calculate_span, ParseFn, SeparatedWithTrailing, NodeList, RefToNode, Node}, tokenizer::TokenIterator},
     shared::{src::{Src, ArcSpan}, logger::{Message, Level, Note}},
-    checker::{resolve::{Resolve, ResolveCache}, coherency::Checker, ty::Ty, path}, ice
+    checker::{resolve::Resolve, coherency::Checker, ty::Ty, path}, ice
 };
 use super::{expr::Expr, token::{op, delim, Ident, punct}};
 
 #[derive(Debug, Parse)]
 #[parse(expected = "expression or named argument")]
-pub enum Arg {
+pub enum ArgItem {
     Named(Ident, #[parse(peek_point)] punct::Colon, Expr),
     Unnamed(Expr),
 }
 
 #[derive(Debug)]
-pub struct Call {
+pub struct CallItem {
     target: Expr,
     args: delim::Parenthesized<SeparatedWithTrailing<Arg, punct::Comma>>,
-    cache: ResolveCache,
+}
+pub type Call = RefToNode<CallItem>;
+
+impl CallItem {
+    pub(crate) fn parse_with<'s>(
+        target: Expr,
+        list: &mut NodeList,
+        src: Arc<Src>,
+        tokenizer: &mut TokenIterator<'s>
+    ) -> Result<Call, FatalParseError> {
+        let res = Self {
+            target,
+            args: Parse::parse(list, src, tokenizer)?,
+        };
+        Ok(list.add(res))
+    }
 }
 
-impl Call {
-    pub(crate) fn parse_with<'s, I>(
-        target: Expr,
-        src: Arc<Src>,
-        tokenizer: &mut TokenIterator<'s, I>
-    ) -> Result<Self, FatalParseError>
-        where
-            I: Iterator<Item = Token<'s>>
-    {
-        Ok(Self {
-            target,
-            args: Parse::parse(src, tokenizer)?,
-            cache: Default::default(),
-        })
-    }
-    pub fn span(&self) -> Option<ArcSpan> {
+impl Node for CallItem {
+    fn span(&self) -> Option<ArcSpan> {
         calculate_span([self.target.span(), self.args.span()])
     }
 }
 
-impl Resolve for Call {
-    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
-        let target = self.target.try_resolve(checker)?;
-        let args = self.args.value.iter_mut()
-            .map(|arg| match arg {
-                Arg::Unnamed(value) => {
-                    (None, value.try_resolve(checker), value.span())
+impl Resolve for CallItem {
+    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+        let target = self.target.try_resolve(list, checker)?;
+        let args = self.args.get(list).as_mut().value.iter_mut()
+            .map(|arg| match arg.get(list).as_mut() {
+                ArgItem::Unnamed(value) => {
+                    (None, value.try_resolve(list, checker), value.span())
                 }
-                Arg::Named(name, _, value) => {
-                    (Some(name.to_string()), value.try_resolve(checker), value.span())
+                ArgItem::Named(name, _, value) => {
+                    (Some(name.get(list).as_ref().to_string()), value.try_resolve(list, checker), value.span())
                 }
             })
             .map(|(name, expr, span)| expr.map(|e| (name, e, span)))
@@ -151,84 +152,83 @@ impl Resolve for Call {
             }
         }
     }
-    fn cache(&mut self) -> Option<&mut ResolveCache> {
-        Some(&mut self.cache)
-    }
 }
 
 #[derive(Debug)]
-pub struct Index {
+pub struct IndexItem {
     target: Expr,
     index: delim::Bracketed<Expr>,
     trailing_comma: Option<punct::Comma>,
 }
+pub type Index = RefToNode<IndexItem>;
 
-impl Index {
-    pub(crate) fn parse_with<'s, I>(
+impl IndexItem {
+    pub(crate) fn parse_with<'s>(
         target: Expr,
+        list: &mut NodeList,
         src: Arc<Src>,
-        tokenizer: &mut TokenIterator<'s, I>
-    ) -> Result<Self, FatalParseError>
-        where
-            I: Iterator<Item = Token<'s>>
-    {
-        Ok(Self {
+        tokenizer: &mut TokenIterator<'s>
+    ) -> Result<Index, FatalParseError> {
+        let res = Self {
             target,
-            index: Parse::parse(src.clone(), tokenizer)?,
-            trailing_comma: Parse::parse(src.clone(), tokenizer)?,
-        })
+            index: Parse::parse(list, src.clone(), tokenizer)?,
+            trailing_comma: Parse::parse(list, src.clone(), tokenizer)?,
+        };
+        Ok(list.add(res))
     }
-    pub fn span(&self) -> Option<ArcSpan> {
+}
+
+impl Node for IndexItem {
+    fn span(&self) -> Option<ArcSpan> {
         calculate_span([self.target.span(), self.index.span(), self.trailing_comma.span()])
     }
 }
 
-impl Resolve for Index {
-    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
-        todo!()
-    }
-    fn cache(&mut self) -> Option<&mut ResolveCache> {
+impl Resolve for IndexItem {
+    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
         todo!()
     }
 }
 
 #[derive(Debug)]
-pub struct UnOp {
+pub struct UnOpItem {
     op: op::Unary,
     target: Expr,
-    cache: ResolveCache,
+}
+pub type UnOp = RefToNode<UnOpItem>;
+
+impl UnOpItem {
+    pub(crate) fn parse_with<'s, F>(
+        mut target: F,
+        list: &mut NodeList,
+        src: Arc<Src>,
+        tokenizer: &mut TokenIterator<'s>
+    ) -> Result<UnOp, FatalParseError>
+        where F: ParseFn<'s, Expr>
+    {
+        let res = Self {
+            op: Parse::parse(list, src.clone(), tokenizer)?,
+            target: target(list, src, tokenizer)?,
+        };
+        Ok(list.add(res))
+    }
 }
 
-impl UnOp {
-    pub(crate) fn parse_with<'s, F, I>(
-        mut target: F,
-        src: Arc<Src>,
-        tokenizer: &mut TokenIterator<'s, I>
-    ) -> Result<Self, FatalParseError>
-        where
-            I: Iterator<Item = Token<'s>>,
-            F: ParseFn<'s, I, Expr>
-    {
-        Ok(Self {
-            op: Parse::parse(src.clone(), tokenizer)?,
-            target: target(src, tokenizer)?,
-            cache: Default::default(),
-        })
-    }
-    pub fn span(&self) -> Option<ArcSpan> {
+impl Node for UnOpItem {
+    fn span(&self) -> Option<ArcSpan> {
         calculate_span([self.op.span(), self.target.span()])
     }
 }
 
-impl Resolve for UnOp {
-    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
-        let target = self.target.try_resolve(checker)?;
-        let op = self.op.clone();
+impl Resolve for UnOpItem {
+    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+        let target = self.target.try_resolve(list, checker)?;
+        let op = self.op.get(list);
         if target.is_unreal() {
             return Some(Ty::Invalid);
         }
         for scope in checker.scopes() {
-            let name = path::IdentPath::new([path::Ident::UnOp(op.clone(), target.clone())], false);
+            let name = path::IdentPath::new([path::Ident::UnOp(op.as_ref().op(), target.clone())], false);
             if let Some(fun) = scope.entities().find(&name) {
                 match fun.ty() {
                     Ty::Function { params: _, ret_ty } => return Some(ret_ty.as_ref().clone()),
@@ -240,60 +240,61 @@ impl Resolve for UnOp {
                 }
             }
         }
-        self.cache.set_unresolved(
-            format!("Cannot use operator '{op}' on type {target}"),
-            self.span()
-        );
+        // self.cache.set_unresolved(
+        //     format!("Cannot use operator '{op}' on type {target}"),
+        //     self.span()
+        // );
         None
-    }
-    fn cache(&mut self) -> Option<&mut ResolveCache> {
-        Some(&mut self.cache)
     }
 }
 
 #[derive(Debug)]
-pub struct BinOp {
+pub struct BinOpItem {
     lhs: Expr,
     op: op::Binary,
     rhs: Expr,
-    cache: ResolveCache,
 }
+pub type BinOp = RefToNode<BinOpItem>;
 
-impl BinOp {
-    pub(crate) fn parse_with<'s, F, I>(
+impl BinOpItem {
+    pub(crate) fn parse_with<'s, F>(
         lhs: Expr,
         mut rhs: F,
+        list: &mut NodeList,
         src: Arc<Src>,
-        tokenizer: &mut TokenIterator<'s, I>
-    ) -> Result<Self, FatalParseError>
-        where
-            I: Iterator<Item = Token<'s>>,
-            F: ParseFn<'s, I, Expr>
+        tokenizer: &mut TokenIterator<'s>
+    ) -> Result<BinOp, FatalParseError>
+        where F: ParseFn<'s, Expr>
     {
-        Ok(Self {
+        let res = Self {
             lhs,
-            op: Parse::parse(src.clone(), tokenizer)?,
-            rhs: rhs(src, tokenizer)?,
-            cache: Default::default(),
-        })
+            op: Parse::parse(list, src.clone(), tokenizer)?,
+            rhs: rhs(list, src, tokenizer)?,
+        };
+        Ok(list.add(res))
     }
-    pub fn span(&self) -> Option<ArcSpan> {
+}
+
+impl Node for BinOpItem {
+    fn span(&self) -> Option<ArcSpan> {
         calculate_span([self.lhs.span(), self.op.span(), self.rhs.span()])
     }
 }
 
-impl Resolve for BinOp {
-    fn try_resolve_impl(&mut self, checker: &mut Checker) -> Option<Ty> {
-        let a = self.lhs.try_resolve(checker)?;
-        let b = self.rhs.try_resolve(checker)?;
-        let op = self.op.clone();
+impl Resolve for BinOpItem {
+    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+        let a = self.lhs.try_resolve(list, checker)?;
+        let b = self.rhs.try_resolve(list, checker)?;
+        let op = self.op.get(list);
         if a.is_unreal() || b.is_unreal() {
             return Some(Ty::Invalid);
         }
         for scope in checker.scopes() {
             // todo: handle symmetrive ops, like a + b <=> b + a
             // todo: synthesize ops, like a == b <=> a != b
-            let name = path::IdentPath::new([path::Ident::BinOp(a.clone(), op.clone(), b.clone())], false);
+            let name = path::IdentPath::new([
+                path::Ident::BinOp(a.clone(), op.as_ref().op(), b.clone())
+            ], false);
             if let Some(fun) = scope.entities().find(&name) {
                 match fun.ty() {
                     Ty::Function { params: _, ret_ty } => return Some(ret_ty.as_ref().clone()),
@@ -305,13 +306,10 @@ impl Resolve for BinOp {
                 }
             }
         }
-        self.cache.set_unresolved(
-            format!("Cannot use operator '{op}' on types {a} and {b}"),
-            self.span()
-        );
+        // self.cache.set_unresolved(
+        //     format!("Cannot use operator '{op}' on types {a} and {b}"),
+        //     self.span()
+        // );
         None
-    }
-    fn cache(&mut self) -> Option<&mut ResolveCache> {
-        Some(&mut self.cache)
     }
 }

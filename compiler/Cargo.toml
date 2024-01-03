@@ -11,3 +11,5 @@ line-col = "0.2.1"
 colored = "2.1.0"
 dash-macros = { path = "macros" }
 static_assertions = "1.1.0"
+concat-idents = "1.1.5"
+as-any = "0.3.1"

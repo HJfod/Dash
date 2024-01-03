@@ -9,23 +9,23 @@ pub mod flow;
 
 #[macro_export]
 macro_rules! try_resolve {
-    ($t: expr, $checker: expr, $a: pat => $($r: ident),+ else None) => {
+    ($t: expr, $list: expr, $checker: expr, $a: pat => $($r: ident),+ else None) => {
         if let $a = $t {
-            Some($($r.try_resolve($checker)?);+)
+            Some($($r.try_resolve($list, $checker)?);+)
         }
         else {
             None
         }
     };
-    ($t: expr, $checker: expr, $a: pat => $($r: ident),+ else $else: expr) => {
+    ($t: expr, $list: expr, $checker: expr, $a: pat => $($r: ident),+ else $else: expr) => {
         if let $a = $t {
-            $($r.try_resolve($checker)?);+
+            $($r.try_resolve($list, $checker)?);+
         }
         else {
             $else
         }
     };
-    ($t: expr, $checker: expr, $a: pat => $($r: ident),+) => {
-        try_resolve!($t, $checker, $a => $($r),+ else Ty::Invalid)
+    ($t: expr, $list: expr, $checker: expr, $a: pat => $($r: ident),+) => {
+        try_resolve!($t, $list, $checker, $a => $($r),+ else Ty::Invalid)
     };
 }

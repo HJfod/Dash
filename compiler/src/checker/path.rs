@@ -9,8 +9,8 @@ use super::ty::Ty;
 pub(crate) enum Ident {
     Name(String),
     Decorator(String),
-    UnOp(op::Unary, Ty),
-    BinOp(Ty, op::Binary, Ty),
+    UnOp(op::UnaryOp, Ty),
+    BinOp(Ty, op::BinaryOp, Ty),
 }
 
 impl From<&str> for Ident {
