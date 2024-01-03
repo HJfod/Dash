@@ -23,11 +23,11 @@ pub struct CallItem {
 pub type Call = RefToNode<CallItem>;
 
 impl CallItem {
-    pub(crate) fn parse_with<'s>(
+    pub(crate) fn parse_with(
         target: Expr,
         list: &mut NodeList,
         src: Arc<Src>,
-        tokenizer: &mut TokenIterator<'s>
+        tokenizer: &mut TokenIterator
     ) -> Result<Call, FatalParseError> {
         let res = Self {
             target,
@@ -163,11 +163,11 @@ pub struct IndexItem {
 pub type Index = RefToNode<IndexItem>;
 
 impl IndexItem {
-    pub(crate) fn parse_with<'s>(
+    pub(crate) fn parse_with(
         target: Expr,
         list: &mut NodeList,
         src: Arc<Src>,
-        tokenizer: &mut TokenIterator<'s>
+        tokenizer: &mut TokenIterator
     ) -> Result<Index, FatalParseError> {
         let res = Self {
             target,

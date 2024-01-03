@@ -124,7 +124,7 @@ impl Resolve for FunDeclItem {
         };
         if let Some(ref name) = self.name.as_ref().map(|n| n.get(list).as_ref().to_path(list)) {
             if let Err(old) = checker.scope().entities_mut().try_push(
-                &name,
+                name,
                 Entity::new(fty.clone(), self.span_or_builtin(), false)
             ) {
                 let old_span = old.span();

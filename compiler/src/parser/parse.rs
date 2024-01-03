@@ -56,17 +56,17 @@ impl<'s, T, F> ParseFn<'s, T> for F
 
 pub trait Parse: Node + Sized {
     /// Parse this type from the token stream
-    fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError>;
+    fn parse(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError>;
         
     /// Check if this type is coming up on the token stream at a position
-    fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool;
+    fn peek(pos: usize, tokenizer: &TokenIterator) -> bool;
 
     /// If this type is coming up on the token stream based on `Self::peek`, 
     /// then attempt to parse it on the stream
-    fn peek_and_parse<'s>(
+    fn peek_and_parse(
         list: &mut NodeList,
         src: Arc<Src>,
-        tokenizer: &mut TokenIterator<'s>
+        tokenizer: &mut TokenIterator
     ) -> Result<Option<Self>, FatalParseError> {
         if Self::peek(0, tokenizer) {
             Self::parse(list, src, tokenizer).map(Some)
@@ -107,13 +107,13 @@ macro_rules! impl_tuple_parse {
         }
 
         impl<$a: Parse, $($r: Parse),*> Parse for ($a, $($r),*) {
-            fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError>
+            fn parse(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError>
                 where Self: Sized
             {
                 Ok(($a::parse(list, src.clone(), tokenizer)?, $($r::parse(list, src.clone(), tokenizer)?),*))
             }
 
-            fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool
+            fn peek(pos: usize, tokenizer: &TokenIterator) -> bool
                 where Self: Sized
             {
                 $a::peek(pos, tokenizer)
@@ -144,10 +144,10 @@ impl<T: Node> Node for Box<T> {
 }
 
 impl<T: Parse> Parse for Box<T> {
-    fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError> {
+    fn parse(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError> {
         T::parse(list, src, tokenizer).map(Box::from)
     }
-    fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool {
+    fn peek(pos: usize, tokenizer: &TokenIterator) -> bool {
         T::peek(pos, tokenizer)
     }
 }
@@ -159,7 +159,7 @@ impl<T: Node> Node for Option<T> {
 }
 
 impl<T: Parse> Parse for Option<T> {
-    fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError> {
+    fn parse(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError> {
         if Self::peek(0, tokenizer) {
             Ok(Some(T::parse(list, src, tokenizer)?))
         }
@@ -167,7 +167,7 @@ impl<T: Parse> Parse for Option<T> {
             Ok(None)
         }
     }
-    fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool {
+    fn peek(pos: usize, tokenizer: &TokenIterator) -> bool {
         T::peek(pos, tokenizer)
     }
 }
@@ -179,14 +179,14 @@ impl<T: Node> Node for Vec<T> {
 }
 
 impl<T: Parse> Parse for Vec<T> {
-    fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError> {
+    fn parse(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError> {
         let mut res = Vec::new();
         while let Some(t) = T::peek_and_parse(list, src.clone(), tokenizer)? {
             res.push(t);
         }
         Ok(res)
     }
-    fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool {
+    fn peek(pos: usize, tokenizer: &TokenIterator) -> bool {
         T::peek(pos, tokenizer)
     }
 }
@@ -211,7 +211,7 @@ impl<T: Node> Node for OneOrMore<T> {
 }
 
 impl<T: Parse> Parse for OneOrMore<T> {
-    fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError> {
+    fn parse(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError> {
         let mut res = Vec::new();
         res.push(T::parse(list, src.clone(), tokenizer)?);
         while let Some(t) = T::peek_and_parse(list, src.clone(), tokenizer)? {
@@ -219,7 +219,7 @@ impl<T: Parse> Parse for OneOrMore<T> {
         }
         Ok(OneOrMore(res))
     }
-    fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool {
+    fn peek(pos: usize, tokenizer: &TokenIterator) -> bool {
         T::peek(pos, tokenizer)
     }
 }
@@ -246,14 +246,14 @@ impl<T: Node, S: Node> Node for Separated<T, S> {
 }
 
 impl<T: Parse, S: Parse> Parse for Separated<T, S> {
-    fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError> {
+    fn parse(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError> {
         let mut items = Vec::from([T::parse(list, src.clone(), tokenizer)?]);
         while S::peek_and_parse(list, src.clone(), tokenizer)?.is_some() {
             items.push(T::parse(list, src.clone(), tokenizer)?);
         }
         Ok(Self { items, _phantom: PhantomData })
     }
-    fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool {
+    fn peek(pos: usize, tokenizer: &TokenIterator) -> bool {
         T::peek(pos, tokenizer)
     }
 }
@@ -282,7 +282,7 @@ impl<T: Node, S: Node> Node for SeparatedWithTrailing<T, S> {
 }
 
 impl<T: Parse, S: Parse> Parse for SeparatedWithTrailing<T, S> {
-    fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError> {
+    fn parse(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError> {
         let mut items = Vec::from([T::parse(list, src.clone(), tokenizer)?]);
         let mut trailing = None;
         while let Some(sep) = S::peek_and_parse(list, src.clone(), tokenizer)? {
@@ -296,7 +296,7 @@ impl<T: Parse, S: Parse> Parse for SeparatedWithTrailing<T, S> {
         }
         Ok(Self { items, trailing, _phantom: PhantomData })
     }
-    fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool {
+    fn peek(pos: usize, tokenizer: &TokenIterator) -> bool {
         T::peek(pos, tokenizer)
     }
 }
@@ -311,13 +311,13 @@ impl<T: Node, M: CompileMessage> Node for DontExpect<T, M> {
 }
 
 impl<T: Parse, M: CompileMessage> Parse for DontExpect<T, M> {
-    fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError> {
+    fn parse(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError> {
         if T::peek_and_parse(list, src, tokenizer)?.is_some() {
             tokenizer.error(M::get_msg())
         }
         Ok(Self(PhantomData))
     }
-    fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool {
+    fn peek(pos: usize, tokenizer: &TokenIterator) -> bool {
         T::peek(pos, tokenizer)
     }
 }

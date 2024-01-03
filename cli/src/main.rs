@@ -1,9 +1,9 @@
 
 use clap::Parser;
 use dash_compiler::{
-    shared::{logger::Logger, src::ArcSpan},
+    shared::logger::Logger,
     shared::src::SrcPool,
-    parser::parse::{Parse, Node, NodeList},
+    parser::parse::{Node, NodeList},
     tokenize,
     checker::pool::ASTPool, check_coherency,
     // check_coherency

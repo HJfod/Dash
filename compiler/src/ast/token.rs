@@ -140,7 +140,7 @@ pub(crate) mod punct {
     }
 
     impl Parse for TerminatingSemicolon {
-        fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError> {
+        fn parse(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError> {
             let last_was_braced = tokenizer.last_was_braced();
             let mut found = vec![];
             while let Some(s) = Semicolon::peek_and_parse(list, src.clone(), tokenizer)? {
@@ -174,7 +174,7 @@ pub(crate) mod punct {
             // Missing semicolon is not a fatal parsing error
             Ok(Self { semicolons: found })
         }
-        fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool {
+        fn peek(pos: usize, tokenizer: &TokenIterator) -> bool {
             Semicolon::peek(pos, tokenizer)
         }
     }
@@ -290,7 +290,7 @@ pub(crate) mod op {
         pub(crate) const fn order() -> [Prec; 7] {
             [Prec::Mul, Prec::Add, Prec::Ord, Prec::Eq, Prec::And, Prec::Or, Prec::Seq]
         }
-        pub fn peek<'s>(&self, tokenizer: &TokenIterator<'s>) -> bool {
+        pub fn peek(&self, tokenizer: &TokenIterator) -> bool {
             match self {
                 Prec::Mul => Mul::peek(0, tokenizer) || Div::peek(0, tokenizer) ||
                              Mod::peek(0, tokenizer),

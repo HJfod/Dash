@@ -125,7 +125,7 @@ fn impl_ast_item(
                 #peek_impl
             }
         }
-        pub type #type_name #impl_generics #where_clause = crate::parser::parse::RefToNode<#target_name #ty_generics>;
+        pub type #type_name #impl_generics = crate::parser::parse::RefToNode<#target_name #ty_generics>;
     }
 }
 

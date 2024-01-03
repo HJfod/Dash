@@ -59,10 +59,10 @@ pub enum ExprItem {
 pub type Expr = RefToNode<ExprItem>;
 
 impl ExprItem {
-    fn parse_postfix<'s>(
+    fn parse_postfix(
         list: &mut NodeList,
         src: Arc<Src>,
-        tokenizer: &mut TokenIterator<'s>
+        tokenizer: &mut TokenIterator
     ) -> Result<Self, FatalParseError> {
         let mut expr = Self::Scalar(Parse::parse(list, src.clone(), tokenizer)?);
         loop {
@@ -82,10 +82,10 @@ impl ExprItem {
         }
         Ok(expr)
     }
-    fn parse_unop<'s>(
+    fn parse_unop(
         list: &mut NodeList,
         src: Arc<Src>,
-        tokenizer: &mut TokenIterator<'s>
+        tokenizer: &mut TokenIterator
     ) -> Result<Self, FatalParseError> {
         if op::Unary::peek(0, tokenizer) {
             Ok(Self::UnOp(
@@ -148,7 +148,7 @@ impl Parse for ExprItem {
         }
         sides(list, src, tokenizer)
     }
-    fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool {
+    fn peek(pos: usize, tokenizer: &TokenIterator) -> bool {
         ScalarExpr::peek(pos, tokenizer)
     }
 }
