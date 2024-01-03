@@ -26,14 +26,14 @@ impl Node for TypeExprItem {
 }
 
 impl Parse for TypeExprItem {
-    fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError> {
+    fn parse(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError> {
         let mut res = Self::Atom(Parse::parse(list, src.clone(), tokenizer)?);
         while let Some(q) = op::Question::peek_and_parse(list, src.clone(), tokenizer)? {
             res = Self::Optional(list.add(res), q);
         }
         Ok(res)
     }
-    fn peek<'s>(pos: usize, tokenizer: &TokenIterator<'s>) -> bool {
+    fn peek(pos: usize, tokenizer: &TokenIterator) -> bool {
         TypeAtom::peek(pos, tokenizer)
     }
 }

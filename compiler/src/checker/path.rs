@@ -87,6 +87,7 @@ pub(crate) struct FullIdentPath {
     components: Vec<Ident>,
 }
 
+#[allow(unused)]
 impl FullIdentPath {
     pub fn new<T: Into<Vec<Ident>>>(path: T) -> Self {
         Self { components: path.into() }

@@ -81,6 +81,7 @@ pub(crate) struct ItemSpaceWithStackMut<'s, T> {
     stack: &'s FullIdentPath,
 }
 
+#[allow(unused)]
 impl<'s, T> ItemSpaceWithStackMut<'s, T> {
     /// Try to find an item in this scope with an unresolved name
     pub fn find(self, name: &IdentPath) -> Option<&'s T> {
@@ -175,12 +176,6 @@ impl Scope {
             ),
         }
     }
-    pub fn types(&self) -> &ItemSpace<Ty> {
-        &self.types
-    }
-    pub fn entities(&self) -> &ItemSpace<Entity> {
-        &self.entities
-    }
     fn drop_ephemeral(&mut self) {
         // println!("dropping ephemeral: {}", self.entities.items.len());
         self.entities.items.retain(|_, v| !v.ephemeral());
@@ -212,6 +207,7 @@ pub(crate) struct ScopeWithStackMut<'s> {
     stack: &'s FullIdentPath,
 }
 
+#[allow(unused)]
 impl<'s> ScopeWithStackMut<'s> {
     pub fn types(self) -> ItemSpaceWithStack<'s, Ty> {
         ItemSpaceWithStack { space: &self.scope.types, stack: self.stack }
