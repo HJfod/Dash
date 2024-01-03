@@ -17,10 +17,10 @@ pub enum TypeExprItem {
 pub type TypeExpr = RefToNode<TypeExprItem>;
 
 impl Node for TypeExprItem {
-    fn span(&self) -> Option<ArcSpan> {
+    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
         match self {
-            Self::Optional(ty, q) => calculate_span([ty.span(), q.span()]),
-            Self::Atom(atom) => atom.span(),
+            Self::Optional(ty, q) => calculate_span([ty.span(list), q.span(list)]),
+            Self::Atom(atom) => atom.span(list),
         }
     }
 }
@@ -69,7 +69,7 @@ impl Resolve for TypeIdentItem {
         }
         // self.cache.set_unresolved(
         //     format!("Unknown type {}", self.name.to_path()),
-        //     self.name.span()
+        //     self.name.span(list)
         // );
         None
     }

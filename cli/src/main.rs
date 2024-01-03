@@ -55,7 +55,7 @@ fn main() {
 
     if args.debug_ast {
         for ast in &ast_pool {
-            println!("AST for {}", ast.span_or_builtin().0);
+            println!("AST for {}", ast.span_or_builtin(&node_list).0);
             println!("{ast:#?}");
         }
     }

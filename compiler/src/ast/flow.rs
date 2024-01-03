@@ -24,8 +24,8 @@ impl Resolve for IfItem {
         else {
             Ty::Invalid
         };
-        checker.expect_ty_eq(cond, Ty::Bool, self.cond.get(list).as_ref().span());
-        checker.expect_ty_eq(truthy, falsy, self.span()).into()
+        checker.expect_ty_eq(cond, Ty::Bool, self.cond.get(list).as_ref().span(list));
+        checker.expect_ty_eq(truthy, falsy, self.span(list)).into()
     }
 }
 

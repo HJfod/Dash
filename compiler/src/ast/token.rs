@@ -134,8 +134,8 @@ pub(crate) mod punct {
     }
 
     impl Node for TerminatingSemicolon {
-        fn span(&self) -> Option<ArcSpan> {
-            calculate_span(self.semicolons.iter().map(|s| s.span()))
+        fn span(&self, list: &NodeList) -> Option<ArcSpan> {
+            calculate_span(self.semicolons.iter().map(|s| s.span(list)))
         }
     }
 
@@ -161,14 +161,14 @@ pub(crate) mod punct {
                     else {
                         "Unnecessary semicolon"
                     },
-                    calculate_span(found.iter().map(|s| s.span())).unwrap().as_ref()
+                    calculate_span(found.iter().map(|s| s.span(list))).unwrap().as_ref()
                 ));
             }
             else if found.len() > 1 {
                 tokenizer.logger().lock().unwrap().log(Message::new(
                     Level::Warning,
                     "Unnecessary semicolons",
-                    calculate_span(found.iter().skip(1).map(|s| s.span())).unwrap().as_ref()
+                    calculate_span(found.iter().skip(1).map(|s| s.span(list))).unwrap().as_ref()
                 ));
             }
             // Missing semicolon is not a fatal parsing error

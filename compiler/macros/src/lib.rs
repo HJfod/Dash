@@ -102,7 +102,7 @@ fn impl_ast_item(
     quote! {
         #target
         impl #impl_generics crate::parser::parse::Node for #target_name #ty_generics #where_clause {
-            fn span(&self) -> Option<crate::shared::src::ArcSpan> {
+            fn span(&self, list: &crate::parser::parse::NodeList) -> Option<crate::shared::src::ArcSpan> {
                 #span_impl
             }
         }
@@ -365,13 +365,13 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
                 parse_impl.extend(quote! {
                     #i: Parse::parse(list, src.clone(), tokenizer)?,
                 });
-                span_impl.extend(quote! { self.#i.span(), });
+                span_impl.extend(quote! { self.#i.span(list), });
             }
             else {
                 parse_impl.extend(quote! {
                     Parse::parse(list, src.clone(), tokenizer)?,
                 });
-                span_impl.extend(quote! { self.#field_ix.span(), });
+                span_impl.extend(quote! { self.#field_ix.span(list), });
             }
             if peek_ix < peek_count {
                 // if we are peeking more than 1 member, all but last must be 
@@ -487,7 +487,7 @@ impl ToTokens for ParseReceiver {
                                 }
                                 else {
                                     names.extend(quote! { #name, });
-                                    spans.extend(quote! { #name.span(), });
+                                    spans.extend(quote! { #name.span(list), });
                                 }
                             }
                             destruct = quote! { {#names} };
@@ -502,7 +502,7 @@ impl ToTokens for ParseReceiver {
                                 }
                                 else {
                                     names.extend(quote! { #c, });
-                                    spans.extend(quote! { #c.span(), });
+                                    spans.extend(quote! { #c.span(list), });
                                 }
                             }
                             destruct = quote! { (#names) };

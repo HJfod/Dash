@@ -126,13 +126,13 @@ impl ExprItem {
 }
 
 impl Node for ExprItem {
-    fn span(&self) -> Option<ArcSpan> {
+    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
         match self {
-            Self::BinOp(binop) => binop.span(),
-            Self::UnOp(unop) => unop.span(),
-            Self::Call(call) => call.span(),
-            Self::Index(index) => index.span(),
-            Self::Scalar(scalar) => scalar.span(),
+            Self::BinOp(binop) => binop.span(list),
+            Self::UnOp(unop) => unop.span(list),
+            Self::Call(call) => call.span(list),
+            Self::Index(index) => index.span(list),
+            Self::Scalar(scalar) => scalar.span(list),
         }
     }
 }

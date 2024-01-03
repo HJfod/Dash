@@ -38,8 +38,8 @@ impl CallItem {
 }
 
 impl Node for CallItem {
-    fn span(&self) -> Option<ArcSpan> {
-        calculate_span([self.target.span(), self.args.span()])
+    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
+        calculate_span([self.target.span(list), self.args.span(list)])
     }
 }
 
@@ -49,10 +49,10 @@ impl Resolve for CallItem {
         let args = self.args.get(list).as_mut().value.iter_mut()
             .map(|arg| match arg.get(list).as_mut() {
                 ArgItem::Unnamed(value) => {
-                    (None, value.try_resolve(list, checker), value.span())
+                    (None, value.try_resolve(list, checker), value.span(list))
                 }
                 ArgItem::Named(name, _, value) => {
-                    (Some(name.get(list).as_ref().to_string()), value.try_resolve(list, checker), value.span())
+                    (Some(name.get(list).as_ref().to_string()), value.try_resolve(list, checker), value.span(list))
                 }
             })
             .map(|(name, expr, span)| expr.map(|e| (name, e, span)))
@@ -134,7 +134,7 @@ impl Resolve for CallItem {
                     checker.logger().lock().unwrap().log(Message::new(
                         Level::Error,
                         "Missing arguments",
-                        self.span().unwrap_or(ArcSpan::builtin()).as_ref()
+                        self.span(list).unwrap_or(ArcSpan::builtin()).as_ref()
                     ).note(Note::new(format!(
                         "Function has {} parameters, but only {} were passed",
                         params.len(), args.len()
@@ -146,7 +146,7 @@ impl Resolve for CallItem {
                 checker.logger().lock().unwrap().log(Message::new(
                     Level::Error,
                     format!("Cannot call an expression of type {other}"),
-                    self.span().unwrap_or(ArcSpan::builtin()).as_ref()
+                    self.span(list).unwrap_or(ArcSpan::builtin()).as_ref()
                 ));
                 Some(Ty::Invalid)
             }
@@ -179,8 +179,8 @@ impl IndexItem {
 }
 
 impl Node for IndexItem {
-    fn span(&self) -> Option<ArcSpan> {
-        calculate_span([self.target.span(), self.index.span(), self.trailing_comma.span()])
+    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
+        calculate_span([self.target.span(list), self.index.span(list), self.trailing_comma.span(list)])
     }
 }
 
@@ -215,8 +215,8 @@ impl UnOpItem {
 }
 
 impl Node for UnOpItem {
-    fn span(&self) -> Option<ArcSpan> {
-        calculate_span([self.op.span(), self.target.span()])
+    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
+        calculate_span([self.op.span(list), self.target.span(list)])
     }
 }
 
@@ -242,7 +242,7 @@ impl Resolve for UnOpItem {
         }
         // self.cache.set_unresolved(
         //     format!("Cannot use operator '{op}' on type {target}"),
-        //     self.span()
+        //     self.span(list)
         // );
         None
     }
@@ -276,8 +276,8 @@ impl BinOpItem {
 }
 
 impl Node for BinOpItem {
-    fn span(&self) -> Option<ArcSpan> {
-        calculate_span([self.lhs.span(), self.op.span(), self.rhs.span()])
+    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
+        calculate_span([self.lhs.span(list), self.op.span(list), self.rhs.span(list)])
     }
 }
 
@@ -308,7 +308,7 @@ impl Resolve for BinOpItem {
         }
         // self.cache.set_unresolved(
         //     format!("Cannot use operator '{op}' on types {a} and {b}"),
-        //     self.span()
+        //     self.span(list)
         // );
         None
     }

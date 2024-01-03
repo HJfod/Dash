@@ -26,8 +26,8 @@ impl Resolve for ItemUseItem {
             }
         }
         // let msg_span = match self {
-        //     Self::Ident(i) => (format!("Unknown item {}", i.to_path()), i.span()),
-        //     Self::This(kw) => ("'this' is not valid in this scope".into(), kw.span()),
+        //     Self::Ident(i) => (format!("Unknown item {}", i.to_path()), i.span(list)),
+        //     Self::This(kw) => ("'this' is not valid in this scope".into(), kw.span(list)),
         // };
         // self.cache().unwrap().set_unresolved(msg_span.0, msg_span.1);
         None

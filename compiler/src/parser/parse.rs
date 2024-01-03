@@ -18,6 +18,14 @@ pub fn calculate_span<S: IntoIterator<Item = Option<ArcSpan>>>(spans: S) -> Opti
     Some(span.clone())
 }
 
+#[macro_export]
+macro_rules! calculate_span {
+    ($list: ident, $($s: ident),+ $(,)?) => {
+        $crate::parser::parse::calculate_span([$($s.span($list)),+])
+    };
+    () => { None };
+}
+
 pub trait CompileMessage: 'static {
     fn get_msg() -> &'static str;
 }
@@ -37,10 +45,10 @@ macro_rules! add_compile_message {
 
 pub trait Node: AsAny {
     /// Get the span of this Node
-    fn span(&self) -> Option<ArcSpan>;
+    fn span(&self, list: &NodeList) -> Option<ArcSpan>;
 
-    fn span_or_builtin(&self) -> ArcSpan {
-        self.span().unwrap_or(ArcSpan::builtin())
+    fn span_or_builtin(&self, list: &NodeList) -> ArcSpan {
+        self.span(list).unwrap_or(ArcSpan::builtin())
     }
 }
 
@@ -99,10 +107,10 @@ pub trait Parse: Node + Sized {
 macro_rules! impl_tuple_parse {
     ($a: ident; $($r: ident);*) => {
         impl<$a: Node, $($r: Node),*> Node for ($a, $($r),*) {
-            fn span(&self) -> Option<ArcSpan> {
+            fn span(&self, list: &NodeList) -> Option<ArcSpan> {
                 #[allow(unused_parens, non_snake_case)]
                 let ($a $(, $r)*) = &self;
-                calculate_span([$a.span() $(, $r.span())*])
+                calculate_span!(list, $a $(, $r)*)
             }
         }
 
@@ -138,8 +146,8 @@ impl_tuple_parse!(A; B; C; D);
 impl_tuple_parse!(A; B; C; D; E);
 
 impl<T: Node> Node for Box<T> {
-    fn span(&self) -> Option<ArcSpan> {
-        T::span(self)
+    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
+        T::span(self, list)
     }
 }
 
@@ -153,8 +161,8 @@ impl<T: Parse> Parse for Box<T> {
 }
 
 impl<T: Node> Node for Option<T> {
-    fn span(&self) -> Option<ArcSpan> {
-        self.as_ref().and_then(|s| s.span())
+    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
+        self.as_ref().and_then(|s| s.span(list))
     }
 }
 
@@ -173,8 +181,8 @@ impl<T: Parse> Parse for Option<T> {
 }
 
 impl<T: Node> Node for Vec<T> {
-    fn span(&self) -> Option<ArcSpan> {
-        calculate_span(self.iter().map(|s| s.span()))
+    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
+        calculate_span(self.iter().map(|s| s.span(list)))
     }
 }
 
@@ -205,8 +213,8 @@ impl<T: Node> std::ops::Deref for OneOrMore<T> {
 }
 
 impl<T: Node> Node for OneOrMore<T> {
-    fn span(&self) -> Option<ArcSpan> {
-        calculate_span(self.iter().map(|s| s.span()))
+    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
+        calculate_span(self.iter().map(|s| s.span(list)))
     }
 }
 
@@ -240,8 +248,8 @@ impl<T: Node, S: Node> Separated<T, S> {
 }
 
 impl<T: Node, S: Node> Node for Separated<T, S> {
-    fn span(&self) -> Option<ArcSpan> {
-        self.items.span()
+    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
+        self.items.span(list)
     }
 }
 
@@ -275,9 +283,9 @@ impl<T: Node, S: Node> SeparatedWithTrailing<T, S> {
 }
 
 impl<T: Node, S: Node> Node for SeparatedWithTrailing<T, S> {
-    fn span(&self) -> Option<ArcSpan> {
-        calculate_span(self.items.iter().map(|i| i.span())
-            .chain(self.trailing.as_ref().map(|t| t.span())))
+    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
+        calculate_span(self.items.iter().map(|i| i.span(list))
+            .chain(self.trailing.as_ref().map(|t| t.span(list))))
     }
 }
 
@@ -305,7 +313,7 @@ impl<T: Parse, S: Parse> Parse for SeparatedWithTrailing<T, S> {
 pub struct DontExpect<T: Node, M: CompileMessage>(PhantomData<(T, M)>);
 
 impl<T: Node, M: CompileMessage> Node for DontExpect<T, M> {
-    fn span(&self) -> Option<ArcSpan> {
+    fn span(&self, _: &NodeList) -> Option<ArcSpan> {
         None
     }
 }
@@ -397,8 +405,8 @@ impl<T: Node> PartialEq for RefToNode<T> {
 impl<T: Node> Eq for RefToNode<T> {}
 
 impl<T: Node> Node for RefToNode<T> {
-    fn span(&self) -> Option<ArcSpan> {
-        todo!()
+    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
+        list.get::<T>(self.id).as_ref().span(list)
     }
 }
 

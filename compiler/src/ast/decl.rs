@@ -21,7 +21,7 @@ impl Resolve for LetDeclItem {
     fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
         let ty = try_resolve!(&mut self.ty, list, checker, Some((_, ty)) => ty);
         let value = try_resolve!(&mut self.value, list, checker, Some((_, v)) => v);
-        let vty = checker.expect_ty_eq(value, ty, self.span());
+        let vty = checker.expect_ty_eq(value, ty, self.span(list));
         let name = self.name.get(list).as_ref().to_path(list);
         match checker.scope().entities_mut().try_push(
             &name,
@@ -30,9 +30,9 @@ impl Resolve for LetDeclItem {
                     vty
                 }
                 else {
-                    Ty::Undecided(name.to_string(), self.span_or_builtin())
+                    Ty::Undecided(name.to_string(), self.span_or_builtin(list))
                 },
-                self.span_or_builtin(),
+                self.span_or_builtin(list),
                 true
             )
         ) {
@@ -42,7 +42,7 @@ impl Resolve for LetDeclItem {
                 checker.logger().lock().unwrap().log(Message::new(
                     Level::Error,
                     format!("Item {} has already been defined in this scope", name),
-                    self.span_or_builtin().as_ref()
+                    self.span_or_builtin(list).as_ref()
                 ).note(Note::new_at("Previous definition here", old_span.as_ref())));
             }
         }
@@ -86,7 +86,7 @@ impl Resolve for FunDeclItem {
         for param in self.params.get(list).as_mut().value.iter_mut() {
             match param.get(list).as_mut() {
                 FunParamItem::NamedParam { name, ty, default_value } => {
-                    let span = calculate_span([name.span(), ty.span(), default_value.span()]);
+                    let span = calculate_span([name.span(list), ty.span(list), default_value.span(list)]);
                     let ty = ty.1.try_resolve(list, checker)?;
                     let v = try_resolve!(default_value, list, checker, Some((_, d)) => d);
                     checker.expect_ty_eq(ty.clone(), v, span.clone());
@@ -102,7 +102,7 @@ impl Resolve for FunDeclItem {
             for (name, ty, span) in &params {
                 if let Err(old) = checker.scope().entities_mut().try_push(
                     &path::IdentPath::new([path::Ident::from(name.as_str())], false),
-                    Entity::new(ty.clone(), self.span_or_builtin(), true)
+                    Entity::new(ty.clone(), self.span_or_builtin(list), true)
                 ) {
                     let old_span = old.span();
                     checker.logger().lock().unwrap().log(Message::new(
@@ -114,7 +114,7 @@ impl Resolve for FunDeclItem {
             }
             self.body.get(list).as_mut().value.try_resolve(list, checker)?
         };
-        checker.expect_ty_eq(body.clone(), ret_ty.clone(), self.body.span());
+        checker.expect_ty_eq(body.clone(), ret_ty.clone(), self.body.span(list));
 
         println!("f2");
         
@@ -125,13 +125,13 @@ impl Resolve for FunDeclItem {
         if let Some(ref name) = self.name.as_ref().map(|n| n.get(list).as_ref().to_path(list)) {
             if let Err(old) = checker.scope().entities_mut().try_push(
                 name,
-                Entity::new(fty.clone(), self.span_or_builtin(), false)
+                Entity::new(fty.clone(), self.span_or_builtin(list), false)
             ) {
                 let old_span = old.span();
                 checker.logger().lock().unwrap().log(Message::new(
                     Level::Error,
                     format!("Name {} has already been defined", name),
-                    self.span_or_builtin().as_ref()
+                    self.span_or_builtin(list).as_ref()
                 ).note(Note::new_at("Previous definition here", old_span.as_ref())));
             }
         }
