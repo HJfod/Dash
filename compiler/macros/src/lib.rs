@@ -89,7 +89,7 @@ macro_rules! get_named_fields {
 
 fn impl_ast_item(
     target: &impl ToTokens, target_name: &Ident, target_generics: &Generics,
-    parse_impl: TokenStream2, peek_impl: TokenStream2, span_impl: TokenStream2
+    parse_impl: TokenStream2, peek_impl: TokenStream2, children_impl: TokenStream2
 ) -> TokenStream2 {
     let (impl_generics, ty_generics, where_clause) = target_generics.split_for_impl();
     let type_name = match target_name.to_string().strip_suffix("Item") {
@@ -102,8 +102,8 @@ fn impl_ast_item(
     quote! {
         #target
         impl #impl_generics crate::parser::parse::Node for #target_name #ty_generics #where_clause {
-            fn span(&self, list: &crate::parser::parse::NodeList) -> Option<crate::shared::src::ArcSpan> {
-                #span_impl
+            fn children(&self, list: &crate::parser::parse::NodeList) -> Vec<crate::parser::parse::NodeID> {
+                #children_impl
             }
         }
         impl #impl_generics crate::parser::parse::Parse for #target_name #ty_generics #where_clause {
@@ -279,7 +279,7 @@ struct ParseField {
 }
 
 fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStream2, TokenStream2, TokenStream2) {
-    let mut span_impl = quote! {};
+    let mut children_impl = quote! {};
     let mut parse_impl = quote! {};
     let mut peek_checks = quote! {};
     let mut peek_impl = quote! {};
@@ -365,13 +365,13 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
                 parse_impl.extend(quote! {
                     #i: Parse::parse(list, src.clone(), tokenizer)?,
                 });
-                span_impl.extend(quote! { self.#i.span(list), });
+                children_impl.extend(quote! { self.#i.id(), });
             }
             else {
                 parse_impl.extend(quote! {
                     Parse::parse(list, src.clone(), tokenizer)?,
                 });
-                span_impl.extend(quote! { self.#field_ix.span(list), });
+                children_impl.extend(quote! { self.#field_ix.id(), });
             }
             if peek_ix < peek_count {
                 // if we are peeking more than 1 member, all but last must be 
@@ -423,7 +423,7 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
             peeked == #peek_count
         },
         quote! {
-            crate::parser::parse::calculate_span([#span_impl])
+            vec![#children_impl]
         }
     )
 }
@@ -454,11 +454,11 @@ impl ToTokens for ParseReceiver {
             ast::Data::Enum(data) => {
                 let mut parse_impl = quote! {};
                 let mut peek_impl = quote! {};
-                let mut span_impl = quote! {};
+                let mut children_impl = quote! {};
                 for variant in data {
                     let v = &variant.ident;
                     if variant.fields.is_unit() {
-                        span_impl.extend(quote! { Self::#v => None, });
+                        children_impl.extend(quote! { Self::#v => Default::default(), });
                         // No peeking or parsing unit variants
                     }
                     else {
@@ -478,7 +478,7 @@ impl ToTokens for ParseReceiver {
                         });
                         let destruct;
                         let mut names = quote! {};
-                        let mut spans = quote! {};
+                        let mut children = quote! {};
                         if variant.fields.is_struct() {
                             for field in variant.fields.fields.iter() {
                                 let name = &field.ident;
@@ -487,7 +487,7 @@ impl ToTokens for ParseReceiver {
                                 }
                                 else {
                                     names.extend(quote! { #name, });
-                                    spans.extend(quote! { #name.span(list), });
+                                    children.extend(quote! { #name.id(), });
                                 }
                             }
                             destruct = quote! { {#names} };
@@ -502,13 +502,13 @@ impl ToTokens for ParseReceiver {
                                 }
                                 else {
                                     names.extend(quote! { #c, });
-                                    spans.extend(quote! { #c.span(list), });
+                                    children.extend(quote! { #c.id(), });
                                 }
                             }
                             destruct = quote! { (#names) };
                         };
-                        span_impl.extend(quote! {
-                            Self::#v #destruct => crate::parser::parse::calculate_span([#spans]),
+                        children_impl.extend(quote! {
+                            Self::#v #destruct => vec![#children],
                         });
                     }
                 }
@@ -533,7 +533,7 @@ impl ToTokens for ParseReceiver {
                     },
                     quote! {
                         match self {
-                            #span_impl
+                            #children_impl
                         }
                     }
                 ));

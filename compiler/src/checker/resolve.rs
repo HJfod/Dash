@@ -1,5 +1,5 @@
 
-use crate::parser::parse::{DontExpect, CompileMessage, Parse, Node, NodeList};
+use crate::parser::parse::{DontExpect, CompileMessage, Node, NodeList, ParseWithID};
 use super::{ty::Ty, coherency::Checker};
 
 // #[derive(Debug)]
@@ -59,13 +59,13 @@ pub(crate) trait Resolve: Node {
     // }
 }
 
-impl<T: Resolve> Resolve for Box<T> {
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
-        self.as_mut().try_resolve(list, checker)
-    }
-}
+// impl<T: Resolve> Resolve for Box<T> {
+//     fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+//         self.as_mut().try_resolve(list, checker)
+//     }
+// }
 
-impl<T: Parse, M: CompileMessage> Resolve for DontExpect<T, M> {
+impl<T: ParseWithID, M: CompileMessage> Resolve for DontExpect<T, M> {
     fn try_resolve(&mut self, _: &mut NodeList, _: &mut Checker) -> Option<Ty> {
         Some(Ty::Invalid)
     }
