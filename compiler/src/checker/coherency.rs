@@ -93,7 +93,6 @@ impl<'s, T> ItemSpaceWithStackMut<'s, T> {
         self.space.find(name, self.stack)
     }
     pub fn try_push(self, name: &IdentPath, item: T) -> Result<&'s T, &'s T> {
-        println!("pushing {name}");
         self.space.try_push(name, item, self.stack)
     }
 }
@@ -182,9 +181,7 @@ impl Scope {
         }
     }
     fn drop_ephemeral(&mut self) {
-        // println!("dropping ephemeral: {}", self.entities.items.len());
         self.entities.items.retain(|_, v| !v.ephemeral());
-        // println!("dropped ephemeral: {}", self.entities.items.len());
     }
 }
 
@@ -306,7 +303,6 @@ impl Checker {
                 pool.release_unresolved(&checker, logger);
                 return Ty::Invalid;
             }
-            println!("going for another round");
         }
         unreachable!()
     }

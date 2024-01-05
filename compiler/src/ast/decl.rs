@@ -115,12 +115,9 @@ impl ResolveNode for FunDeclNode {
                     ).note(Note::new_at("Previous definition here", old_span.as_ref())));
                 }
             }
-            println!("hhh");
             self.body.try_resolve_ref(pool, checker)?
         };
-        checker.expect_ty_eq(body.clone(), ret_ty.clone(), self.body.get(pool).span(pool));
-
-        println!("hiii");
+        checker.expect_ty_eq(ret_ty.clone(), body.clone(), self.body.get(pool).span(pool));
 
         let fty = Ty::Function {
             params: params.into_iter().map(|p| (Some(p.0), p.1)).collect(),

@@ -69,7 +69,6 @@ impl ResolveNode for CallNode {
                 let mut encountered_named = None;
                 let mut passed: HashMap<String, ArcSpan> = HashMap::new();
                 for (name, ty, span) in &args {
-                    arg_ix += 1;
                     if let Some(name) = name {
                         encountered_named = Some(span.clone());
                         match passed.get(name) {
@@ -135,6 +134,7 @@ impl ResolveNode for CallNode {
                             }
                         }
                     }
+                    arg_ix += 1;
                 }
                 if arg_ix < params.len() {
                     checker.logger().lock().unwrap().log(Message::new(
