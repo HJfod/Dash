@@ -3,7 +3,7 @@ use clap::Parser;
 use dash_compiler::{
     shared::logger::Logger,
     shared::src::SrcPool,
-    parser::parse::{Node, NodeList},
+    parser::parse::{Node, NodePool},
     tokenize,
     checker::pool::ASTPool, check_coherency,
     // check_coherency
@@ -50,7 +50,7 @@ fn main() {
     if args.no_ast {
         return;
     }
-    let mut node_list = NodeList::new();
+    let mut node_list = NodePool::new();
     let mut ast_pool = ASTPool::parse_src_pool(&mut node_list, &src_pool, logger.clone());
 
     if args.debug_ast {

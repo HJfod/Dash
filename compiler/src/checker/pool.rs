@@ -3,7 +3,7 @@ use crate::ast::expr::ExprList;
 use crate::parser::tokenizer::Tokenizer;
 use crate::shared::src::SrcPool;
 use crate::shared::logger::LoggerRef;
-use crate::parser::parse::{Parse, NodeList};
+use crate::parser::parse::{ParseRef, NodePool};
 
 pub type AST = ExprList;
 
@@ -12,7 +12,7 @@ pub struct ASTPool {
 }
 
 impl<'s: 'g, 'g> ASTPool {
-    pub fn parse_src_pool(list: &mut NodeList, pool: &SrcPool, logger: LoggerRef) -> Self {
+    pub fn parse_src_pool(list: &mut NodePool, pool: &SrcPool, logger: LoggerRef) -> Self {
         Self {
             asts: pool.iter()
                 .filter_map(|src| ExprList::parse_complete(

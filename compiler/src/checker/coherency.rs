@@ -1,6 +1,6 @@
 
 use std::collections::HashMap;
-use crate::{shared::{logger::{LoggerRef, Message, Level, Note}, src::{ArcSpan, Span}}, ast::token::op, parser::parse::{NodeID, NodeList}};
+use crate::{shared::{logger::{LoggerRef, Message, Level, Note}, src::{ArcSpan, Span}}, ast::token::op, parser::parse::{NodeID, NodePool}};
 use super::{ty::Ty, path::{FullIdentPath, IdentPath, Ident}, entity::Entity, pool::AST, resolve::Resolve};
 
 #[derive(Debug)]
@@ -281,7 +281,7 @@ impl Checker {
             unresolved_nodes: HashMap::new(),
         }
     }
-    pub fn try_resolve(ast: &mut AST, list: &mut NodeList, logger: LoggerRef) -> Ty {
+    pub fn try_resolve(ast: &mut AST, list: &mut NodePool, logger: LoggerRef) -> Ty {
         let mut checker = Checker::new(logger);
         let mut unresolved = checker.unresolved_nodes.keys().copied().collect::<Vec<_>>();
         for i in 0.. {

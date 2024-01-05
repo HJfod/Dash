@@ -89,39 +89,37 @@ macro_rules! get_named_fields {
 
 fn impl_ast_item(
     target: &impl ToTokens, target_name: &Ident, target_generics: &Generics,
-    parse_impl: TokenStream2, peek_impl: TokenStream2, children_impl: TokenStream2
+    parse_impl: TokenStream2, peek_impl: TokenStream2, children_impl: TokenStream2,
+    span_impl: Option<TokenStream2>,
 ) -> TokenStream2 {
     let (impl_generics, ty_generics, where_clause) = target_generics.split_for_impl();
-    let type_name = match target_name.to_string().strip_suffix("Item") {
+    let type_name = match target_name.to_string().strip_suffix("Node") {
         Some(n) => format_ident!("{n}"),
         None => return syn::Error::new(
             target_name.span(),
-            "the name of a Parsed class should be suffixed with 'Item'"
+            "the name of a Parsed class should be suffixed with 'Node'"
         ).to_compile_error(),
     };
     quote! {
         #target
         impl #impl_generics crate::parser::parse::Node for #target_name #ty_generics #where_clause {
-            fn children(&self, list: &crate::parser::parse::NodeList) -> Vec<crate::parser::parse::NodeID> {
+            fn children(&self) -> Vec<crate::parser::parse::NodeID> {
                 #children_impl
             }
+            #span_impl
         }
-        impl #impl_generics crate::parser::parse::Parse for #target_name #ty_generics #where_clause {
-            fn parse<'s>(
-                list: &mut crate::parser::parse::NodeList,
+        impl #impl_generics crate::parser::parse::ParseNode for #target_name #ty_generics #where_clause {
+            fn parse_node<'s>(
+                pool: &mut crate::parser::parse::NodePool,
                 src: std::sync::Arc<crate::shared::src::Src>,
                 tokenizer: &mut crate::parser::tokenizer::TokenIterator<'s>
-            ) -> Result<Self, crate::parser::parse::FatalParseError>
-                where Self: Sized
-            {
+            ) -> Result<crate::parser::parse::NodeID, crate::parser::parse::FatalParseError> {
                 #parse_impl
             }
             fn peek<'s>(
                 pos: usize,
                 tokenizer: &crate::parser::tokenizer::TokenIterator<'s>
-            ) -> bool
-                where Self: Sized
-            {
+            ) -> bool {
                 #peek_impl
             }
         }
@@ -133,12 +131,13 @@ fn impl_ast_struct(
     target: &mut ItemStruct,
     parse_impl: TokenStream2,
     peek_impl: TokenStream2,
-    span_impl: TokenStream2
+    children_impl: TokenStream2,
+    span_impl: Option<TokenStream2>,
 ) -> TokenStream {
     get_named_fields!(&mut target).push(
         Field::parse_named.parse2(quote! { span: crate::shared::src::ArcSpan }).unwrap()
     );
-    impl_ast_item(target, &target.ident, &target.generics, parse_impl, peek_impl, span_impl).into()
+    impl_ast_item(target, &target.ident, &target.generics, parse_impl, peek_impl, children_impl, span_impl).into()
 }
 
 #[derive(Debug, FromMeta)]
@@ -157,7 +156,7 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
     let args = unwrap_macro_input!(TokenArgs::from_list(
         &unwrap_macro_input!(NestedMeta::parse_meta_list(args.into()))
     ));
-    target.ident = format_ident!("{}Item", target.ident);
+    target.ident = format_ident!("{}Node", target.ident);
     let expected_construct;
     let value_field;
     let destruct_kind;
@@ -166,7 +165,7 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
         let path = Ident::new(path, args.kind.span());
         if args.value_is_token_tree {
             expected_construct = quote!{ #path(tokenizer.empty_tree()) };
-            value_field = quote! { value: crate::parser::parse::Parse::parse_complete(list, src.clone(), value)?, };
+            value_field = quote! { value: crate::parser::parse::ParseRef::parse_complete(pool, src.clone(), value)?, };
         }
         else {
             expected_construct = quote!{ #path(Default::default()) };
@@ -215,11 +214,12 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
                     if #test_raw {
                         let token = tokenizer.next().unwrap();
                         let TokenKind::#destruct_kind = token.kind else { unreachable!() };
-                        return Ok(Self {
+                        let r = Self {
                             #value_field
                             #raw_field
                             span: ArcSpan(src, token.span.1)
-                        });
+                        };
+                        return Ok(pool.add(r));
                     }
                 }
             }
@@ -236,8 +236,13 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
             }
         },
         quote! {
-            Some(self.span.clone())
-        }
+            Default::default()
+        },
+        Some(quote! {
+            fn span(&self, list: &crate::parser::parse::NodePool) -> Option<crate::shared::src::ArcSpan> {
+                Some(self.span.clone())
+            }
+        })
     ).into();
     let name = target.ident;
     let (impl_generics, ty_generics, where_clause) = target.generics.split_for_impl();
@@ -363,22 +368,22 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
             let t = &field.ty;
             if let Some(ref i) = field.ident {
                 parse_impl.extend(quote! {
-                    #i: Parse::parse(list, src.clone(), tokenizer)?,
+                    #i: crate::parser::parse::ParseRef::parse_ref(pool, src.clone(), tokenizer)?,
                 });
-                children_impl.extend(quote! { self.#i.id(), });
+                children_impl.extend(quote! { self.#i.ids(), });
             }
             else {
                 parse_impl.extend(quote! {
-                    Parse::parse(list, src.clone(), tokenizer)?,
+                    crate::parser::parse::ParseRef::parse_ref(pool, src.clone(), tokenizer)?,
                 });
-                children_impl.extend(quote! { self.#field_ix.id(), });
+                children_impl.extend(quote! { self.#field_ix.ids(), });
             }
             if peek_ix < peek_count {
                 // if we are peeking more than 1 member, all but last must be 
                 // tokens
                 if peek_ix < peek_count - 1 {
                     peek_checks.extend(quote_spanned! {
-                        t.span() => <#t as crate::parser::parse::IsToken>::is_token();
+                        t.span() => <#t as crate::parser::parse::IsToken>::assert_ty_is_token();
                     });
                 }
                 peek_impl.extend(quote! {
@@ -397,23 +402,25 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
             quote! {
                 use crate::parser::parse::Node;
                 use crate::shared::src::ArcSpan;
-                Ok(#self_name {
+                let r = #self_name {
                     #parse_impl
-                })
+                };
+                Ok(pool.add(r))
             }
         }
         else if data.is_unit() {
             quote! {
-                Ok(#self_name)
+                Ok(pool.add(#self_name))
             }
         }
         else {
             quote! {
                 use crate::parser::parse::Node;
                 use crate::shared::src::ArcSpan;
-                Ok(#self_name(
+                let r = #self_name(
                     #parse_impl
-                ))
+                );
+                Ok(pool.add(r))
             }
         },
         quote! {
@@ -448,7 +455,8 @@ impl ToTokens for ParseReceiver {
                     &quote!{}, &self.ident, &self.generics,
                     parse,
                     if self.no_peek { quote! { false } } else { peek },
-                    span
+                    span,
+                    None
                 ));
             }
             ast::Data::Enum(data) => {
@@ -487,7 +495,7 @@ impl ToTokens for ParseReceiver {
                                 }
                                 else {
                                     names.extend(quote! { #name, });
-                                    children.extend(quote! { #name.id(), });
+                                    children.extend(quote! { .chain(#name.ids()) });
                                 }
                             }
                             destruct = quote! { {#names} };
@@ -502,13 +510,13 @@ impl ToTokens for ParseReceiver {
                                 }
                                 else {
                                     names.extend(quote! { #c, });
-                                    children.extend(quote! { #c.id(), });
+                                    children.extend(quote! { .chain(#c.ids()) });
                                 }
                             }
                             destruct = quote! { (#names) };
                         };
                         children_impl.extend(quote! {
-                            Self::#v #destruct => vec![#children],
+                            Self::#v #destruct => std::iter::empty() #children .collect(),
                         });
                     }
                 }
@@ -517,7 +525,7 @@ impl ToTokens for ParseReceiver {
                 tokens.extend(impl_ast_item(
                     &quote!{}, &self.ident, &self.generics,
                     quote! {
-                        use crate::parser::parse::Parse;
+                        use crate::parser::parse::ParseRef;
                         #parse_impl
                         tokenizer.expected(#expected);
                         Err(crate::parser::parse::FatalParseError)
@@ -527,22 +535,25 @@ impl ToTokens for ParseReceiver {
                     }
                     else {
                         quote! {
+                            use crate::parser::parse::ParseRef;
                             #peek_impl
                             false
                         }
                     },
                     quote! {
+                        use crate::parser::parse::Ref;
                         match self {
                             #children_impl
                         }
-                    }
+                    },
+                    None
                 ));
             }
         }
     }
 }
 
-#[proc_macro_derive(Parse, attributes(parse))]
+#[proc_macro_derive(ParseNode, attributes(parse))]
 pub fn derive_parse(input: TokenStream) -> TokenStream {
     match ParseReceiver::from_derive_input(&syn::parse(input).expect("Couldn't parse item")) {
         Ok(v) => v,
@@ -579,7 +590,7 @@ impl ToTokens for ResolveReceiver {
                     let ident = &v.ident;
                     try_resolve_matches.extend(quote_spanned! {
                         v.ident.span() =>
-                        Self::#ident(value) => crate::checker::resolve::Resolve::try_resolve(value, list, checker),
+                        Self::#ident(value) => Some(crate::checker::resolve::ResolveRef::resolved_ty(value, pool)),
                     });
                 }
                 try_resolve = quote! {
@@ -593,10 +604,10 @@ impl ToTokens for ResolveReceiver {
         let name = &self.ident;
         let (impl_generics, ty_generics, where_clause) = self.generics.split_for_impl();
         tokens.extend(quote! {
-            impl #impl_generics crate::checker::resolve::Resolve for #name #ty_generics #where_clause {
-                fn try_resolve(
+            impl #impl_generics crate::checker::resolve::ResolveNode for #name #ty_generics #where_clause {
+                fn try_resolve_node(
                     &mut self,
-                    list: &mut crate::parser::parse::NodeList,
+                    pool: &mut crate::parser::parse::NodePool,
                     checker: &mut crate::checker::coherency::Checker
                 ) -> Option<crate::checker::ty::Ty> {
                     #try_resolve
@@ -606,7 +617,7 @@ impl ToTokens for ResolveReceiver {
     }
 }
 
-#[proc_macro_derive(Resolve)]
+#[proc_macro_derive(ResolveNode)]
 pub fn derive_resolve(input: TokenStream) -> TokenStream {
     match ResolveReceiver::from_derive_input(&syn::parse(input).expect("Couldn't parse item")) {
         Ok(v) => v,

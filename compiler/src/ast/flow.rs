@@ -1,21 +1,21 @@
 
-use dash_macros::{Parse, Resolve};
+use dash_macros::{ParseNode, ResolveNode};
 use crate::{
-    parser::parse::{Separated, SeparatedWithTrailing, Parse, Node, NodeList},
-    checker::{resolve::Resolve, ty::Ty, coherency::Checker}
+    parser::parse::{Separated, SeparatedWithTrailing, ParseNode, Node, NodePool},
+    checker::{resolve::ResolveNode, ty::Ty, coherency::Checker}
 };
 use super::{token::{kw, delim, punct}, expr::{Expr, ExprList, IdentComponent}};
 
-#[derive(Debug, Parse)]
-pub struct IfItem {
+#[derive(Debug, ParseNode)]
+pub struct IfNode {
     if_kw: kw::If,
     cond: Expr,
     truthy: delim::Braced<ExprList>,
     falsy: Option<(kw::Else, Else)>,
 }
 
-impl Resolve for IfItem {
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+impl ResolveNode for IfNode {
+    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
         let cond = self.cond.try_resolve(list, checker)?;
         let truthy = self.truthy.try_resolve(list, checker)?;
         let falsy = if let Some((_, e)) = &mut self.falsy {
@@ -29,54 +29,54 @@ impl Resolve for IfItem {
     }
 }
 
-#[derive(Debug, Parse, Resolve)]
+#[derive(Debug, ParseNode, ResolveNode)]
 #[parse(expected = "block or if statement")]
-pub enum ElseItem {
+pub enum ElseNode {
     Else(delim::Braced<ExprList>),
     ElseIf(Box<If>),
 }
 
-#[derive(Debug, Parse)]
-pub struct ReturnItem {
+#[derive(Debug, ParseNode)]
+pub struct ReturnNode {
     return_kw: kw::Return,
     expr: Option<Expr>,
 }
 
-impl Resolve for ReturnItem {
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+impl ResolveNode for ReturnNode {
+    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
         todo!()
     }
 }
 
-#[derive(Debug, Parse)]
+#[derive(Debug, ParseNode)]
 #[parse(expected = "identifier")]
-enum UsingComponentItem {
+enum UsingComponentNode {
     Multi(delim::Braced<SeparatedWithTrailing<UsingComponent, punct::Comma>>),
     Single(IdentComponent),
 }
 
-#[derive(Debug, Parse)]
-struct UsingPathItem {
+#[derive(Debug, ParseNode)]
+struct UsingPathNode {
     absolute: Option<punct::Namespace>,
     path: Separated<UsingComponent, punct::Namespace>,
 }
 
-#[derive(Debug, Parse)]
-pub struct UsingItem {
+#[derive(Debug, ParseNode)]
+pub struct UsingNode {
     using_kw: kw::Using,
     path: UsingPath,
 }
 
-impl Resolve for UsingItem {
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+impl ResolveNode for UsingNode {
+    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
         todo!()
     }
 }
 
-#[derive(Debug, Parse, Resolve)]
+#[derive(Debug, ParseNode, ResolveNode)]
 #[parse(expected = "control flow expression")]
-pub enum FlowItem {
+pub enum FlowNode {
     If(If),
     Return(Return),
-    UsingItem(UsingItem),
+    UsingNode(UsingNode),
 }

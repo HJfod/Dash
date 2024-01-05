@@ -1,35 +1,35 @@
 
 use std::sync::Arc;
 
-use dash_macros::{Parse, Resolve};
+use dash_macros::{ParseNode, Resolve};
 use crate::{
-    parser::{parse::{Parse, FatalParseError, calculate_span, RefToNode, NodeList, Node}, tokenizer::TokenIterator},
+    parser::{parse::{ParseNode, FatalParseError, calculate_span, RefToNode, NodePool, Node, Ref, NodeID, ParseRef}, tokenizer::TokenIterator},
     shared::src::{Src, ArcSpan},
-    checker::{resolve::Resolve, coherency::Checker, ty::Ty}
+    checker::{resolve::ResolveNode, coherency::Checker, ty::Ty}
 };
 use super::{expr::IdentPath, token::op};
 
 #[derive(Debug)]
-pub enum TypeExprItem {
+pub enum TypeExprNode {
     Optional(TypeExpr, op::Question),
     Atom(TypeAtom),
 }
-pub type TypeExpr = RefToNode<TypeExprItem>;
+pub type TypeExpr = RefToNode<TypeExprNode>;
 
-impl Node for TypeExprItem {
-    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
+impl Node for TypeExprNode {
+    fn children(&self) -> Vec<crate::parser::parse::NodeID> {
         match self {
-            Self::Optional(ty, q) => calculate_span([ty.span(list), q.span(list)]),
-            Self::Atom(atom) => atom.span(list),
+            Self::Optional(ty, q) => ty.ids().into_iter().chain(q.ids()).collect(),
+            Self::Atom(atom) => atom.ids(),
         }
     }
 }
 
-impl Parse for TypeExprItem {
-    fn parse(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError> {
-        let mut res = Self::Atom(Parse::parse(list, src.clone(), tokenizer)?);
-        while let Some(q) = op::Question::peek_and_parse(list, src.clone(), tokenizer)? {
-            res = Self::Optional(list.add(res), q);
+impl ParseNode for TypeExprNode {
+    fn parse_node(pool: &mut NodePool, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<NodeID, FatalParseError> {
+        let mut res = Self::Atom(ParseRef::parse_ref(pool, src.clone(), tokenizer)?);
+        while let Some(q) = op::Question::peek_and_parse(pool, src.clone(), tokenizer)? {
+            res = Self::Optional(pool.add(res), q);
         }
         Ok(res)
     }
@@ -38,8 +38,8 @@ impl Parse for TypeExprItem {
     }
 }
 
-impl Resolve for TypeExprItem {
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+impl ResolveNode for TypeExprNode {
+    fn try_resolve(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
         match self {
             Self::Optional(opt, _) => Some(Ty::Option {
                 ty: Box::new(opt.try_resolve(list, checker)?)
@@ -49,19 +49,19 @@ impl Resolve for TypeExprItem {
     }
 }
 
-#[derive(Debug, Parse, Resolve)]
+#[derive(Debug, ParseNode, Resolve)]
 #[parse(expected = "type")]
-pub enum TypeAtomItem {
+pub enum TypeAtomNode {
     TypeIdent(TypeIdent),
 }
 
-#[derive(Debug, Parse)]
-pub struct TypeIdentItem {
+#[derive(Debug, ParseNode)]
+pub struct TypeIdentNode {
     name: IdentPath,
 }
 
-impl Resolve for TypeIdentItem {
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+impl ResolveNode for TypeIdentNode {
+    fn try_resolve(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
         for scope in checker.scopes() {
             if let Some(ty) = scope.types().find(&self.name.get(list).as_ref().to_path(list)) {
                 return Some(ty.clone());

@@ -4,7 +4,7 @@
 use checker::coherency::Checker;
 use checker::pool::AST;
 use checker::ty::Ty;
-use parser::parse::NodeList;
+use parser::parse::NodePool;
 use parser::tokenizer::{Tokenizer, Token};
 use shared::logger::LoggerRef;
 use shared::src::Src;
@@ -18,6 +18,6 @@ pub fn tokenize<'s, 'g: 's>(src: &'s Src, logger: LoggerRef) -> Vec<Token<'s>> {
     Tokenizer::new(src, logger).collect()
 }
 
-pub fn check_coherency(ast: &mut AST, list: &mut NodeList, logger: LoggerRef) -> Ty {
+pub fn check_coherency(ast: &mut AST, list: &mut NodePool, logger: LoggerRef) -> Ty {
     Checker::try_resolve(ast, list, logger)
 }

@@ -1,72 +1,22 @@
 
-use crate::parser::parse::{DontExpect, CompileMessage, Node, NodeList, ParseWithID};
+use crate::parser::parse::{DontExpect, CompileMessage, Node, NodePool, ParseRef, Ref};
 use super::{ty::Ty, coherency::Checker};
 
-// #[derive(Debug)]
-// pub struct ResolveCache {
-//     id: NodeID,
-//     resolved: Option<Ty>,
-//     unresolved_msg: Option<(String, ArcSpan)>,
-// }
-
-// impl Default for ResolveCache {
-//     fn default() -> Self {
-//         Self {
-//             id: NodeID::new(),
-//             resolved: None,
-//             unresolved_msg: None,
-//         }
-//     }
-// }
-
-// impl ResolveCache {
-//     pub fn set_unresolved<S: ToString>(&mut self, msg: S, span: Option<ArcSpan>) {
-//         self.unresolved_msg = Some((msg.to_string(), span.unwrap_or(ArcSpan::builtin())))
-//     }
-// }
-
-pub(crate) trait Resolve: Node {
-    /// Try to resolve this AST node. This function should never be called 
-    /// by any other code - rather, other code should call `try_resolve`
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty>;
-
-    // Attempts to figure out the evaluation type for this AST node
-    // Todo: better docs
-    // fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
-    //     if let Some(cache) = self.cache() {
-    //         if let Some(cached) = cache.resolved.clone() {
-    //             Some(cached)
-    //         }
-    //         else {
-    //             let resolved = self.try_resolve(list, checker);
-    //             let cache = self.cache().unwrap();
-    //             cache.resolved = resolved;
-    //             if cache.resolved.is_some() {
-    //                 checker.mark_resolved(cache.id);
-    //                 cache.resolved.clone()
-    //             }
-    //             else {
-    //                 if let Some((msg, span)) = std::mem::take(&mut cache.unresolved_msg) {
-    //                     checker.mark_unresolved(cache.id, msg, span);
-    //                 }
-    //                 None
-    //             }
-    //         }
-    //     }
-    //     else {
-    //         Some(self.try_resolve(list, checker).ice("try_resolve shouldn't error without a cache"))
-    //     }
-    // }
+pub(crate) trait ResolveNode: Node {
+    /// Try to resolve this AST node
+    fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty>;
 }
 
-// impl<T: Resolve> Resolve for Box<T> {
-//     fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
-//         self.as_mut().try_resolve(list, checker)
-//     }
-// }
+pub(crate) trait ResolveRef: Ref {
+    /// This should not be called manually, except for starting AST resolution
+    fn try_resolve_ref(&mut self, pool: &mut NodePool, checker: &mut Checker) -> Option<Ty>;
 
-impl<T: ParseWithID, M: CompileMessage> Resolve for DontExpect<T, M> {
-    fn try_resolve(&mut self, _: &mut NodeList, _: &mut Checker) -> Option<Ty> {
+    /// Get the resolved type of this Ref's Node
+    fn resolved_ty(&self, pool: &NodePool) -> Ty;
+}
+
+impl<T: ParseRef, M: CompileMessage> ResolveRef for DontExpect<T, M> {
+    fn try_resolve_ref(&mut self, _: &mut NodePool, _: &mut Checker) -> Option<Ty> {
         Some(Ty::Invalid)
     }
 }

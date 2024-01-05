@@ -1,24 +1,24 @@
 
 use crate::{
-    parser::parse::{SeparatedWithTrailing, DontExpect, Parse, calculate_span, Node, NodeList},
+    parser::parse::{SeparatedWithTrailing, DontExpect, ParseNode, calculate_span, Node, NodePool},
     add_compile_message,
-    checker::{resolve::Resolve, coherency::{Checker, ScopeID}, ty::Ty, entity::Entity, path},
+    checker::{resolve::ResolveNode, coherency::{Checker, ScopeID}, ty::Ty, entity::Entity, path},
     try_resolve,
     shared::{src::ArcSpan, logger::{Message, Level, Note}}
 };
 use super::{token::{kw, op, punct, delim, Ident}, ty::TypeExpr, expr::{Expr, IdentPath, ExprList}};
-use dash_macros::{Parse, Resolve};
+use dash_macros::{ParseNode, ResolveNode};
 
-#[derive(Debug, Parse)]
-pub struct LetDeclItem {
+#[derive(Debug, ParseNode)]
+pub struct LetDeclNode {
     let_kw: kw::Let,
     name: IdentPath,
     ty: Option<(punct::Colon, TypeExpr)>,
     value: Option<(op::Seq, Expr)>,
 }
 
-impl Resolve for LetDeclItem {
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+impl ResolveNode for LetDeclNode {
+    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
         let ty = try_resolve!(&mut self.ty, list, checker, Some((_, ty)) => ty);
         let value = try_resolve!(&mut self.value, list, checker, Some((_, v)) => v);
         let vty = checker.expect_ty_eq(value, ty, self.span(list));
@@ -53,9 +53,9 @@ impl Resolve for LetDeclItem {
 // mfw no &'static str in const generics 😢
 add_compile_message!(ThisParamMayNotHaveValue: "the 'this' parameter may not have a default value");
 
-#[derive(Debug, Parse)]
+#[derive(Debug, ParseNode)]
 #[parse(expected = "parameter")]
-pub enum FunParamItem {
+pub enum FunParamNode {
     NamedParam {
         name: Ident,
         ty: (punct::Colon, TypeExpr),
@@ -68,8 +68,8 @@ pub enum FunParamItem {
     },
 }
 
-#[derive(Debug, Parse)]
-pub struct FunDeclItem {
+#[derive(Debug, ParseNode)]
+pub struct FunDeclNode {
     fun_kw: kw::Fun,
     name: Option<IdentPath>,
     params: delim::Parenthesized<SeparatedWithTrailing<FunParam, punct::Comma>>,
@@ -79,20 +79,20 @@ pub struct FunDeclItem {
     scope: Option<ScopeID>,
 }
 
-impl Resolve for FunDeclItem {
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+impl ResolveNode for FunDeclNode {
+    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
         println!("f0");
         let mut params = Vec::new();
         for param in self.params.get(list).as_mut().value.iter_mut() {
             match param.get(list).as_mut() {
-                FunParamItem::NamedParam { name, ty, default_value } => {
+                FunParamNode::NamedParam { name, ty, default_value } => {
                     let span = calculate_span([name.span(list), ty.span(list), default_value.span(list)]);
                     let ty = ty.1.try_resolve(list, checker)?;
                     let v = try_resolve!(default_value, list, checker, Some((_, d)) => d);
                     checker.expect_ty_eq(ty.clone(), v, span.clone());
                     params.push((name.get(list).as_ref().to_string(), ty, span.unwrap_or(ArcSpan::builtin())));
                 }
-                FunParamItem::ThisParam { this_kw: _, ty, _invalid_value: _ } => todo!()
+                FunParamNode::ThisParam { this_kw: _, ty, _invalid_value: _ } => todo!()
             }
         }
         println!("f1");
@@ -139,9 +139,9 @@ impl Resolve for FunDeclItem {
     }
 }
 
-#[derive(Debug, Parse, Resolve)]
+#[derive(Debug, ParseNode, ResolveNode)]
 #[parse(expected = "item declaration")]
-pub enum DeclItem {
+pub enum DeclNode {
     LetDecl(Box<LetDecl>),
     FunDecl(Box<FunDecl>),
 }

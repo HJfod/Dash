@@ -1,79 +1,79 @@
 
 use std::sync::Arc;
 
-use dash_macros::{Parse, Resolve};
+use dash_macros::{ParseNode, ResolveNode};
 use crate::{
-    parser::{parse::{Separated, Parse, FatalParseError, ParseFn, RefToNode, NodeList, Node}, tokenizer::TokenIterator},
-    shared::src::{Src, ArcSpan},
-    checker::{resolve::Resolve, coherency::{Checker, ScopeID}, ty::Ty, path}
+    parser::{parse::{Separated, ParseNode, FatalParseError, ParseNodeFn, RefToNode, NodePool, Node, ParseRef, NodeID, Ref}, tokenizer::TokenIterator},
+    shared::src::Src,
+    checker::{resolve::ResolveNode, coherency::{Checker, ScopeID}, ty::Ty, path}
 };
 use super::{
     decl::Decl,
     token::{Ident, punct::{self, TerminatingSemicolon}, op::{Prec, self}, delim},
     atom::Atom,
     flow::Flow,
-    ops::{BinOp, UnOp, Call, Index, CallItem, IndexItem, UnOpItem, BinOpItem}
+    ops::{BinOp, UnOp, Call, Index, CallNode, IndexNode, UnOpNode, BinOpNode}
 };
 
-#[derive(Debug, Parse)]
+#[derive(Debug, ParseNode)]
 #[parse(expected = "identifier")]
-pub enum IdentComponentItem {
+pub enum IdentComponentNode {
     Attribute(punct::At, Ident),
     Ident(Ident),
 }
 
-#[derive(Debug, Parse)]
-pub struct IdentPathItem {
+#[derive(Debug, ParseNode)]
+pub struct IdentPathNode {
     absolute: Option<punct::Namespace>,
     path: Separated<IdentComponent, punct::Namespace>,
 }
 
-impl IdentPathItem {
-    pub(crate) fn to_path(&self, list: &NodeList) -> path::IdentPath {
+impl IdentPathNode {
+    pub(crate) fn to_path(&self, list: &NodePool) -> path::IdentPath {
         path::IdentPath::new(
             self.path.iter().map(|i| path::Ident::from(match i.get(list).as_ref() {
-                IdentComponentItem::Ident(i) => i.get(list).as_ref().to_string(),
-                IdentComponentItem::Attribute(_, i) => format!("@{}", i.get(list).as_ref()),
+                IdentComponentNode::Ident(i) => i.get(list).as_ref().to_string(),
+                IdentComponentNode::Attribute(_, i) => format!("@{}", i.get(list).as_ref()),
             })).collect::<Vec<_>>(),
             self.absolute.is_some()
         )
     }
 }
 
-#[derive(Debug, Parse, Resolve)]
+#[derive(Debug, ParseNode, ResolveNode)]
 #[parse(expected = "expression")]
-pub enum ScalarExprItem {
+pub enum ScalarExprNode {
     Decl(Decl),
     Flow(Flow),
     Atom(Atom),
 }
 
-#[derive(Debug, Resolve)]
-pub enum ExprItem {
+#[derive(Debug, ResolveNode)]
+pub enum ExprNode {
     BinOp(BinOp),
     UnOp(UnOp),
     Call(Call),
     Index(Index),
     Scalar(ScalarExpr),
 }
-pub type Expr = RefToNode<ExprItem>;
+pub type Expr = RefToNode<ExprNode>;
 
-impl ExprItem {
+impl ExprNode {
     fn parse_postfix(
-        list: &mut NodeList,
+        list: &mut NodePool,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator
     ) -> Result<Self, FatalParseError> {
-        let mut expr = Self::Scalar(Parse::parse(list, src.clone(), tokenizer)?);
+        let mut expr = Self::Scalar(ParseRef::parse_ref(list, src.clone(), tokenizer)?);
         loop {
             if delim::Parenthesized::<delim::P>::peek(0, tokenizer) {
                 expr = Self::Call(
-                    CallItem::parse_with(list.add(expr), list, src.clone(), tokenizer)?
+                    CallNode::parse_with(list.add(expr), list, src.clone(), tokenizer)?
                 );
             }
             else if delim::Bracketed::<delim::P>::peek(0, tokenizer) {
                 expr = Self::Index(
-                    IndexItem::parse_with(list.add(expr), list, src.clone(), tokenizer)?
+                    IndexNode::parse_with(list.add(expr), list, src.clone(), tokenizer)?
                 );
             }
             else {
@@ -83,13 +83,13 @@ impl ExprItem {
         Ok(expr)
     }
     fn parse_unop(
-        list: &mut NodeList,
+        list: &mut NodePool,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator
     ) -> Result<Self, FatalParseError> {
         if op::Unary::peek(0, tokenizer) {
             Ok(Self::UnOp(
-                UnOpItem::parse_with(
+                UnOpNode::parse_with(
                     |list, src, tokenizer| {
                         let t = Self::parse_postfix(list, src, tokenizer)?;
                         Ok(list.add(t))
@@ -104,14 +104,14 @@ impl ExprItem {
     }
     fn parse_binop_prec<'s, F>(
         prec: Prec, sides: &mut F,
-        list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>
+        list: &mut NodePool, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>
     ) -> Result<Self, FatalParseError>
-        where F: ParseFn<'s, Self>
+        where F: ParseNodeFn
     {
         let mut lhs = sides(list, src.clone(), tokenizer)?;
         while prec.peek(tokenizer) {
             lhs = Self::BinOp(
-                BinOpItem::parse_with(
+                BinOpNode::parse_with(
                     list.add(lhs),
                     |l, s, t| {
                         let t = sides(l, s, t)?;
@@ -125,24 +125,24 @@ impl ExprItem {
     }
 }
 
-impl Node for ExprItem {
-    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
+impl Node for ExprNode {
+    fn children(&self) -> Vec<NodeID> {
         match self {
-            Self::BinOp(binop) => binop.span(list),
-            Self::UnOp(unop) => unop.span(list),
-            Self::Call(call) => call.span(list),
-            Self::Index(index) => index.span(list),
-            Self::Scalar(scalar) => scalar.span(list),
+            Self::BinOp(binop) => binop.ids(),
+            Self::UnOp(unop) => unop.ids(),
+            Self::Call(call) => call.ids(),
+            Self::Index(index) => index.ids(),
+            Self::Scalar(scalar) => scalar.ids(),
         }
     }
 }
 
-impl Parse for ExprItem {
-    fn parse<'s>(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError> {
-        let mut sides: Box<dyn ParseFn<'s, Self>> = Box::from(Self::parse_unop);
+impl ParseNode for ExprNode {
+    fn parse_node<'s>(list: &mut NodePool, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>) -> Result<Self, FatalParseError> {
+        let mut sides: Box<dyn ParseNodeFn<'s, Self>> = Box::from(Self::parse_unop);
         for prec in Prec::order() {
             sides = Box::from(
-                move |list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>|
+                move |list: &mut NodePool, src: Arc<Src>, tokenizer: &mut TokenIterator<'s>|
                     Self::parse_binop_prec(prec, &mut sides, list, src, tokenizer)
             );
         }
@@ -153,15 +153,15 @@ impl Parse for ExprItem {
     }
 }
 
-#[derive(Debug, Parse)]
-pub struct ExprListItem {
+#[derive(Debug, ParseNode)]
+pub struct ExprListNode {
     exprs: Vec<(Expr, TerminatingSemicolon)>,
     #[parse(skip)]
     scope: Option<ScopeID>,
 }
 
-impl Resolve for ExprListItem {
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+impl ResolveNode for ExprListNode {
+    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
         let _handle = checker.enter_scope(&mut self.scope);
         self.exprs.iter_mut()
             .map(|(e, c)| (e.try_resolve(list, checker), c.has_semicolon()))

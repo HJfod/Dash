@@ -1,20 +1,20 @@
 
-use dash_macros::{Parse, Resolve};
+use dash_macros::{ParseNode, ResolveNode};
 use super::{expr::{Expr, IdentPath, ExprList}, token::{lit, kw}};
 use crate::{
     ast::token::delim,
-    checker::{resolve::Resolve, coherency::Checker, ty::Ty, path}, parser::parse::NodeList
+    checker::{resolve::ResolveNode, coherency::Checker, ty::Ty, path}, parser::parse::NodePool
 };
 
-#[derive(Debug, Parse)]
+#[derive(Debug, ParseNode)]
 #[parse(expected = "identifier")]
-pub enum ItemUseItem {
+pub enum ItemUseNode {
     This(kw::This),
     Ident(IdentPath),
 }
 
-impl Resolve for ItemUseItem {
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+impl ResolveNode for ItemUseNode {
+    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
         for scope in checker.scopes() {
             if let Some(ent) = scope.entities().find(
                 &match self {
@@ -34,9 +34,9 @@ impl Resolve for ItemUseItem {
     }
 }
 
-#[derive(Debug, Parse, Resolve)]
+#[derive(Debug, ParseNode, ResolveNode)]
 #[parse(expected = "expression")]
-pub enum AtomItem {
+pub enum AtomNode {
     ClosedExpr(delim::Parenthesized<Expr>),
     Block(delim::Braced<ExprList>),
     ItemUse(ItemUse),

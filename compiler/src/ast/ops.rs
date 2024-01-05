@@ -1,57 +1,57 @@
 
 use std::{sync::Arc, collections::HashMap};
-use dash_macros::Parse;
+use dash_macros::ParseNode;
 use crate::{
-    parser::{parse::{Parse, FatalParseError, calculate_span, ParseFn, SeparatedWithTrailing, NodeList, RefToNode, Node}, tokenizer::TokenIterator},
+    parser::{parse::{ParseNode, FatalParseError, ParseNodeFn, SeparatedWithTrailing, NodePool, RefToNode, Node, ParseRef, NodeID, Ref}, tokenizer::TokenIterator},
     shared::{src::{Src, ArcSpan}, logger::{Message, Level, Note}},
-    checker::{resolve::Resolve, coherency::Checker, ty::Ty, path}, ice
+    checker::{resolve::ResolveNode, coherency::Checker, ty::Ty, path}, ice
 };
 use super::{expr::Expr, token::{op, delim, Ident, punct}};
 
-#[derive(Debug, Parse)]
+#[derive(Debug, ParseNode)]
 #[parse(expected = "expression or named argument")]
-pub enum ArgItem {
+pub enum ArgNode {
     Named(Ident, #[parse(peek_point)] punct::Colon, Expr),
     Unnamed(Expr),
 }
 
 #[derive(Debug)]
-pub struct CallItem {
+pub struct CallNode {
     target: Expr,
     args: delim::Parenthesized<SeparatedWithTrailing<Arg, punct::Comma>>,
 }
-pub type Call = RefToNode<CallItem>;
+pub type Call = RefToNode<CallNode>;
 
-impl CallItem {
+impl CallNode {
     pub(crate) fn parse_with(
         target: Expr,
-        list: &mut NodeList,
+        list: &mut NodePool,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator
     ) -> Result<Call, FatalParseError> {
         let res = Self {
             target,
-            args: Parse::parse(list, src, tokenizer)?,
+            args: ParseRef::parse_ref(list, src, tokenizer)?,
         };
         Ok(list.add(res))
     }
 }
 
-impl Node for CallItem {
-    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
-        calculate_span([self.target.span(list), self.args.span(list)])
+impl Node for CallNode {
+    fn children(&self) -> Vec<NodeID> {
+        self.target.ids().into_iter().chain(self.args.ids().into_iter()).collect()
     }
 }
 
-impl Resolve for CallItem {
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+impl ResolveNode for CallNode {
+    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
         let target = self.target.try_resolve(list, checker)?;
         let args = self.args.get(list).as_mut().value.iter_mut()
             .map(|arg| match arg.get(list).as_mut() {
-                ArgItem::Unnamed(value) => {
+                ArgNode::Unnamed(value) => {
                     (None, value.try_resolve(list, checker), value.span(list))
                 }
-                ArgItem::Named(name, _, value) => {
+                ArgNode::Named(name, _, value) => {
                     (Some(name.get(list).as_ref().to_string()), value.try_resolve(list, checker), value.span(list))
                 }
             })
@@ -155,73 +155,78 @@ impl Resolve for CallItem {
 }
 
 #[derive(Debug)]
-pub struct IndexItem {
+pub struct IndexNode {
     target: Expr,
     index: delim::Bracketed<Expr>,
     trailing_comma: Option<punct::Comma>,
 }
-pub type Index = RefToNode<IndexItem>;
+pub type Index = RefToNode<IndexNode>;
 
-impl IndexItem {
+impl IndexNode {
     pub(crate) fn parse_with(
         target: Expr,
-        list: &mut NodeList,
+        list: &mut NodePool,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator
     ) -> Result<Index, FatalParseError> {
         let res = Self {
             target,
-            index: Parse::parse(list, src.clone(), tokenizer)?,
-            trailing_comma: Parse::parse(list, src.clone(), tokenizer)?,
+            index: ParseRef::parse_ref(list, src.clone(), tokenizer)?,
+            trailing_comma: ParseRef::parse_ref(list, src.clone(), tokenizer)?,
         };
         Ok(list.add(res))
     }
 }
 
-impl Node for IndexItem {
-    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
-        calculate_span([self.target.span(list), self.index.span(list), self.trailing_comma.span(list)])
+impl Node for IndexNode {
+    fn children(&self) -> Vec<NodeID> {
+        self.target.ids().into_iter()
+            .chain(self.index.ids())
+            .chain(self.trailing_comma.ids())
+            .collect()
     }
 }
 
-impl Resolve for IndexItem {
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+impl ResolveNode for IndexNode {
+    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
         todo!()
     }
 }
 
 #[derive(Debug)]
-pub struct UnOpItem {
+pub struct UnOpNode {
     op: op::Unary,
     target: Expr,
 }
-pub type UnOp = RefToNode<UnOpItem>;
+pub type UnOp = RefToNode<UnOpNode>;
 
-impl UnOpItem {
+impl UnOpNode {
     pub(crate) fn parse_with<'s, F>(
         mut target: F,
-        list: &mut NodeList,
+        list: &mut NodePool,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s>
     ) -> Result<UnOp, FatalParseError>
-        where F: ParseFn<'s, Expr>
+        where F: ParseNodeFn
     {
         let res = Self {
-            op: Parse::parse(list, src.clone(), tokenizer)?,
+            op: ParseRef::parse_ref(list, src.clone(), tokenizer)?,
             target: target(list, src, tokenizer)?,
         };
         Ok(list.add(res))
     }
 }
 
-impl Node for UnOpItem {
-    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
-        calculate_span([self.op.span(list), self.target.span(list)])
+impl Node for UnOpNode {
+    fn children(&self) -> Vec<NodeID> {
+        self.op.ids().into_iter()
+            .chain(self.target.ids())
+            .collect()
     }
 }
 
-impl Resolve for UnOpItem {
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+impl ResolveNode for UnOpNode {
+    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
         let target = self.target.try_resolve(list, checker)?;
         let op = self.op.get(list);
         if target.is_unreal() {
@@ -249,40 +254,42 @@ impl Resolve for UnOpItem {
 }
 
 #[derive(Debug)]
-pub struct BinOpItem {
+pub struct BinOpNode {
     lhs: Expr,
     op: op::Binary,
     rhs: Expr,
 }
-pub type BinOp = RefToNode<BinOpItem>;
+pub type BinOp = RefToNode<BinOpNode>;
 
-impl BinOpItem {
+impl BinOpNode {
     pub(crate) fn parse_with<'s, F>(
         lhs: Expr,
         mut rhs: F,
-        list: &mut NodeList,
+        list: &mut NodePool,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator<'s>
     ) -> Result<BinOp, FatalParseError>
-        where F: ParseFn<'s, Expr>
+        where F: ParseNodeFn
     {
         let res = Self {
             lhs,
-            op: Parse::parse(list, src.clone(), tokenizer)?,
+            op: ParseRef::parse_ref(list, src.clone(), tokenizer)?,
             rhs: rhs(list, src, tokenizer)?,
         };
         Ok(list.add(res))
     }
 }
 
-impl Node for BinOpItem {
-    fn span(&self, list: &NodeList) -> Option<ArcSpan> {
-        calculate_span([self.lhs.span(list), self.op.span(list), self.rhs.span(list)])
+impl Node for BinOpNode {
+    fn children(&self) -> Vec<NodeID> {
+        self.lhs.ids().into_iter()
+            .chain(self.op.ids())
+            .chain(self.rhs.ids())
     }
 }
 
-impl Resolve for BinOpItem {
-    fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
+impl ResolveNode for BinOpNode {
+    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
         let a = self.lhs.try_resolve(list, checker)?;
         let b = self.rhs.try_resolve(list, checker)?;
         let op = self.op.get(list);

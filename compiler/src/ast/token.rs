@@ -6,7 +6,7 @@ use dash_macros::token;
 #[token(kind = "Ident", include_raw)]
 pub struct Ident {}
 
-impl Display for IdentItem {
+impl Display for IdentNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(&self.raw)
     }
@@ -37,15 +37,15 @@ pub(crate) mod kw {
 }
 
 pub(crate) mod lit {
-    use dash_macros::{token, Parse};
+    use dash_macros::{token, ParseNode};
 
-    use crate::{checker::{resolve::Resolve, coherency::Checker, ty::Ty}, parser::parse::NodeList};
+    use crate::{checker::{resolve::ResolveNode, coherency::Checker, ty::Ty}, parser::parse::NodePool};
 
     #[token(kind = "Keyword", raw = "void")]
     pub struct Void {}
 
-    impl Resolve for Void {
-        fn try_resolve(&mut self, _: &mut NodeList, _: &mut Checker) -> Option<Ty> {
+    impl ResolveNode for VoidNode {
+        fn try_resolve_node(&mut self, _: &NodePool, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Void)
         }
     }
@@ -56,15 +56,15 @@ pub(crate) mod lit {
     #[token(kind = "Keyword", raw = "false")]
     pub struct False {}
 
-    #[derive(Debug, Parse)]
+    #[derive(Debug, ParseNode)]
     #[parse(expected = "boolean")]
-    pub enum BoolItem {
+    pub enum BoolNode {
         True(True),
         False(False),
     }
 
-    impl Resolve for BoolItem {
-        fn try_resolve(&mut self, _: &mut NodeList, _: &mut Checker) -> Option<Ty> {
+    impl ResolveNode for BoolNode {
+        fn try_resolve_node(&mut self, _: &NodePool, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Bool)
         }
     }
@@ -74,8 +74,8 @@ pub(crate) mod lit {
         value: i64,
     }
 
-    impl Resolve for Int {
-        fn try_resolve(&mut self, _: &mut NodeList, _: &mut Checker) -> Option<Ty> {
+    impl ResolveNode for IntNode {
+        fn try_resolve_node(&mut self, _: &NodePool, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Int)
         }
     }
@@ -85,8 +85,8 @@ pub(crate) mod lit {
         value: f64,
     }
 
-    impl Resolve for Float {
-        fn try_resolve(&mut self, _: &mut NodeList, _: &mut Checker) -> Option<Ty> {
+    impl ResolveNode for FloatNode {
+        fn try_resolve_node(&mut self, _: &NodePool, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Float)
         }
     }
@@ -96,8 +96,8 @@ pub(crate) mod lit {
         value: std::string::String,
     }
 
-    impl Resolve for String {
-        fn try_resolve(&mut self, _: &mut NodeList, _: &mut Checker) -> Option<Ty> {
+    impl ResolveNode for StringNode {
+        fn try_resolve_node(&mut self, _: &NodePool, _: &mut Checker) -> Option<Ty> {
             Some(Ty::String)
         }
     }
@@ -109,9 +109,9 @@ pub(crate) mod punct {
     use dash_macros::token;
 
     use crate::{
-        shared::{src::{ArcSpan, Src}, logger::{Message, Level}},
+        shared::{src::Src, logger::{Message, Level}},
         parser::{
-            parse::{Parse, FatalParseError, calculate_span, NodeList, Node},
+            parse::{ParseNode, FatalParseError, calculate_span, NodePool, Node, NodeID, Ref, ParseRef},
             tokenizer::TokenIterator
         }
     };
@@ -134,16 +134,16 @@ pub(crate) mod punct {
     }
 
     impl Node for TerminatingSemicolon {
-        fn span(&self, list: &NodeList) -> Option<ArcSpan> {
-            calculate_span(self.semicolons.iter().map(|s| s.span(list)))
+        fn children(&self) -> Vec<NodeID> {
+            self.semicolons.iter().map(|s| s.ids()).flatten().collect()
         }
     }
 
-    impl Parse for TerminatingSemicolon {
-        fn parse(list: &mut NodeList, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError> {
+    impl ParseNode for TerminatingSemicolon {
+        fn parse_node(pool: &mut NodePool, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<NodeID, FatalParseError> {
             let last_was_braced = tokenizer.last_was_braced();
             let mut found = vec![];
-            while let Some(s) = Semicolon::peek_and_parse(list, src.clone(), tokenizer)? {
+            while let Some(s) = Semicolon::peek_and_parse(pool, src.clone(), tokenizer)? {
                 found.push(s);
             }
             // If the last token was a Braced or we're at EOF of this tree 
@@ -161,18 +161,18 @@ pub(crate) mod punct {
                     else {
                         "Unnecessary semicolon"
                     },
-                    calculate_span(found.iter().map(|s| s.span(list))).unwrap().as_ref()
+                    calculate_span(found.iter().map(|s| s.get(pool).span(pool))).unwrap().as_ref()
                 ));
             }
             else if found.len() > 1 {
                 tokenizer.logger().lock().unwrap().log(Message::new(
                     Level::Warning,
                     "Unnecessary semicolons",
-                    calculate_span(found.iter().skip(1).map(|s| s.span(list))).unwrap().as_ref()
+                    calculate_span(found.iter().skip(1).map(|s| s.get(pool).span(pool))).unwrap().as_ref()
                 ));
             }
             // Missing semicolon is not a fatal parsing error
-            Ok(Self { semicolons: found })
+            Ok(pool.add(Self { semicolons: found }))
         }
         fn peek(pos: usize, tokenizer: &TokenIterator) -> bool {
             Semicolon::peek(pos, tokenizer)
@@ -199,8 +199,8 @@ pub(crate) mod op {
     use std::fmt::Display;
     use std::hash::Hash;
 
-    use dash_macros::{token, Parse};
-    use crate::parser::parse::Parse;
+    use dash_macros::{token, ParseNode};
+    use crate::parser::parse::ParseRef;
     use crate::parser::tokenizer::TokenIterator;
 
     macro_rules! declare_ops {
@@ -236,8 +236,8 @@ pub(crate) mod op {
                 )*
             });
 
-            concat_idents::concat_idents!(item_name = $group, Item {
-                #[derive(Debug, Parse)]
+            concat_idents::concat_idents!(item_name = $group, Node {
+                #[derive(Debug, ParseNode)]
                 #[parse(expected = "operator")]
                 pub enum item_name {
                     $($name($name)),*
@@ -307,52 +307,52 @@ pub(crate) mod op {
 }
 
 pub(crate) mod delim {
-    use dash_macros::{token, Parse};
+    use dash_macros::{token, ParseNode};
 
     use crate::{
-        parser::parse::{Parse, NodeList},
-        checker::{resolve::Resolve, coherency::Checker, ty::Ty}
+        parser::parse::{ParseNode, NodePool, ParseRef},
+        checker::{resolve::{ResolveNode, ResolveRef}, coherency::Checker, ty::Ty}
     };
 
     #[token(kind = "Parentheses(_)", value_is_token_tree)]
-    pub struct Parenthesized<T: Parse> {
+    pub struct Parenthesized<T: ParseRef> {
         pub value: T,
     }
 
-    impl<T: Parse + Resolve> Resolve for ParenthesizedItem<T> {
-        fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
-            self.value.try_resolve(list, checker)
+    impl<T: ResolveRef + ParseRef> ResolveNode for ParenthesizedNode<T> {
+        fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+            Some(self.value.resolved_ty(pool))
         }
     }
      
     #[token(kind = "Brackets(_)", value_is_token_tree)]
-    pub struct Bracketed<T: Parse> {
+    pub struct Bracketed<T: ParseRef> {
         pub value: T,
     }
 
-    impl<T: Parse + Resolve> Resolve for BracketedItem<T> {
-        fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
-            self.value.try_resolve(list, checker)
+    impl<T: ResolveRef + ParseRef> ResolveNode for BracketedNode<T> {
+        fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+            Some(self.value.resolved_ty(pool))
         }
     }
 
     #[token(kind = "Braces(_)", value_is_token_tree)]
-    pub struct Braced<T: Parse> {
+    pub struct Braced<T: ParseRef> {
         pub value: T,
     }
 
-    impl<T: Parse + Resolve> Resolve for BracedItem<T> {
-        fn try_resolve(&mut self, list: &mut NodeList, checker: &mut Checker) -> Option<Ty> {
-            self.value.try_resolve(list, checker)
+    impl<T: ResolveRef + ParseRef> ResolveNode for BracedNode<T> {
+        fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+            Some(self.value.resolved_ty(pool))
         }
     }
 
     /// Placeholder used for peeking delimiters
-    #[derive(Debug, Parse)]
-    pub struct PItem;
+    #[derive(Debug, ParseNode)]
+    pub struct PNode;
 
-    impl Resolve for PItem {
-        fn try_resolve(&mut self, _: &mut NodeList, _: &mut Checker) -> Option<Ty> {
+    impl ResolveNode for PNode {
+        fn try_resolve_node(&mut self, _: &NodePool, _: &mut Checker) -> Option<Ty> {
             Some(Ty::Invalid)
         }
     }
