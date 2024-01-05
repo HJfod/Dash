@@ -1,6 +1,11 @@
 
 use std::collections::HashMap;
-use crate::{shared::{logger::{LoggerRef, Message, Level, Note}, src::{ArcSpan, Span}}, ast::token::op, parser::parse::{NodeID, NodePool}, checker::resolve::ResolveRef};
+use crate::{
+    shared::{logger::{LoggerRef, Message, Level, Note}, src::{ArcSpan, Span}},
+    ast::token::op,
+    parser::parse::NodePool,
+    checker::resolve::ResolveRef
+};
 use super::{ty::Ty, path::{FullIdentPath, IdentPath, Ident}, entity::Entity, pool::AST};
 
 #[derive(Debug)]
@@ -236,12 +241,6 @@ impl Drop for LeaveScope {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ScopeID(usize);
 
-#[derive(PartialEq, Eq)]
-struct UnresolvedData {
-    msg: String,
-    span: ArcSpan,
-}
-
 pub struct ScopeIter<'s> {
     current: Option<ScopeID>,
     scopes: &'s Vec<Scope>,
@@ -268,7 +267,7 @@ pub struct Checker {
     current_scope: ScopeID,
     scopes: Vec<Scope>,
     namespace_stack: FullIdentPath,
-    unresolved_nodes: HashMap<NodeID, UnresolvedData>,
+    some_nodes_resolve_state_changed: bool,
 }
 
 impl Checker {
@@ -278,12 +277,11 @@ impl Checker {
             current_scope: ScopeID(0),
             scopes: Vec::from([Scope::root()]),
             namespace_stack: FullIdentPath::default(),
-            unresolved_nodes: HashMap::new(),
+            some_nodes_resolve_state_changed: false,
         }
     }
     pub fn try_resolve(ast: &mut AST, pool: &mut NodePool, logger: LoggerRef) -> Ty {
-        let mut checker = Checker::new(logger);
-        let mut unresolved = checker.unresolved_nodes.keys().copied().collect::<Vec<_>>();
+        let mut checker = Checker::new(logger.clone());
         for i in 0.. {
             // todo: allow customizing max loop count via a compiler option
             if i > 1000 {
@@ -297,20 +295,17 @@ impl Checker {
                 )));
                 return Ty::Invalid;
             }
+            // Reset node state marker
+            checker.some_nodes_resolve_state_changed = false;
             if let Some(r) = ast.try_resolve_ref(pool, &mut checker) {
                 return r;
             }
-            if unresolved.into_iter().eq(checker.unresolved_nodes.keys().copied()) {
-                for err in checker.unresolved_nodes.values() {
-                    checker.logger.lock().unwrap().log(Message::new(
-                        Level::Error,
-                        err.msg.clone(),
-                        err.span.as_ref()
-                    ));
-                }
+            // If no nodes' states changed, then we have ended up in an 
+            // infinite unresolvable loop
+            if !checker.some_nodes_resolve_state_changed {
+                pool.release_unresolved(&checker, logger);
                 return Ty::Invalid;
             }
-            unresolved = checker.unresolved_nodes.keys().copied().collect::<Vec<_>>();
             println!("going for another round");
         }
         unreachable!()
@@ -350,11 +345,8 @@ impl Checker {
         self.namespace_stack.pop();
     }
 
-    pub(super) fn mark_unresolved(&mut self, id: NodeID, msg: String, span: ArcSpan) {
-        self.unresolved_nodes.insert(id, UnresolvedData { msg, span });
-    }
-    pub(super) fn mark_resolved(&mut self, id: NodeID) {
-        self.unresolved_nodes.remove(&id);
+    pub fn mark_some_nodes_resolve_state_changed(&mut self) {
+        self.some_nodes_resolve_state_changed = true;
     }
 
     pub fn expect_ty_decided(&self, a: Ty, span: Option<ArcSpan>) -> bool {

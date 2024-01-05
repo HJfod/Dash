@@ -3,7 +3,7 @@ use dash_macros::{ParseNode, ResolveNode};
 use super::{expr::{Expr, IdentPath, ExprList}, token::{lit, kw}};
 use crate::{
     ast::token::delim,
-    checker::{resolve::ResolveNode, coherency::Checker, ty::Ty, path}, parser::parse::NodePool
+    checker::{resolve::ResolveNode, coherency::Checker, ty::Ty, path}, parser::parse::{NodePool, Node}, shared::logger::{Message, Level, LoggerRef}
 };
 
 #[derive(Debug, ParseNode)]
@@ -25,12 +25,21 @@ impl ResolveNode for ItemUseNode {
                 return Some(ent.ty());
             }
         }
-        // let msg_span = match self {
-        //     Self::Ident(i) => (format!("Unknown item {}", i.to_path()), i.span(list)),
-        //     Self::This(kw) => ("'this' is not valid in this scope".into(), kw.span(list)),
-        // };
-        // self.cache().unwrap().set_unresolved(msg_span.0, msg_span.1);
         None
+    }
+    fn log_unresolved_reason(&self, pool: &NodePool, _checker: &Checker, logger: LoggerRef) {
+        match self {
+            Self::Ident(i) => logger.lock().unwrap().log(Message::new(
+                Level::Error,
+                format!("Unknown item {}", i.get(pool).to_path(pool)),
+                i.get(pool).span_or_builtin(pool).as_ref()
+            )),
+            Self::This(kw) => logger.lock().unwrap().log(Message::new(
+                Level::Error,
+                "'this' is not valid in this scope",
+                kw.get(pool).span_or_builtin(pool).as_ref()
+            )),
+        }
     }
 }
 

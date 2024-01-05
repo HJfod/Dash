@@ -4,7 +4,7 @@ use std::sync::Arc;
 use dash_macros::{ParseNode, ResolveNode};
 use crate::{
     parser::{parse::{ParseNode, FatalParseError, RefToNode, NodePool, Node, NodeID, ParseRef}, tokenizer::TokenIterator},
-    shared::src::Src,
+    shared::{src::Src, logger::{Message, Level, LoggerRef}},
     checker::{resolve::{ResolveNode, ResolveRef}, coherency::Checker, ty::Ty}
 };
 use super::{expr::IdentPath, token::op};
@@ -67,10 +67,13 @@ impl ResolveNode for TypeIdentNode {
                 return Some(ty.clone());
             }
         }
-        // self.cache.set_unresolved(
-        //     format!("Unknown type {}", self.name.to_path()),
-        //     self.name.span(pool)
-        // );
         None
+    }
+    fn log_unresolved_reason(&self, pool: &NodePool, _checker: &Checker, logger: LoggerRef) {
+        logger.lock().unwrap().log(Message::new(
+            Level::Error,
+            format!("Unknown type {}", self.name.get(pool).to_path(pool)),
+            self.name.get(pool).span_or_builtin(pool).as_ref()
+        ))
     }
 }

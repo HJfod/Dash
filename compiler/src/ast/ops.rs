@@ -3,7 +3,7 @@ use std::{sync::Arc, collections::HashMap};
 use dash_macros::ParseNode;
 use crate::{
     parser::{parse::{FatalParseError, ParseNodeFn, SeparatedWithTrailing, NodePool, RefToNode, Node, ParseRef, NodeID}, tokenizer::TokenIterator},
-    shared::{src::{Src, ArcSpan}, logger::{Message, Level, Note}},
+    shared::{src::{Src, ArcSpan}, logger::{Message, Level, Note, LoggerRef}},
     checker::{resolve::{ResolveNode, ResolveRef}, coherency::Checker, ty::Ty, path}, ice
 };
 use super::{expr::Expr, token::{op, delim, Ident, punct}};
@@ -245,11 +245,17 @@ impl ResolveNode for UnOpNode {
                 }
             }
         }
-        // self.cache.set_unresolved(
-        //     format!("Cannot use operator '{op}' on type {target}"),
-        //     self.span(pool)
-        // );
         None
+    }
+    fn log_unresolved_reason(&self, pool: &NodePool, _checker: &Checker, logger: LoggerRef) {
+        logger.lock().unwrap().log(Message::new(
+            Level::Error,
+            format!(
+                "Cannot use operator '{}' on type {}",
+                self.op.get(pool).op(), self.target.resolved_ty(pool)
+            ),
+            self.span_or_builtin(pool).as_ref()
+        ))
     }
 }
 
@@ -311,10 +317,18 @@ impl ResolveNode for BinOpNode {
                 }
             }
         }
-        // self.cache.set_unresolved(
-        //     format!("Cannot use operator '{op}' on types {a} and {b}"),
-        //     self.span(pool)
-        // );
         None
+    }
+    fn log_unresolved_reason(&self, pool: &NodePool, _checker: &Checker, logger: LoggerRef) {
+        logger.lock().unwrap().log(Message::new(
+            Level::Error,
+            format!(
+                "Cannot use operator '{}' on types {} and {}",
+                self.op.get(pool).op(),
+                self.lhs.resolved_ty(pool),
+                self.rhs.resolved_ty(pool),
+            ),
+            self.span_or_builtin(pool).as_ref()
+        ))
     }
 }

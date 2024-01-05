@@ -1,6 +1,6 @@
 
 use std::{sync::Arc, marker::PhantomData, cell::RefCell};
-use crate::{shared::src::{Src, ArcSpan}, checker::{resolve::{ResolveRef, ResolveNode}, coherency::Checker, ty::Ty, Ice}};
+use crate::{shared::{src::{Src, ArcSpan}, logger::LoggerRef}, checker::{resolve::{ResolveRef, ResolveNode}, coherency::Checker, ty::Ty, Ice}};
 use super::tokenizer::TokenIterator;
 use as_any::AsAny;
 
@@ -419,8 +419,31 @@ impl<T: IsToken + ResolveNode> IsToken for RefToNode<T> {}
 pub struct NodeID(usize);
 
 struct NodeData {
+    /// The allocated node
     node: Box<dyn ResolveNode>,
+    /// The type this Node resolved into
     ty: Option<Ty>,
+    /// Whether the last call to `try_resolve_node` returned Some or None
+    previous_resolve_state: bool,
+}
+
+impl NodeData {
+    fn new<T: ResolveNode>(node: T) -> Self {
+        Self {
+            node: Box::from(node),
+            ty: None,
+            previous_resolve_state: false,
+        }
+    }
+    fn children_are_resolved_but_this_is_not(&self, pool: &NodePool) -> bool {
+        let mut some_child_is_unresolved = false;
+        for child in self.node.children() {
+            if !child.ids().into_iter().all(|id| pool.get_data(id).previous_resolve_state) {
+                some_child_is_unresolved = true;
+            }
+        }
+        !some_child_is_unresolved && !self.previous_resolve_state
+    }
 }
 
 /// Pool containing all allocated Nodes. There should only be one pool for each 
@@ -439,12 +462,8 @@ impl NodePool {
     }
     /// Add a new Node to this pool. Returns the added node's ID
     pub fn add<N: ResolveNode>(&mut self, t: N) -> NodeID {
-        let t = RefCell::from(NodeData {
-            node: Box::from(t) as Box<dyn ResolveNode>,
-            ty: None,
-        });
         let id = NodeID(self.nodes.len());
-        self.nodes.push(t);
+        self.nodes.push(RefCell::from(NodeData::new(t)));
         id
     }
     fn get(&self, id: NodeID) -> std::cell::Ref<'_, dyn ResolveNode> {
@@ -459,8 +478,8 @@ impl NodePool {
             |e| e.node.as_ref().as_any().downcast_ref().unwrap()
         )
     }
-    fn get_ty(&self, id: NodeID) -> Option<Ty> {
-        self.nodes.get(id.0).unwrap().borrow().ty.clone()
+    fn get_data(&self, id: NodeID) -> std::cell::Ref<'_, NodeData> {
+        self.nodes.get(id.0).unwrap().borrow()
     }
     fn get_mut(&self, id: NodeID) -> std::cell::RefMut<'_, dyn ResolveNode> {
         std::cell::RefMut::map(
@@ -474,11 +493,15 @@ impl NodePool {
             |e| e.node.as_mut().as_any_mut().downcast_mut().unwrap()
         )
     }
-    fn get_ty_mut(&self, id: NodeID) -> std::cell::RefMut<'_, Option<Ty>> {
-        std::cell::RefMut::map(
-            self.nodes.get(id.0).unwrap().borrow_mut(),
-            |e| &mut e.ty
-        )
+    fn get_data_mut(&self, id: NodeID) -> std::cell::RefMut<'_, NodeData> {
+        self.nodes.get(id.0).unwrap().borrow_mut()
+    }
+    pub fn release_unresolved(&self, checker: &Checker, logger: LoggerRef) {
+        for node in &self.nodes {
+            if node.borrow().children_are_resolved_but_this_is_not(self) {
+                node.borrow().node.log_unresolved_reason(self, checker, logger.clone());
+            }
+        }
     }
 }
 
@@ -530,23 +553,30 @@ impl<T: ResolveNode + ParseNode> ParseRef for RefToNode<T> {
 
 impl<T: ResolveNode> ResolveRef for RefToNode<T> {
     fn try_resolve_ref(&self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
-        if let Some(ty) = pool.get_ty(self.0) {
-            return Some(ty);
-        }
-        let mut some_unresolved = false;
-        for child in self.get(pool).children() {
-            if child.try_resolve_ref(pool, checker).is_none() {
-                some_unresolved = true;
+        let result = (|| {
+            if let Some(ty) = pool.get_data(self.0).ty.clone() {
+                return Some(ty);
             }
+            let mut some_unresolved = false;
+            for child in self.get(pool).children() {
+                if child.try_resolve_ref(pool, checker).is_none() {
+                    some_unresolved = true;
+                }
+            }
+            if some_unresolved {
+                return None;
+            }
+            let ty = pool.get_as_mut::<T>(self.0).try_resolve_node(pool, checker)?;
+            pool.get_data_mut(self.0).ty = Some(ty.clone());
+            Some(ty)
+        })();
+        if pool.get_data(self.0).previous_resolve_state != result.is_some() {
+            checker.mark_some_nodes_resolve_state_changed();
         }
-        if some_unresolved {
-            return None;
-        }
-        let ty = pool.get_as_mut::<T>(self.0).try_resolve_node(pool, checker)?;
-        *pool.get_ty_mut(self.0) = Some(ty.clone());
-        Some(ty)
+        pool.get_data_mut(self.0).previous_resolve_state = result.is_some();
+        result
     }
     fn resolved_ty(&self, pool: &NodePool) -> Ty {
-        pool.get_ty(self.0).ice("resolved_ty called on an unresolved node")
+        pool.get_data(self.0).ty.clone().ice("resolved_ty called on an unresolved node")
     }
 }
