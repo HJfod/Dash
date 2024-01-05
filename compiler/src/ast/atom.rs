@@ -14,11 +14,11 @@ pub enum ItemUseNode {
 }
 
 impl ResolveNode for ItemUseNode {
-    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
         for scope in checker.scopes() {
             if let Some(ent) = scope.entities().find(
                 &match self {
-                    Self::Ident(i) => i.get(list).as_ref().to_path(list),
+                    Self::Ident(i) => i.get(pool).to_path(pool),
                     Self::This(_) => path::IdentPath::new([path::Ident::from("this")], false)
                 }
             ) {

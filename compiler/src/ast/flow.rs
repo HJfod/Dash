@@ -1,8 +1,8 @@
 
 use dash_macros::{ParseNode, ResolveNode};
 use crate::{
-    parser::parse::{Separated, SeparatedWithTrailing, ParseNode, Node, NodePool},
-    checker::{resolve::ResolveNode, ty::Ty, coherency::Checker}
+    parser::parse::{Separated, SeparatedWithTrailing, Node, NodePool},
+    checker::{resolve::{ResolveNode, ResolveRef}, ty::Ty, coherency::Checker}
 };
 use super::{token::{kw, delim, punct}, expr::{Expr, ExprList, IdentComponent}};
 
@@ -15,17 +15,12 @@ pub struct IfNode {
 }
 
 impl ResolveNode for IfNode {
-    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
-        let cond = self.cond.try_resolve(list, checker)?;
-        let truthy = self.truthy.try_resolve(list, checker)?;
-        let falsy = if let Some((_, e)) = &mut self.falsy {
-            e.try_resolve(list, checker)?
-        }
-        else {
-            Ty::Invalid
-        };
-        checker.expect_ty_eq(cond, Ty::Bool, self.cond.get(list).as_ref().span(list));
-        checker.expect_ty_eq(truthy, falsy, self.span(list)).into()
+    fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+        let cond = self.cond.resolved_ty(pool);
+        let truthy = self.truthy.resolved_ty(pool);
+        let falsy = self.falsy.map(|(_, e)| e.resolved_ty(pool)).unwrap_or(Ty::Invalid);
+        checker.expect_ty_eq(cond, Ty::Bool, self.cond.get(pool).span(pool));
+        checker.expect_ty_eq(truthy, falsy, self.span(pool)).into()
     }
 }
 
@@ -33,7 +28,7 @@ impl ResolveNode for IfNode {
 #[parse(expected = "block or if statement")]
 pub enum ElseNode {
     Else(delim::Braced<ExprList>),
-    ElseIf(Box<If>),
+    ElseIf(If),
 }
 
 #[derive(Debug, ParseNode)]
@@ -43,7 +38,7 @@ pub struct ReturnNode {
 }
 
 impl ResolveNode for ReturnNode {
-    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
         todo!()
     }
 }
@@ -55,10 +50,22 @@ enum UsingComponentNode {
     Single(IdentComponent),
 }
 
+impl ResolveNode for UsingComponentNode {
+    fn try_resolve_node(&mut self, _: &NodePool, _: &mut Checker) -> Option<Ty> {
+        Some(Ty::Invalid)
+    }
+}
+
 #[derive(Debug, ParseNode)]
 struct UsingPathNode {
     absolute: Option<punct::Namespace>,
     path: Separated<UsingComponent, punct::Namespace>,
+}
+
+impl ResolveNode for UsingPathNode {
+    fn try_resolve_node(&mut self, _: &NodePool, _: &mut Checker) -> Option<Ty> {
+        Some(Ty::Invalid)
+    }
 }
 
 #[derive(Debug, ParseNode)]
@@ -68,7 +75,7 @@ pub struct UsingNode {
 }
 
 impl ResolveNode for UsingNode {
-    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
         todo!()
     }
 }
@@ -78,5 +85,5 @@ impl ResolveNode for UsingNode {
 pub enum FlowNode {
     If(If),
     Return(Return),
-    UsingNode(UsingNode),
+    Using(Using),
 }

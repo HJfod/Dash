@@ -6,7 +6,7 @@ use crate::ast::token::op;
 use super::ty::Ty;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) enum Ident {
+pub enum Ident {
     Name(String),
     Decorator(String),
     UnOp(op::UnaryOp, Ty),
@@ -42,7 +42,7 @@ impl Display for Ident {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct IdentPath {
+pub struct IdentPath {
     components: Vec<Ident>,
     absolute: bool,
 }
@@ -83,7 +83,7 @@ impl Display for IdentPath {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct FullIdentPath {
+pub struct FullIdentPath {
     components: Vec<Ident>,
 }
 

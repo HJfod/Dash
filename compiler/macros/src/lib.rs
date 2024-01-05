@@ -148,6 +148,8 @@ struct TokenArgs {
     value_is_token_tree: bool,
     #[darling(default)]
     include_raw: bool,
+    #[darling(default)]
+    no_default_resolve: bool,
 }
 
 #[proc_macro_attribute]
@@ -239,17 +241,31 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
             Default::default()
         },
         Some(quote! {
-            fn span(&self, list: &crate::parser::parse::NodePool) -> Option<crate::shared::src::ArcSpan> {
+            fn span(&self, _: &crate::parser::parse::NodePool) -> Option<crate::shared::src::ArcSpan> {
                 Some(self.span.clone())
             }
         })
     ).into();
     let name = target.ident;
     let (impl_generics, ty_generics, where_clause) = target.generics.split_for_impl();
+    let resolve_node = (!args.no_default_resolve).then(|| 
+        quote! {
+            impl #impl_generics crate::checker::resolve::ResolveNode for #name #ty_generics #where_clause {
+                fn try_resolve_node(
+                    &mut self,
+                    _: &crate::parser::parse::NodePool,
+                    _: &mut crate::checker::coherency::Checker
+                ) -> Option<crate::checker::ty::Ty> {
+                    Some(crate::checker::ty::Ty::Invalid)
+                }
+            }
+        }
+    );
     quote! {
         #[derive(Debug)]
         #r
         impl #impl_generics crate::parser::parse::IsToken for #name #ty_generics #where_clause {}
+        #resolve_node
     }.into()
 }
 
@@ -370,13 +386,13 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
                 parse_impl.extend(quote! {
                     #i: crate::parser::parse::ParseRef::parse_ref(pool, src.clone(), tokenizer)?,
                 });
-                children_impl.extend(quote! { self.#i.ids(), });
+                children_impl.extend(quote! { .chain(self.#i.ids()) });
             }
             else {
                 parse_impl.extend(quote! {
                     crate::parser::parse::ParseRef::parse_ref(pool, src.clone(), tokenizer)?,
                 });
-                children_impl.extend(quote! { self.#field_ix.ids(), });
+                children_impl.extend(quote! { .chain(self.#field_ix.ids()) });
             }
             if peek_ix < peek_count {
                 // if we are peeking more than 1 member, all but last must be 
@@ -424,13 +440,15 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
             }
         },
         quote! {
+            use crate::parser::parse::ParseRef;
             #peek_checks
             let mut peeked = 0;
             #peek_impl
             peeked == #peek_count
         },
         quote! {
-            vec![#children_impl]
+            use crate::parser::parse::Ref;
+            std::iter::empty() #children_impl .collect()
         }
     )
 }
@@ -607,7 +625,7 @@ impl ToTokens for ResolveReceiver {
             impl #impl_generics crate::checker::resolve::ResolveNode for #name #ty_generics #where_clause {
                 fn try_resolve_node(
                     &mut self,
-                    pool: &mut crate::parser::parse::NodePool,
+                    pool: &crate::parser::parse::NodePool,
                     checker: &mut crate::checker::coherency::Checker
                 ) -> Option<crate::checker::ty::Ty> {
                     #try_resolve

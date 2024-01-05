@@ -50,18 +50,18 @@ fn main() {
     if args.no_ast {
         return;
     }
-    let mut node_list = NodePool::new();
-    let mut ast_pool = ASTPool::parse_src_pool(&mut node_list, &src_pool, logger.clone());
+    let mut node_pool = NodePool::new();
+    let mut ast_pool = ASTPool::parse_src_pool(&mut node_pool, &src_pool, logger.clone());
 
     if args.debug_ast {
         for ast in &ast_pool {
-            println!("AST for {}", ast.span_or_builtin(&node_list).0);
+            println!("AST for {}", ast.get(&node_pool).span_or_builtin(&node_pool).0);
             println!("{ast:#?}");
         }
     }
 
     for ast in &mut ast_pool {
-        check_coherency(ast, &mut node_list, logger.clone());
+        check_coherency(ast, &mut node_pool, logger.clone());
     }
 
     let ref_logger = logger.lock().unwrap();

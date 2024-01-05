@@ -1,11 +1,11 @@
 
 use std::sync::Arc;
 
-use dash_macros::{ParseNode, Resolve};
+use dash_macros::{ParseNode, ResolveNode};
 use crate::{
-    parser::{parse::{ParseNode, FatalParseError, calculate_span, RefToNode, NodePool, Node, Ref, NodeID, ParseRef}, tokenizer::TokenIterator},
-    shared::src::{Src, ArcSpan},
-    checker::{resolve::ResolveNode, coherency::Checker, ty::Ty}
+    parser::{parse::{ParseNode, FatalParseError, RefToNode, NodePool, Node, Ref, NodeID, ParseRef}, tokenizer::TokenIterator},
+    shared::src::Src,
+    checker::{resolve::{ResolveNode, ResolveRef}, coherency::Checker, ty::Ty}
 };
 use super::{expr::IdentPath, token::op};
 
@@ -29,9 +29,9 @@ impl ParseNode for TypeExprNode {
     fn parse_node(pool: &mut NodePool, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<NodeID, FatalParseError> {
         let mut res = Self::Atom(ParseRef::parse_ref(pool, src.clone(), tokenizer)?);
         while let Some(q) = op::Question::peek_and_parse(pool, src.clone(), tokenizer)? {
-            res = Self::Optional(pool.add(res), q);
+            res = Self::Optional(RefToNode::new(pool, res), q);
         }
-        Ok(res)
+        Ok(pool.add(res))
     }
     fn peek(pos: usize, tokenizer: &TokenIterator) -> bool {
         TypeAtom::peek(pos, tokenizer)
@@ -39,17 +39,17 @@ impl ParseNode for TypeExprNode {
 }
 
 impl ResolveNode for TypeExprNode {
-    fn try_resolve(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_node(&mut self, pool: &NodePool, _: &mut Checker) -> Option<Ty> {
         match self {
             Self::Optional(opt, _) => Some(Ty::Option {
-                ty: Box::new(opt.try_resolve(list, checker)?)
+                ty: Box::new(opt.resolved_ty(pool))
             }),
-            Self::Atom(atom) => atom.try_resolve(list, checker),
+            Self::Atom(atom) => Some(atom.resolved_ty(pool)),
         }
     }
 }
 
-#[derive(Debug, ParseNode, Resolve)]
+#[derive(Debug, ParseNode, ResolveNode)]
 #[parse(expected = "type")]
 pub enum TypeAtomNode {
     TypeIdent(TypeIdent),
@@ -61,15 +61,15 @@ pub struct TypeIdentNode {
 }
 
 impl ResolveNode for TypeIdentNode {
-    fn try_resolve(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
         for scope in checker.scopes() {
-            if let Some(ty) = scope.types().find(&self.name.get(list).as_ref().to_path(list)) {
+            if let Some(ty) = scope.types().find(&self.name.get(pool).to_path(pool)) {
                 return Some(ty.clone());
             }
         }
         // self.cache.set_unresolved(
         //     format!("Unknown type {}", self.name.to_path()),
-        //     self.name.span(list)
+        //     self.name.span(pool)
         // );
         None
     }

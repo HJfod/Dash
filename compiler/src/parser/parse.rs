@@ -1,6 +1,6 @@
 
 use std::{sync::Arc, marker::PhantomData, cell::RefCell};
-use crate::{shared::src::{Src, ArcSpan}, checker::{resolve::{ResolveRef, ResolveNode}, coherency::Checker, ty::Ty}};
+use crate::{shared::src::{Src, ArcSpan}, checker::{resolve::{ResolveRef, ResolveNode}, coherency::Checker, ty::Ty, Ice}};
 use super::tokenizer::TokenIterator;
 use as_any::AsAny;
 
@@ -48,12 +48,12 @@ pub trait Node: AsAny {
     fn children(&self) -> Vec<NodeID>;
 
     /// Get the span of this Node
-    fn span(&self, list: &NodePool) -> Option<ArcSpan> {
-        calculate_span(self.children().into_iter().map(|id| list.get(id).span(list)))
+    fn span(&self, pool: &NodePool) -> Option<ArcSpan> {
+        calculate_span(self.children().into_iter().map(|id| pool.get(id).span(pool)))
     }
 
-    fn span_or_builtin(&self, list: &NodePool) -> ArcSpan {
-        self.span(list).unwrap_or(ArcSpan::builtin())
+    fn span_or_builtin(&self, pool: &NodePool) -> ArcSpan {
+        self.span(pool).unwrap_or(ArcSpan::builtin())
     }
 }
 
@@ -91,7 +91,7 @@ pub trait ParseRef: Ref + Sized {
         tokenizer: &mut TokenIterator
     ) -> Result<Option<Self>, FatalParseError> {
         if Self::peek(0, tokenizer) {
-            Self::parse(list, src, tokenizer).map(Some)
+            Self::parse_ref(list, src, tokenizer).map(Some)
         }
         else {
             Ok(None)
@@ -108,7 +108,7 @@ pub trait ParseRef: Ref + Sized {
         where Tk: Into<TokenIterator<'s>>
     {
         let mut stream = tokenizer.into();
-        let res = Self::parse(list, src.clone(), &mut stream)?;
+        let res = Self::parse_ref(list, src.clone(), &mut stream)?;
         if stream.peek(0).is_some() {
             stream.expected_eof();
             // This is not a fatal parsing error, so we can continue without 
@@ -136,7 +136,7 @@ macro_rules! impl_tuple_parse {
             fn ids(&self) -> Vec<NodeID> {
                 #[allow(unused_parens, non_snake_case)]
                 let ($a $(, $r)*) = &self;
-                vec![$a.ids() $(, $r.ids())*]
+                $a.ids().into_iter() $(.chain($r.ids()))* .collect()
             }
         }
 
@@ -213,7 +213,7 @@ impl<T: ParseRef> ParseRef for Option<T> {
 
 impl<T: Ref> Ref for Vec<T> {
     fn ids(&self) -> Vec<NodeID> {
-        self.iter().map(|n| n.ids()).collect()
+        self.iter().flat_map(|n| n.ids()).collect()
     }
 }
 
@@ -230,6 +230,21 @@ impl<T: ParseRef> ParseRef for Vec<T> {
     }
 }
 
+impl<T: ResolveRef> ResolveRef for Vec<T> {
+    fn try_resolve_ref(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+        let mut some_unresolved = false;
+        for item in self.iter_mut() {
+            if item.try_resolve_ref(pool, checker).is_none() {
+                some_unresolved = true;
+            }
+        }
+        (!some_unresolved).then_some(Ty::Invalid)
+    }
+    fn resolved_ty(&self, _: &NodePool) -> Ty {
+        Ty::Invalid
+    }
+}
+
 // todo: Separated and SeparatedWithTrailing could attempt recovery via just 
 // consuming tokens until their separator is encountered
 
@@ -243,9 +258,9 @@ impl<T: Ref, S: Ref> Separated<T, S> {
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.items.iter()
     }
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
-        self.items.iter_mut()
-    }
+    // pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
+    //     self.items.iter_mut()
+    // }
 }
 
 impl<T: Ref, S: Ref> Ref for Separated<T, S> {
@@ -258,12 +273,21 @@ impl<T: ParseRef, S: ParseRef> ParseRef for Separated<T, S> {
     fn parse_ref(pool: &mut NodePool, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError> {
         let mut items = Vec::from([T::parse_ref(pool, src.clone(), tokenizer)?]);
         while S::peek_and_parse(pool, src.clone(), tokenizer)?.is_some() {
-            items.push(T::parse(pool, src.clone(), tokenizer)?);
+            items.push(T::parse_ref(pool, src.clone(), tokenizer)?);
         }
         Ok(Self { items, _phantom: PhantomData })
     }
     fn peek(pos: usize, tokenizer: &TokenIterator) -> bool {
         T::peek(pos, tokenizer)
+    }
+}
+
+impl<T: ResolveRef, S: Ref> ResolveRef for Separated<T, S> {
+    fn try_resolve_ref(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+        self.items.try_resolve_ref(pool, checker)
+    }
+    fn resolved_ty(&self, _: &NodePool) -> Ty {
+        Ty::Invalid
     }
 }
 
@@ -278,16 +302,16 @@ impl<T: Ref, S: Ref> SeparatedWithTrailing<T, S> {
     pub fn iter(&self) -> std::slice::Iter<'_, T> {
         self.items.iter()
     }
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
-        self.items.iter_mut()
-    }
+    // pub fn iter_mut(&mut self) -> std::slice::IterMut<'_, T> {
+    //     self.items.iter_mut()
+    // }
 }
 
 impl<T: Ref, S: Ref> Ref for SeparatedWithTrailing<T, S> {
     fn ids(&self) -> Vec<NodeID> {
-        let mut items = self.items.ids();
-        items.extend(self.trailing.map(|c| c.id()));
-        items
+        self.items.ids().into_iter()
+            .chain(self.trailing.as_ref().map(|c| c.ids()).unwrap_or_default())
+            .collect()
     }
 }
 
@@ -308,6 +332,15 @@ impl<T: ParseRef, S: ParseRef> ParseRef for SeparatedWithTrailing<T, S> {
     }
     fn peek(pos: usize, tokenizer: &TokenIterator) -> bool {
         T::peek(pos, tokenizer)
+    }
+}
+
+impl<T: ResolveRef + ParseRef, S: Ref> ResolveRef for SeparatedWithTrailing<T, S> {
+    fn try_resolve_ref(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+        self.items.try_resolve_ref(pool, checker)
+    }
+    fn resolved_ty(&self, _: &NodePool) -> Ty {
+        Ty::Invalid
     }
 }
 
@@ -332,19 +365,28 @@ impl<T: ParseRef, M: CompileMessage> ParseRef for DontExpect<T, M> {
     }
 }
 
+impl<T: ParseRef, M: CompileMessage> ResolveRef for DontExpect<T, M> {
+    fn try_resolve_ref(&mut self, _: &NodePool, _: &mut Checker) -> Option<Ty> {
+        Some(Ty::Invalid)
+    }
+    fn resolved_ty(&self, _: &NodePool) -> Ty {
+        Ty::Invalid
+    }
+}
+
 /// Marker trait for structs representing single tokens
 pub trait IsToken {
     fn assert_ty_is_token() {}
 }
 impl<T: IsToken> IsToken for Option<T> {}
-impl<T: IsToken + Node> IsToken for RefToNode<T> {}
+impl<T: IsToken + ResolveNode> IsToken for RefToNode<T> {}
 
 /// An unique ID for a node in the NodePool
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct NodeID(usize);
 
 struct NodeData {
-    node: Box<dyn Node>,
+    node: Box<dyn ResolveNode>,
     ty: Option<Ty>,
 }
 
@@ -363,40 +405,88 @@ impl NodePool {
         Self { nodes: vec![] }
     }
     /// Add a new Node to this pool. Returns the added node's ID
-    pub fn add<N: Node>(&mut self, t: N) -> NodeID {
+    pub fn add<N: ResolveNode>(&mut self, t: N) -> NodeID {
         let t = RefCell::from(NodeData {
-            node: Box::from(t) as Box<dyn Node>,
+            node: Box::from(t) as Box<dyn ResolveNode>,
             ty: None,
         });
         let id = NodeID(self.nodes.len());
         self.nodes.push(t);
         id
     }
-    fn get(&self, id: NodeID) -> &dyn Node {
-        self.nodes.get(id.0).unwrap().borrow().as_ref().node
+    fn get(&self, id: NodeID) -> std::cell::Ref<'_, dyn ResolveNode> {
+        std::cell::Ref::map(
+            self.nodes.get(id.0).unwrap().borrow(),
+            |e| e.node.as_ref()
+        )
     }
-    fn get_as<T: Node>(&self, id: NodeID) -> &T {
-        self.nodes.get(id.0).unwrap().borrow().as_ref().as_any().downcast_ref().unwrap()
+    fn get_as<T: Node>(&self, id: NodeID) -> std::cell::Ref<'_, T> {
+        std::cell::Ref::map(
+            self.nodes.get(id.0).unwrap().borrow(),
+            |e| e.node.as_ref().as_any().downcast_ref().unwrap()
+        )
+    }
+    fn get_ty(&self, id: NodeID) -> Option<Ty> {
+        self.nodes.get(id.0).unwrap().borrow().ty.clone()
+    }
+    fn get_mut(&self, id: NodeID) -> std::cell::RefMut<'_, dyn ResolveNode> {
+        std::cell::RefMut::map(
+            self.nodes.get(id.0).unwrap().borrow_mut(),
+            |e| e.node.as_mut()
+        )
+    }
+    fn get_as_mut<T: ResolveNode>(&self, id: NodeID) -> std::cell::RefMut<'_, T> {
+        std::cell::RefMut::map(
+            self.nodes.get(id.0).unwrap().borrow_mut(),
+            |e| e.node.as_mut().as_any_mut().downcast_mut().unwrap()
+        )
+    }
+    fn get_ty_mut(&self, id: NodeID) -> std::cell::RefMut<'_, Option<Ty>> {
+        std::cell::RefMut::map(
+            self.nodes.get(id.0).unwrap().borrow_mut(),
+            |e| &mut e.ty
+        )
     }
 }
 
 /// A strongly-typed reference to a Node in the pool
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RefToNode<T: Node>(NodeID, PhantomData<T>);
+#[derive(Debug)]
+pub struct RefToNode<T: ResolveNode>(NodeID, PhantomData<T>);
 
-impl<T: Node> RefToNode<T> {
-    pub fn get(&self, list: &NodePool) -> &T {
-        list.get(self.0)
+impl<T: ResolveNode> RefToNode<T> {
+    /// You better know for sure that the ID of Node is the correct one >:(
+    pub fn new_raw(id: NodeID) -> Self {
+        Self(id, PhantomData)
+    }
+    pub fn new(pool: &mut NodePool, item: T) -> Self {
+        Self(pool.add(item), PhantomData)
+    }
+    pub fn get<'a>(&self, pool: &'a NodePool) -> std::cell::Ref<'a, T> {
+        pool.get_as(self.0)
     }
 }
 
-impl<T: Node> Ref for RefToNode<T> {
+impl<T: ResolveNode> Clone for RefToNode<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+impl<T: ResolveNode> Copy for RefToNode<T> {}
+
+impl<T: ResolveNode> PartialEq for RefToNode<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+impl<T: ResolveNode> Eq for RefToNode<T> {}
+
+impl<T: ResolveNode> Ref for RefToNode<T> {
     fn ids(&self) -> Vec<NodeID> {
         vec![self.0]
     }
 }
 
-impl<T: ParseNode> ParseRef for RefToNode<T> {
+impl<T: ResolveNode + ParseNode> ParseRef for RefToNode<T> {
     fn parse_ref(list: &mut NodePool, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<Self, FatalParseError> {
         Ok(Self(T::parse_node(list, src, tokenizer)?, PhantomData))
     }
@@ -406,15 +496,24 @@ impl<T: ParseNode> ParseRef for RefToNode<T> {
 }
 
 impl<T: ResolveNode> ResolveRef for RefToNode<T> {
-    fn try_resolve_ref(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
-        todo!()
-        // if let Some(cached) = self.cache.clone() {
-        //     return Some(cached);
-        // }
-        // self.cache = list.get::<T>(self.id).as_mut().try_resolve(list, checker);
-        // self.cache.clone()
+    fn try_resolve_ref(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+        if let Some(ty) = pool.get_ty(self.0) {
+            return Some(ty);
+        }
+        let mut some_unresolved = false;
+        for child in self.get(pool).children() {
+            if pool.get_mut(child).try_resolve_node(pool, checker).is_none() {
+                some_unresolved = true;
+            }
+        }
+        if some_unresolved {
+            return None;
+        }
+        let ty = pool.get_as_mut::<T>(self.0).try_resolve_node(pool, checker)?;
+        *pool.get_ty_mut(self.0) = Some(ty.clone());
+        Some(ty)
     }
     fn resolved_ty(&self, pool: &NodePool) -> Ty {
-        todo!()
+        pool.get_ty(self.0).ice("resolved_ty called on an unresolved node")
     }
 }

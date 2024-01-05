@@ -41,7 +41,7 @@ pub(crate) mod lit {
 
     use crate::{checker::{resolve::ResolveNode, coherency::Checker, ty::Ty}, parser::parse::NodePool};
 
-    #[token(kind = "Keyword", raw = "void")]
+    #[token(kind = "Keyword", raw = "void", no_default_resolve)]
     pub struct Void {}
 
     impl ResolveNode for VoidNode {
@@ -69,7 +69,7 @@ pub(crate) mod lit {
         }
     }
 
-    #[token(kind = "Int(_)")]
+    #[token(kind = "Int(_)", no_default_resolve)]
     pub struct Int {
         value: i64,
     }
@@ -80,7 +80,7 @@ pub(crate) mod lit {
         }
     }
 
-    #[token(kind = "Float(_)")]
+    #[token(kind = "Float(_)", no_default_resolve)]
     pub struct Float {
         value: f64,
     }
@@ -91,7 +91,7 @@ pub(crate) mod lit {
         }
     }
 
-    #[token(kind = "String(_)")]
+    #[token(kind = "String(_)", no_default_resolve)]
     pub struct String {
         value: std::string::String,
     }
@@ -111,9 +111,9 @@ pub(crate) mod punct {
     use crate::{
         shared::{src::Src, logger::{Message, Level}},
         parser::{
-            parse::{ParseNode, FatalParseError, calculate_span, NodePool, Node, NodeID, Ref, ParseRef},
+            parse::{ParseNode, FatalParseError, calculate_span, NodePool, Node, NodeID, Ref, ParseRef, RefToNode},
             tokenizer::TokenIterator
-        }
+        }, checker::{resolve::ResolveNode, coherency::Checker, ty::Ty}
     };
 
     #[token(kind = "Punct", raw = ",")]
@@ -123,23 +123,24 @@ pub(crate) mod punct {
     pub struct Semicolon {}
 
     #[derive(Debug)]
-    pub struct TerminatingSemicolon {
+    pub struct TerminatingSemicolonNode {
         semicolons: Vec<Semicolon>,
     }
+    pub type TerminatingSemicolon = RefToNode<TerminatingSemicolonNode>;
 
-    impl TerminatingSemicolon {
+    impl TerminatingSemicolonNode {
         pub fn has_semicolon(&self) -> bool {
             !self.semicolons.is_empty()
         }
     }
 
-    impl Node for TerminatingSemicolon {
+    impl Node for TerminatingSemicolonNode {
         fn children(&self) -> Vec<NodeID> {
-            self.semicolons.iter().map(|s| s.ids()).flatten().collect()
+            self.semicolons.iter().flat_map(|s| s.ids()).collect()
         }
     }
 
-    impl ParseNode for TerminatingSemicolon {
+    impl ParseNode for TerminatingSemicolonNode {
         fn parse_node(pool: &mut NodePool, src: Arc<Src>, tokenizer: &mut TokenIterator) -> Result<NodeID, FatalParseError> {
             let last_was_braced = tokenizer.last_was_braced();
             let mut found = vec![];
@@ -179,6 +180,12 @@ pub(crate) mod punct {
         }
     }
 
+    impl ResolveNode for TerminatingSemicolonNode {
+        fn try_resolve_node(&mut self, _: &NodePool, _: &mut Checker) -> Option<Ty> {
+            Some(Ty::Invalid)
+        }
+    }
+
     #[token(kind = "Punct", raw = ":")]
     pub struct Colon {}
 
@@ -202,6 +209,10 @@ pub(crate) mod op {
     use dash_macros::{token, ParseNode};
     use crate::parser::parse::ParseRef;
     use crate::parser::tokenizer::TokenIterator;
+    use crate::checker::resolve::ResolveNode;
+    use crate::NodePool;
+    use crate::Checker;
+    use crate::Ty;
 
     macro_rules! declare_ops {
         ($group: ident {
@@ -241,6 +252,15 @@ pub(crate) mod op {
                 #[parse(expected = "operator")]
                 pub enum item_name {
                     $($name($name)),*
+                }
+                impl ResolveNode for item_name {
+                    fn try_resolve_node(
+                        &mut self,
+                        _: &NodePool,
+                        _: &mut Checker
+                    ) -> Option<Ty> {
+                        Some(Ty::Invalid)
+                    }
                 }
                 impl item_name {
                     concat_idents::concat_idents!(op_name = $group, Op {
@@ -310,39 +330,39 @@ pub(crate) mod delim {
     use dash_macros::{token, ParseNode};
 
     use crate::{
-        parser::parse::{ParseNode, NodePool, ParseRef},
+        parser::parse::{NodePool, ParseRef},
         checker::{resolve::{ResolveNode, ResolveRef}, coherency::Checker, ty::Ty}
     };
 
-    #[token(kind = "Parentheses(_)", value_is_token_tree)]
-    pub struct Parenthesized<T: ParseRef> {
+    #[token(kind = "Parentheses(_)", value_is_token_tree, no_default_resolve)]
+    pub struct Parenthesized<T: ParseRef + ResolveRef> {
         pub value: T,
     }
 
     impl<T: ResolveRef + ParseRef> ResolveNode for ParenthesizedNode<T> {
-        fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+        fn try_resolve_node(&mut self, pool: &NodePool, _: &mut Checker) -> Option<Ty> {
             Some(self.value.resolved_ty(pool))
         }
     }
      
-    #[token(kind = "Brackets(_)", value_is_token_tree)]
-    pub struct Bracketed<T: ParseRef> {
+    #[token(kind = "Brackets(_)", value_is_token_tree, no_default_resolve)]
+    pub struct Bracketed<T: ParseRef + ResolveRef> {
         pub value: T,
     }
 
     impl<T: ResolveRef + ParseRef> ResolveNode for BracketedNode<T> {
-        fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+        fn try_resolve_node(&mut self, pool: &NodePool, _: &mut Checker) -> Option<Ty> {
             Some(self.value.resolved_ty(pool))
         }
     }
 
-    #[token(kind = "Braces(_)", value_is_token_tree)]
-    pub struct Braced<T: ParseRef> {
+    #[token(kind = "Braces(_)", value_is_token_tree, no_default_resolve)]
+    pub struct Braced<T: ParseRef + ResolveRef> {
         pub value: T,
     }
 
     impl<T: ResolveRef + ParseRef> ResolveNode for BracedNode<T> {
-        fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+        fn try_resolve_node(&mut self, pool: &NodePool, _: &mut Checker) -> Option<Ty> {
             Some(self.value.resolved_ty(pool))
         }
     }

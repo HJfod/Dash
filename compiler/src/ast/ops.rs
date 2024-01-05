@@ -2,9 +2,9 @@
 use std::{sync::Arc, collections::HashMap};
 use dash_macros::ParseNode;
 use crate::{
-    parser::{parse::{ParseNode, FatalParseError, ParseNodeFn, SeparatedWithTrailing, NodePool, RefToNode, Node, ParseRef, NodeID, Ref}, tokenizer::TokenIterator},
+    parser::{parse::{FatalParseError, ParseNodeFn, SeparatedWithTrailing, NodePool, RefToNode, Node, ParseRef, NodeID, Ref}, tokenizer::TokenIterator},
     shared::{src::{Src, ArcSpan}, logger::{Message, Level, Note}},
-    checker::{resolve::ResolveNode, coherency::Checker, ty::Ty, path}, ice
+    checker::{resolve::{ResolveNode, ResolveRef}, coherency::Checker, ty::Ty, path}, ice
 };
 use super::{expr::Expr, token::{op, delim, Ident, punct}};
 
@@ -13,6 +13,12 @@ use super::{expr::Expr, token::{op, delim, Ident, punct}};
 pub enum ArgNode {
     Named(Ident, #[parse(peek_point)] punct::Colon, Expr),
     Unnamed(Expr),
+}
+
+impl ResolveNode for ArgNode {
+    fn try_resolve_node(&mut self, _: &NodePool, _: &mut Checker) -> Option<Ty> {
+        Some(Ty::Invalid)
+    }
 }
 
 #[derive(Debug)]
@@ -25,38 +31,39 @@ pub type Call = RefToNode<CallNode>;
 impl CallNode {
     pub(crate) fn parse_with(
         target: Expr,
-        list: &mut NodePool,
+        pool: &mut NodePool,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator
-    ) -> Result<Call, FatalParseError> {
+    ) -> Result<NodeID, FatalParseError> {
         let res = Self {
             target,
-            args: ParseRef::parse_ref(list, src, tokenizer)?,
+            args: ParseRef::parse_ref(pool, src, tokenizer)?,
         };
-        Ok(list.add(res))
+        Ok(pool.add(res))
     }
 }
 
 impl Node for CallNode {
     fn children(&self) -> Vec<NodeID> {
-        self.target.ids().into_iter().chain(self.args.ids().into_iter()).collect()
+        self.target.ids().into_iter()
+            .chain(self.args.ids())
+            .collect()
     }
 }
 
 impl ResolveNode for CallNode {
-    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
-        let target = self.target.try_resolve(list, checker)?;
-        let args = self.args.get(list).as_mut().value.iter_mut()
-            .map(|arg| match arg.get(list).as_mut() {
+    fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+        let target = self.target.resolved_ty(pool);
+        let args = self.args.get(pool).value.iter()
+            .map(|arg| match *arg.get(pool) {
                 ArgNode::Unnamed(value) => {
-                    (None, value.try_resolve(list, checker), value.span(list))
+                    (None, value.resolved_ty(pool), value.get(pool).span(pool))
                 }
                 ArgNode::Named(name, _, value) => {
-                    (Some(name.get(list).as_ref().to_string()), value.try_resolve(list, checker), value.span(list))
+                    (Some(name.get(pool).to_string()), value.resolved_ty(pool), value.get(pool).span(pool))
                 }
             })
-            .map(|(name, expr, span)| expr.map(|e| (name, e, span)))
-            .collect::<Option<Vec<_>>>()?;
+            .collect::<Vec<_>>();
         match target {
             Ty::Function { params, ret_ty } => {
                 let mut arg_ix = 0usize;
@@ -103,7 +110,7 @@ impl ResolveNode for CallNode {
                                     have been passed",
                                     span.clone().unwrap_or(ArcSpan::builtin()).as_ref()
                                 ).note(Note::hint(
-                                    "Move this named argument to the end of the arguments list",
+                                    "Move this named argument to the end of the arguments pool",
                                     e_span.unwrap_or(ArcSpan::builtin()).as_ref()
                                 )));
                             }
@@ -134,7 +141,7 @@ impl ResolveNode for CallNode {
                     checker.logger().lock().unwrap().log(Message::new(
                         Level::Error,
                         "Missing arguments",
-                        self.span(list).unwrap_or(ArcSpan::builtin()).as_ref()
+                        self.span(pool).unwrap_or(ArcSpan::builtin()).as_ref()
                     ).note(Note::new(format!(
                         "Function has {} parameters, but only {} were passed",
                         params.len(), args.len()
@@ -146,7 +153,7 @@ impl ResolveNode for CallNode {
                 checker.logger().lock().unwrap().log(Message::new(
                     Level::Error,
                     format!("Cannot call an expression of type {other}"),
-                    self.span(list).unwrap_or(ArcSpan::builtin()).as_ref()
+                    self.span(pool).unwrap_or(ArcSpan::builtin()).as_ref()
                 ));
                 Some(Ty::Invalid)
             }
@@ -165,16 +172,16 @@ pub type Index = RefToNode<IndexNode>;
 impl IndexNode {
     pub(crate) fn parse_with(
         target: Expr,
-        list: &mut NodePool,
+        pool: &mut NodePool,
         src: Arc<Src>,
         tokenizer: &mut TokenIterator
-    ) -> Result<Index, FatalParseError> {
+    ) -> Result<NodeID, FatalParseError> {
         let res = Self {
             target,
-            index: ParseRef::parse_ref(list, src.clone(), tokenizer)?,
-            trailing_comma: ParseRef::parse_ref(list, src.clone(), tokenizer)?,
+            index: ParseRef::parse_ref(pool, src.clone(), tokenizer)?,
+            trailing_comma: ParseRef::parse_ref(pool, src.clone(), tokenizer)?,
         };
-        Ok(list.add(res))
+        Ok(pool.add(res))
     }
 }
 
@@ -188,7 +195,7 @@ impl Node for IndexNode {
 }
 
 impl ResolveNode for IndexNode {
-    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
         todo!()
     }
 }
@@ -201,19 +208,19 @@ pub struct UnOpNode {
 pub type UnOp = RefToNode<UnOpNode>;
 
 impl UnOpNode {
-    pub(crate) fn parse_with<'s, F>(
+    pub(crate) fn parse_with<F>(
         mut target: F,
-        list: &mut NodePool,
+        pool: &mut NodePool,
         src: Arc<Src>,
-        tokenizer: &mut TokenIterator<'s>
-    ) -> Result<UnOp, FatalParseError>
+        tokenizer: &mut TokenIterator
+    ) -> Result<NodeID, FatalParseError>
         where F: ParseNodeFn
     {
         let res = Self {
-            op: ParseRef::parse_ref(list, src.clone(), tokenizer)?,
-            target: target(list, src, tokenizer)?,
+            op: ParseRef::parse_ref(pool, src.clone(), tokenizer)?,
+            target: RefToNode::new_raw(target(pool, src, tokenizer)?),
         };
-        Ok(list.add(res))
+        Ok(pool.add(res))
     }
 }
 
@@ -226,14 +233,14 @@ impl Node for UnOpNode {
 }
 
 impl ResolveNode for UnOpNode {
-    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
-        let target = self.target.try_resolve(list, checker)?;
-        let op = self.op.get(list);
+    fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+        let target = self.target.resolved_ty(pool);
+        let op = self.op.get(pool);
         if target.is_unreal() {
             return Some(Ty::Invalid);
         }
         for scope in checker.scopes() {
-            let name = path::IdentPath::new([path::Ident::UnOp(op.as_ref().op(), target.clone())], false);
+            let name = path::IdentPath::new([path::Ident::UnOp(op.op(), target.clone())], false);
             if let Some(fun) = scope.entities().find(&name) {
                 match fun.ty() {
                     Ty::Function { params: _, ret_ty } => return Some(ret_ty.as_ref().clone()),
@@ -247,7 +254,7 @@ impl ResolveNode for UnOpNode {
         }
         // self.cache.set_unresolved(
         //     format!("Cannot use operator '{op}' on type {target}"),
-        //     self.span(list)
+        //     self.span(pool)
         // );
         None
     }
@@ -262,21 +269,21 @@ pub struct BinOpNode {
 pub type BinOp = RefToNode<BinOpNode>;
 
 impl BinOpNode {
-    pub(crate) fn parse_with<'s, F>(
+    pub(crate) fn parse_with<F>(
         lhs: Expr,
         mut rhs: F,
-        list: &mut NodePool,
+        pool: &mut NodePool,
         src: Arc<Src>,
-        tokenizer: &mut TokenIterator<'s>
-    ) -> Result<BinOp, FatalParseError>
+        tokenizer: &mut TokenIterator
+    ) -> Result<NodeID, FatalParseError>
         where F: ParseNodeFn
     {
         let res = Self {
             lhs,
-            op: ParseRef::parse_ref(list, src.clone(), tokenizer)?,
-            rhs: rhs(list, src, tokenizer)?,
+            op: ParseRef::parse_ref(pool, src.clone(), tokenizer)?,
+            rhs: RefToNode::new_raw(rhs(pool, src, tokenizer)?),
         };
-        Ok(list.add(res))
+        Ok(pool.add(res))
     }
 }
 
@@ -285,14 +292,15 @@ impl Node for BinOpNode {
         self.lhs.ids().into_iter()
             .chain(self.op.ids())
             .chain(self.rhs.ids())
+            .collect()
     }
 }
 
 impl ResolveNode for BinOpNode {
-    fn try_resolve_node(&mut self, list: &mut NodePool, checker: &mut Checker) -> Option<Ty> {
-        let a = self.lhs.try_resolve(list, checker)?;
-        let b = self.rhs.try_resolve(list, checker)?;
-        let op = self.op.get(list);
+    fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+        let a = self.lhs.resolved_ty(pool);
+        let b = self.rhs.resolved_ty(pool);
+        let op = self.op.get(pool);
         if a.is_unreal() || b.is_unreal() {
             return Some(Ty::Invalid);
         }
@@ -300,7 +308,7 @@ impl ResolveNode for BinOpNode {
             // todo: handle symmetrive ops, like a + b <=> b + a
             // todo: synthesize ops, like a == b <=> a != b
             let name = path::IdentPath::new([
-                path::Ident::BinOp(a.clone(), op.as_ref().op(), b.clone())
+                path::Ident::BinOp(a.clone(), op.op(), b.clone())
             ], false);
             if let Some(fun) = scope.entities().find(&name) {
                 match fun.ty() {
@@ -315,7 +323,7 @@ impl ResolveNode for BinOpNode {
         }
         // self.cache.set_unresolved(
         //     format!("Cannot use operator '{op}' on types {a} and {b}"),
-        //     self.span(list)
+        //     self.span(pool)
         // );
         None
     }

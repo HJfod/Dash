@@ -1,7 +1,7 @@
 
 use std::collections::HashMap;
-use crate::{shared::{logger::{LoggerRef, Message, Level, Note}, src::{ArcSpan, Span}}, ast::token::op, parser::parse::{NodeID, NodePool}};
-use super::{ty::Ty, path::{FullIdentPath, IdentPath, Ident}, entity::Entity, pool::AST, resolve::Resolve};
+use crate::{shared::{logger::{LoggerRef, Message, Level, Note}, src::{ArcSpan, Span}}, ast::token::op, parser::parse::{NodeID, NodePool}, checker::resolve::ResolveRef};
+use super::{ty::Ty, path::{FullIdentPath, IdentPath, Ident}, entity::Entity, pool::AST};
 
 #[derive(Debug)]
 struct ItemSpace<T> {
@@ -63,7 +63,7 @@ impl<T> Default for ItemSpace<T> {
 }
 
 #[derive(Debug)]
-pub(crate) struct ItemSpaceWithStack<'s, T> {
+pub struct ItemSpaceWithStack<'s, T> {
     space: &'s ItemSpace<T>,
     stack: &'s FullIdentPath,
 }
@@ -76,7 +76,7 @@ impl<'s, T> ItemSpaceWithStack<'s, T> {
 }
 
 #[derive(Debug)]
-pub(crate) struct ItemSpaceWithStackMut<'s, T> {
+pub struct ItemSpaceWithStackMut<'s, T> {
     space: &'s mut ItemSpace<T>,
     stack: &'s FullIdentPath,
 }
@@ -184,7 +184,7 @@ impl Scope {
 }
 
 #[derive(Debug)]
-pub(crate) struct ScopeWithStack<'s> {
+pub struct ScopeWithStack<'s> {
     scope: &'s Scope,
     stack: &'s FullIdentPath,
 }
@@ -202,7 +202,7 @@ impl<'s> ScopeWithStack<'s> {
 /// `ItemSpaceWithStack::try_push`, since it needs to know what the current 
 /// namespace is to figure out the fully qualified name
 #[derive(Debug)]
-pub(crate) struct ScopeWithStackMut<'s> {
+pub struct ScopeWithStackMut<'s> {
     scope: &'s mut Scope,
     stack: &'s FullIdentPath,
 }
@@ -223,7 +223,7 @@ impl<'s> ScopeWithStackMut<'s> {
     }
 }
 
-pub(crate) struct LeaveScope {
+pub struct LeaveScope {
     checker: *mut Checker,
 }
 
@@ -234,7 +234,7 @@ impl Drop for LeaveScope {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct ScopeID(usize);
+pub struct ScopeID(usize);
 
 #[derive(PartialEq, Eq)]
 struct UnresolvedData {
@@ -242,7 +242,7 @@ struct UnresolvedData {
     span: ArcSpan,
 }
 
-pub(crate) struct ScopeIter<'s> {
+pub struct ScopeIter<'s> {
     current: Option<ScopeID>,
     scopes: &'s Vec<Scope>,
     stack: &'s FullIdentPath,
@@ -263,7 +263,7 @@ impl<'s> Iterator for ScopeIter<'s> {
     }
 }
 
-pub(crate) struct Checker {
+pub struct Checker {
     logger: LoggerRef,
     current_scope: ScopeID,
     scopes: Vec<Scope>,
@@ -281,7 +281,7 @@ impl Checker {
             unresolved_nodes: HashMap::new(),
         }
     }
-    pub fn try_resolve(ast: &mut AST, list: &mut NodePool, logger: LoggerRef) -> Ty {
+    pub fn try_resolve(ast: &mut AST, pool: &mut NodePool, logger: LoggerRef) -> Ty {
         let mut checker = Checker::new(logger);
         let mut unresolved = checker.unresolved_nodes.keys().copied().collect::<Vec<_>>();
         for i in 0.. {
@@ -297,7 +297,7 @@ impl Checker {
                 )));
                 return Ty::Invalid;
             }
-            if let Some(r) = ast.try_resolve(list, &mut checker) {
+            if let Some(r) = ast.try_resolve_ref(pool, &mut checker) {
                 return r;
             }
             if unresolved.into_iter().eq(checker.unresolved_nodes.keys().copied()) {
