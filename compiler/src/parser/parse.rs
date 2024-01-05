@@ -1,6 +1,6 @@
 
 use std::{sync::Arc, marker::PhantomData, cell::RefCell};
-use crate::{shared::{src::{Src, ArcSpan}, logger::LoggerRef}, checker::{resolve::{ResolveRef, ResolveNode}, coherency::Checker, ty::Ty, Ice}};
+use crate::{shared::{src::{Src, ArcSpan}, logger::{LoggerRef, Message, Level, Note}}, checker::{resolve::{ResolveRef, ResolveNode}, coherency::Checker, ty::Ty}};
 use super::tokenizer::TokenIterator;
 use as_any::AsAny;
 
@@ -417,15 +417,6 @@ impl NodeData {
             previous_resolve_state: false,
         }
     }
-    fn children_are_resolved_but_this_is_not(&self, pool: &NodePool) -> bool {
-        let mut some_child_is_unresolved = false;
-        for child in self.node.children() {
-            if !child.ids().into_iter().all(|id| pool.get_data(id).previous_resolve_state) {
-                some_child_is_unresolved = true;
-            }
-        }
-        !some_child_is_unresolved && !self.previous_resolve_state
-    }
 }
 
 /// Pool containing all allocated Nodes. There should only be one pool for each 
@@ -437,6 +428,7 @@ pub struct NodePool {
     nodes: Vec<RefCell<NodeData>>,
 }
 
+#[allow(unused)]
 impl NodePool {
     /// Create a new empty pool
     pub fn new() -> Self {
@@ -480,7 +472,7 @@ impl NodePool {
     }
     pub fn release_unresolved(&self, checker: &Checker, logger: LoggerRef) {
         for node in &self.nodes {
-            if node.borrow().children_are_resolved_but_this_is_not(self) {
+            if !node.borrow().previous_resolve_state {
                 node.borrow().node.log_unresolved_reason(self, checker, logger.clone());
             }
         }
@@ -548,6 +540,19 @@ impl<T: ResolveNode> ResolveRef for RefToNode<T> {
         })();
         if pool.get_data(self.0).previous_resolve_state != result.is_some() {
             checker.mark_some_nodes_resolve_state_changed();
+        }
+        if let Some(nid) = checker.should_warn_about_unreachable_code() {
+            checker.logger().lock().unwrap().log(Message::new(
+                Level::Warning,
+                "Unreachable code detected",
+                self.get(pool).span_or_builtin(pool).as_ref()
+            ).note(Note::new_at(
+                "This expression never results in a value",
+                pool.get(nid).span_or_builtin(pool).as_ref()
+            )));
+        }
+        if result.as_ref().is_some_and(|t| t.is_never()) {
+            checker.encountered_never(self.0);
         }
         pool.get_data_mut(self.0).previous_resolve_state = result.is_some();
         result

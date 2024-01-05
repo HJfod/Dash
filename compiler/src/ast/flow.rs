@@ -39,7 +39,8 @@ pub struct ReturnNode {
 
 impl ResolveNode for ReturnNode {
     fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
-        todo!()
+        let expr = try_resolve_ref!(self.expr, (pool, checker), Some(e) => e);
+        Some(Ty::Never)
     }
 }
 

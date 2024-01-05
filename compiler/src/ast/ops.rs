@@ -249,15 +249,16 @@ impl ResolveNode for UnOpNode {
         None
     }
     fn log_unresolved_reason(&self, pool: &NodePool, _checker: &Checker, logger: LoggerRef) {
-        logger.lock().unwrap().log(Message::new(
-            Level::Error,
-            format!(
-                "Cannot use operator '{}' on type {}",
-                self.op.get(pool).op(),
-                self.target.resolved_ty(pool).unwrap_or(Ty::Invalid)
-            ),
-            self.span_or_builtin(pool).as_ref()
-        ))
+        if let Some(target) = self.target.resolved_ty(pool) {
+            logger.lock().unwrap().log(Message::new(
+                Level::Error,
+                format!(
+                    "Cannot use operator '{}' on type {target}",
+                    self.op.get(pool).op(),
+                ),
+                self.span_or_builtin(pool).as_ref()
+            ))
+        }
     }
 }
 
@@ -322,15 +323,15 @@ impl ResolveNode for BinOpNode {
         None
     }
     fn log_unresolved_reason(&self, pool: &NodePool, _checker: &Checker, logger: LoggerRef) {
-        logger.lock().unwrap().log(Message::new(
-            Level::Error,
-            format!(
-                "Cannot use operator '{}' on types {} and {}",
-                self.op.get(pool).op(),
-                self.lhs.resolved_ty(pool).unwrap_or(Ty::Invalid),
-                self.rhs.resolved_ty(pool).unwrap_or(Ty::Invalid),
-            ),
-            self.span_or_builtin(pool).as_ref()
-        ))
+        if let (Some(lhs), Some(rhs)) = (self.lhs.resolved_ty(pool), self.rhs.resolved_ty(pool)) {
+            logger.lock().unwrap().log(Message::new(
+                Level::Error,
+                format!(
+                    "Cannot use operator '{}' on types {lhs} and {rhs}",
+                    self.op.get(pool).op(),
+                ),
+                self.span_or_builtin(pool).as_ref()
+            ))
+        }
     }
 }

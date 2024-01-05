@@ -1,13 +1,13 @@
 
-let y = 5;
-let x = what(2, 5);
+// let y = 5;
+let x = what(2, 5) + y;
 
 fun what(a: int, b: int) -> int {
     if a > b {
-        // return;
+        return;
     }
     else {
-        // return a - b;
+        return a - b;
     }
 }
 

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     shared::{logger::{LoggerRef, Message, Level, Note}, src::{ArcSpan, Span}},
     ast::token::op,
-    parser::parse::NodePool,
+    parser::parse::{NodePool, NodeID},
     checker::resolve::ResolveRef
 };
 use super::{ty::Ty, path::{FullIdentPath, IdentPath, Ident}, entity::Entity, pool::AST};
@@ -265,6 +265,7 @@ pub struct Checker {
     scopes: Vec<Scope>,
     namespace_stack: FullIdentPath,
     some_nodes_resolve_state_changed: bool,
+    encountered_never: Option<(NodeID, bool)>,
 }
 
 impl Checker {
@@ -275,6 +276,7 @@ impl Checker {
             scopes: Vec::from([Scope::root()]),
             namespace_stack: FullIdentPath::default(),
             some_nodes_resolve_state_changed: false,
+            encountered_never: None,
         }
     }
     pub fn try_resolve(ast: &mut AST, pool: &mut NodePool, logger: LoggerRef) -> Ty {
@@ -343,6 +345,24 @@ impl Checker {
 
     pub fn mark_some_nodes_resolve_state_changed(&mut self) {
         self.some_nodes_resolve_state_changed = true;
+    }
+    pub fn encountered_never_at(&self) -> Option<NodeID> {
+        self.encountered_never.map(|o| o.0)
+    }
+    pub fn encountered_never(&mut self, at: NodeID) {
+        self.encountered_never = Some((at, false));
+    }
+    pub fn clear_encountered_never(&mut self) {
+        self.encountered_never = None;
+    }
+    pub fn should_warn_about_unreachable_code(&mut self) -> Option<NodeID> {
+        if let Some((id, marker)) = &mut self.encountered_never {
+            if !*marker {
+                *marker = true;
+                return Some(*id);
+            }
+        }
+        None
     }
 
     pub fn expect_ty_decided(&self, a: Ty, span: Option<ArcSpan>) -> bool {

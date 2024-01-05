@@ -59,6 +59,10 @@ impl Ty {
         }
     }
 
+    pub fn is_never(&self) -> bool {
+        matches!(self, Ty::Never)
+    }
+
     pub fn is_undecided(&self) -> bool {
         matches!(self, Ty::Undecided(_, _))
     }
