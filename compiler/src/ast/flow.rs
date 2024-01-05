@@ -2,7 +2,7 @@
 use dash_macros::{ParseNode, ResolveNode};
 use crate::{
     parser::parse::{Separated, SeparatedWithTrailing, Node, NodePool},
-    checker::{resolve::{ResolveNode, ResolveRef}, ty::Ty, coherency::Checker}
+    checker::{resolve::{ResolveNode, ResolveRef}, ty::Ty, coherency::Checker}, try_resolve_ref
 };
 use super::{token::{kw, delim, punct}, expr::{Expr, ExprList, IdentComponent}};
 
@@ -16,9 +16,9 @@ pub struct IfNode {
 
 impl ResolveNode for IfNode {
     fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
-        let cond = self.cond.resolved_ty(pool);
-        let truthy = self.truthy.resolved_ty(pool);
-        let falsy = self.falsy.map(|(_, e)| e.resolved_ty(pool)).unwrap_or(Ty::Invalid);
+        let cond = self.cond.try_resolve_ref(pool, checker)?;
+        let truthy = self.truthy.try_resolve_ref(pool, checker)?;
+        let falsy = try_resolve_ref!(self.falsy, (pool, checker), Some((_, e)) => e);
         checker.expect_ty_eq(cond, Ty::Bool, self.cond.get(pool).span(pool));
         checker.expect_ty_eq(truthy, falsy, self.span(pool)).into()
     }

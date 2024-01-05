@@ -51,17 +51,18 @@ impl Node for CallNode {
 
 impl ResolveNode for CallNode {
     fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
-        let target = self.target.resolved_ty(pool);
+        let target = self.target.try_resolve_ref(pool, checker)?;
         let args = self.args.get(pool).value.iter()
             .map(|arg| match *arg.get(pool) {
                 ArgNode::Unnamed(value) => {
-                    (None, value.resolved_ty(pool), value.get(pool).span(pool))
+                    (None, value.try_resolve_ref(pool, checker), value.get(pool).span(pool))
                 }
                 ArgNode::Named(name, _, value) => {
-                    (Some(name.get(pool).to_string()), value.resolved_ty(pool), value.get(pool).span(pool))
+                    (Some(name.get(pool).to_string()), value.try_resolve_ref(pool, checker), value.get(pool).span(pool))
                 }
             })
-            .collect::<Vec<_>>();
+            .map(|(a, e, s)| e.map(|e| (a, e, s)))
+            .collect::<Option<Vec<_>>>()?;
         match target {
             Ty::Function { params, ret_ty } => {
                 let mut arg_ix = 0usize;
@@ -227,7 +228,7 @@ impl Node for UnOpNode {
 
 impl ResolveNode for UnOpNode {
     fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
-        let target = self.target.resolved_ty(pool);
+        let target = self.target.try_resolve_ref(pool, checker)?;
         let op = self.op.get(pool);
         if target.is_unreal() {
             return Some(Ty::Invalid);
@@ -252,7 +253,8 @@ impl ResolveNode for UnOpNode {
             Level::Error,
             format!(
                 "Cannot use operator '{}' on type {}",
-                self.op.get(pool).op(), self.target.resolved_ty(pool)
+                self.op.get(pool).op(),
+                self.target.resolved_ty(pool).unwrap_or(Ty::Invalid)
             ),
             self.span_or_builtin(pool).as_ref()
         ))
@@ -294,8 +296,8 @@ impl Node for BinOpNode {
 
 impl ResolveNode for BinOpNode {
     fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
-        let a = self.lhs.resolved_ty(pool);
-        let b = self.rhs.resolved_ty(pool);
+        let a = self.lhs.try_resolve_ref(pool, checker)?;
+        let b = self.rhs.try_resolve_ref(pool, checker)?;
         let op = self.op.get(pool);
         if a.is_unreal() || b.is_unreal() {
             return Some(Ty::Invalid);
@@ -325,8 +327,8 @@ impl ResolveNode for BinOpNode {
             format!(
                 "Cannot use operator '{}' on types {} and {}",
                 self.op.get(pool).op(),
-                self.lhs.resolved_ty(pool),
-                self.rhs.resolved_ty(pool),
+                self.lhs.resolved_ty(pool).unwrap_or(Ty::Invalid),
+                self.rhs.resolved_ty(pool).unwrap_or(Ty::Invalid),
             ),
             self.span_or_builtin(pool).as_ref()
         ))

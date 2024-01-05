@@ -340,8 +340,8 @@ pub(crate) mod delim {
     }
 
     impl<T: ResolveRef + ParseRef> ResolveNode for ParenthesizedNode<T> {
-        fn try_resolve_node(&mut self, pool: &NodePool, _: &mut Checker) -> Option<Ty> {
-            Some(self.value.resolved_ty(pool))
+        fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+            self.value.try_resolve_ref(pool, checker)
         }
     }
      
@@ -351,8 +351,8 @@ pub(crate) mod delim {
     }
 
     impl<T: ResolveRef + ParseRef> ResolveNode for BracketedNode<T> {
-        fn try_resolve_node(&mut self, pool: &NodePool, _: &mut Checker) -> Option<Ty> {
-            Some(self.value.resolved_ty(pool))
+        fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+            self.value.try_resolve_ref(pool, checker)
         }
     }
 
@@ -362,8 +362,8 @@ pub(crate) mod delim {
     }
 
     impl<T: ResolveRef + ParseRef> ResolveNode for BracedNode<T> {
-        fn try_resolve_node(&mut self, pool: &NodePool, _: &mut Checker) -> Option<Ty> {
-            Some(self.value.resolved_ty(pool))
+        fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+            self.value.try_resolve_ref(pool, checker)
         }
     }
 

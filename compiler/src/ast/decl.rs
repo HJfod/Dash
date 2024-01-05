@@ -3,7 +3,7 @@ use crate::{
     parser::parse::{SeparatedWithTrailing, DontExpect, Node, NodePool},
     add_compile_message,
     checker::{resolve::{ResolveNode, ResolveRef}, coherency::{Checker, ScopeID}, ty::Ty, entity::Entity, path},
-    shared::{src::ArcSpan, logger::{Message, Level, Note}}
+    shared::{src::ArcSpan, logger::{Message, Level, Note}}, try_resolve_ref
 };
 use super::{token::{kw, op, punct, delim, Ident}, ty::TypeExpr, expr::{Expr, IdentPath, ExprList}};
 use dash_macros::{ParseNode, ResolveNode};
@@ -18,8 +18,8 @@ pub struct LetDeclNode {
 
 impl ResolveNode for LetDeclNode {
     fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
-        let ty = self.ty.map(|(_, ty)| ty.resolved_ty(pool)).unwrap_or(Ty::Invalid);
-        let value = self.value.map(|(_, ty)| ty.resolved_ty(pool)).unwrap_or(Ty::Invalid);
+        let ty = try_resolve_ref!(self.ty, (pool, checker), Some((_, ty)) => ty);
+        let value = try_resolve_ref!(self.value, (pool, checker), Some((_, ty)) => ty);
         let vty = checker.expect_ty_eq(value, ty, self.span(pool));
         let name = self.name.get(pool).to_path(pool);
         match checker.scope().entities_mut().try_push(
@@ -86,22 +86,20 @@ pub struct FunDeclNode {
 
 impl ResolveNode for FunDeclNode {
     fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
-        println!("f0");
         let mut params = Vec::new();
         for param in self.params.get(pool).value.iter() {
             match *param.get(pool) {
                 FunParamNode::NamedParam { name, ty, default_value } => {
                     let span = param.get(pool).span(pool);
-                    let ty = ty.1.resolved_ty(pool);
-                    let v = default_value.map(|(_, ty)| ty.resolved_ty(pool)).unwrap_or(Ty::Invalid);
+                    let ty = ty.1.try_resolve_ref(pool, checker)?;
+                    let v = try_resolve_ref!(default_value, (pool, checker), Some((_, ty)) => ty);
                     checker.expect_ty_eq(ty.clone(), v, span.clone());
                     params.push((name.get(pool).to_string(), ty, span.unwrap_or(ArcSpan::builtin())));
                 }
                 FunParamNode::ThisParam { this_kw: _, ty, _invalid_value: _ } => todo!()
             }
         }
-        println!("f1");
-        let ret_ty = self.ret_ty.map(|(_, ty)| ty.resolved_ty(pool)).unwrap_or(Ty::Invalid);
+        let ret_ty = try_resolve_ref!(self.ret_ty, (pool, checker), Some((_, ty)) => ty);
         let body = {
             let _scope = checker.enter_scope(&mut self.scope);
             for (name, ty, span) in &params {
@@ -117,12 +115,13 @@ impl ResolveNode for FunDeclNode {
                     ).note(Note::new_at("Previous definition here", old_span.as_ref())));
                 }
             }
-            self.body.get(pool).value.resolved_ty(pool)
+            println!("hhh");
+            self.body.try_resolve_ref(pool, checker)?
         };
         checker.expect_ty_eq(body.clone(), ret_ty.clone(), self.body.get(pool).span(pool));
 
-        println!("f2");
-        
+        println!("hiii");
+
         let fty = Ty::Function {
             params: params.into_iter().map(|p| (Some(p.0), p.1)).collect(),
             ret_ty: ret_ty.into(),

@@ -39,12 +39,12 @@ impl ParseNode for TypeExprNode {
 }
 
 impl ResolveNode for TypeExprNode {
-    fn try_resolve_node(&mut self, pool: &NodePool, _: &mut Checker) -> Option<Ty> {
+    fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
         match self {
             Self::Optional(opt, _) => Some(Ty::Option {
-                ty: Box::new(opt.resolved_ty(pool))
+                ty: Box::new(opt.try_resolve_ref(pool, checker)?)
             }),
-            Self::Atom(atom) => Some(atom.resolved_ty(pool)),
+            Self::Atom(atom) => atom.try_resolve_ref(pool, checker),
         }
     }
 }

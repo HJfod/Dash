@@ -178,9 +178,6 @@ macro_rules! impl_tuple_parse {
                 )*
                 (!some_unresolved).then_some(Ty::Invalid)
             }
-            fn resolved_ty(&self, _: &NodePool) -> Ty {
-                Ty::Invalid
-            }
         }
     };
     ($a: ident) => {
@@ -239,9 +236,6 @@ impl<T: ResolveRef> ResolveRef for Option<T> {
     fn try_resolve_ref(&self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
         self.as_ref().map(|s| s.try_resolve_ref(pool, checker)).unwrap_or(Some(Ty::Invalid))
     }
-    fn resolved_ty(&self, pool: &NodePool) -> Ty {
-        self.as_ref().map(|s| s.resolved_ty(pool)).unwrap_or(Ty::Invalid)
-    }
 }
 
 impl<T: Ref> Ref for Vec<T> {
@@ -272,9 +266,6 @@ impl<T: ResolveRef> ResolveRef for Vec<T> {
             }
         }
         (!some_unresolved).then_some(Ty::Invalid)
-    }
-    fn resolved_ty(&self, _: &NodePool) -> Ty {
-        Ty::Invalid
     }
 }
 
@@ -318,9 +309,6 @@ impl<T: ParseRef, S: ParseRef> ParseRef for Separated<T, S> {
 impl<T: ResolveRef, S: Ref> ResolveRef for Separated<T, S> {
     fn try_resolve_ref(&self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
         self.items.try_resolve_ref(pool, checker)
-    }
-    fn resolved_ty(&self, _: &NodePool) -> Ty {
-        Ty::Invalid
     }
 }
 
@@ -372,9 +360,6 @@ impl<T: ResolveRef + ParseRef, S: Ref> ResolveRef for SeparatedWithTrailing<T, S
     fn try_resolve_ref(&self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
         self.items.try_resolve_ref(pool, checker)
     }
-    fn resolved_ty(&self, _: &NodePool) -> Ty {
-        Ty::Invalid
-    }
 }
 
 #[derive(Debug)]
@@ -401,9 +386,6 @@ impl<T: ParseRef, M: CompileMessage> ParseRef for DontExpect<T, M> {
 impl<T: ParseRef, M: CompileMessage> ResolveRef for DontExpect<T, M> {
     fn try_resolve_ref(&self, _: &NodePool, _: &mut Checker) -> Option<Ty> {
         Some(Ty::Invalid)
-    }
-    fn resolved_ty(&self, _: &NodePool) -> Ty {
-        Ty::Invalid
     }
 }
 
@@ -520,6 +502,9 @@ impl<T: ResolveNode> RefToNode<T> {
     pub fn get<'a>(&self, pool: &'a NodePool) -> std::cell::Ref<'a, T> {
         pool.get_as(self.0)
     }
+    pub fn resolved_ty(&self, pool: &NodePool) -> Option<Ty> {
+        pool.get_data(self.0).ty.clone()
+    }
 }
 
 impl<T: ResolveNode> Clone for RefToNode<T> {
@@ -557,15 +542,6 @@ impl<T: ResolveNode> ResolveRef for RefToNode<T> {
             if let Some(ty) = pool.get_data(self.0).ty.clone() {
                 return Some(ty);
             }
-            let mut some_unresolved = false;
-            for child in self.get(pool).children() {
-                if child.try_resolve_ref(pool, checker).is_none() {
-                    some_unresolved = true;
-                }
-            }
-            if some_unresolved {
-                return None;
-            }
             let ty = pool.get_as_mut::<T>(self.0).try_resolve_node(pool, checker)?;
             pool.get_data_mut(self.0).ty = Some(ty.clone());
             Some(ty)
@@ -575,8 +551,5 @@ impl<T: ResolveNode> ResolveRef for RefToNode<T> {
         }
         pool.get_data_mut(self.0).previous_resolve_state = result.is_some();
         result
-    }
-    fn resolved_ty(&self, pool: &NodePool) -> Ty {
-        pool.get_data(self.0).ty.clone().ice("resolved_ty called on an unresolved node")
     }
 }

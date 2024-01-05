@@ -11,7 +11,7 @@ use crate::{
         tokenizer::TokenIterator
     },
     shared::src::Src,
-    checker::{resolve::{ResolveNode, ResolveRef}, coherency::{Checker, ScopeID}, ty::Ty, path}
+    checker::{resolve::{ResolveNode, ResolveRef}, coherency::{Checker, ScopeID}, ty::Ty, path}, try_resolve_list
 };
 use super::{
     decl::Decl,
@@ -177,11 +177,12 @@ pub struct ExprListNode {
 impl ResolveNode for ExprListNode {
     fn try_resolve_node(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
         let _handle = checker.enter_scope(&mut self.scope);
-        self.exprs.iter_mut()
-            .map(|(e, c)| (e.resolved_ty(pool), c.get(pool).has_semicolon()))
-            .collect::<Vec<_>>()
-            .into_iter()
-            .last()
-            .and_then(|(e, c)| (!c).then_some(e).or(Some(Ty::Void)))
+        let tys = try_resolve_list!(&self.exprs, (pool, checker), (e, c) => e => (e, c));
+        if let Some((e, c)) = tys.into_iter().last() {
+            if !c.get(pool).has_semicolon() {
+                return Some(e);
+            }
+        }
+        Some(Ty::Void)
     }
 }

@@ -618,7 +618,7 @@ impl ToTokens for ResolveReceiver {
                     let ident = &v.ident;
                     try_resolve_matches.extend(quote_spanned! {
                         v.ident.span() =>
-                        Self::#ident(value) => Some(crate::checker::resolve::ResolveRef::resolved_ty(value, pool)),
+                        Self::#ident(value) => crate::checker::resolve::ResolveRef::try_resolve_ref(value, pool, checker),
                     });
                 }
                 try_resolve = quote! {
