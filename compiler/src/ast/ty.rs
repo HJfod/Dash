@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use dash_macros::{ParseNode, ResolveNode};
 use crate::{
-    parser::{parse::{ParseNode, FatalParseError, RefToNode, NodePool, Node, Ref, NodeID, ParseRef}, tokenizer::TokenIterator},
+    parser::{parse::{ParseNode, FatalParseError, RefToNode, NodePool, Node, NodeID, ParseRef}, tokenizer::TokenIterator},
     shared::src::Src,
     checker::{resolve::{ResolveNode, ResolveRef}, coherency::Checker, ty::Ty}
 };
@@ -17,10 +17,10 @@ pub enum TypeExprNode {
 pub type TypeExpr = RefToNode<TypeExprNode>;
 
 impl Node for TypeExprNode {
-    fn children(&self) -> Vec<crate::parser::parse::NodeID> {
+    fn children(&self) -> Vec<&dyn ResolveRef> {
         match self {
-            Self::Optional(ty, q) => ty.ids().into_iter().chain(q.ids()).collect(),
-            Self::Atom(atom) => atom.ids(),
+            Self::Optional(ty, q) => vec![ty, q],
+            Self::Atom(atom) => vec![atom],
         }
     }
 }

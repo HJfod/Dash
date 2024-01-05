@@ -103,7 +103,7 @@ fn impl_ast_item(
     quote! {
         #target
         impl #impl_generics crate::parser::parse::Node for #target_name #ty_generics #where_clause {
-            fn children(&self) -> Vec<crate::parser::parse::NodeID> {
+            fn children(&self) -> Vec<&dyn crate::checker::resolve::ResolveRef> {
                 #children_impl
             }
             #span_impl
@@ -237,8 +237,11 @@ pub fn token(args: TokenStream, stream: TokenStream) -> TokenStream {
                 false
             }
         },
-        quote! {
-            Default::default()
+        if args.value_is_token_tree {
+            quote! { vec![&self.value] }
+        }
+        else {
+            quote! { Default::default() }
         },
         Some(quote! {
             fn span(&self, _: &crate::parser::parse::NodePool) -> Option<crate::shared::src::ArcSpan> {
@@ -386,13 +389,17 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
                 parse_impl.extend(quote! {
                     #i: crate::parser::parse::ParseRef::parse_ref(pool, src.clone(), tokenizer)?,
                 });
-                children_impl.extend(quote! { .chain(self.#i.ids()) });
+                children_impl.extend(quote! {
+                    (&self.#i as &dyn crate::checker::resolve::ResolveRef),
+                });
             }
             else {
                 parse_impl.extend(quote! {
                     crate::parser::parse::ParseRef::parse_ref(pool, src.clone(), tokenizer)?,
                 });
-                children_impl.extend(quote! { .chain(self.#field_ix.ids()) });
+                children_impl.extend(quote! {
+                    (&self.#field_ix as &dyn crate::checker::resolve::ResolveRef),
+                });
             }
             if peek_ix < peek_count {
                 // if we are peeking more than 1 member, all but last must be 
@@ -447,8 +454,7 @@ fn field_to_tokens(data: &ast::Fields<ParseField>, self_name: Path) -> (TokenStr
             peeked == #peek_count
         },
         quote! {
-            use crate::parser::parse::Ref;
-            std::iter::empty() #children_impl .collect()
+            vec![#children_impl]
         }
     )
 }
@@ -513,7 +519,9 @@ impl ToTokens for ParseReceiver {
                                 }
                                 else {
                                     names.extend(quote! { #name, });
-                                    children.extend(quote! { .chain(#name.ids()) });
+                                    children.extend(quote! {
+                                        (#name as &dyn crate::checker::resolve::ResolveRef),
+                                    });
                                 }
                             }
                             destruct = quote! { {#names} };
@@ -528,13 +536,15 @@ impl ToTokens for ParseReceiver {
                                 }
                                 else {
                                     names.extend(quote! { #c, });
-                                    children.extend(quote! { .chain(#c.ids()) });
+                                    children.extend(quote! {
+                                        (#c as &dyn crate::checker::resolve::ResolveRef),
+                                    });
                                 }
                             }
                             destruct = quote! { (#names) };
                         };
                         children_impl.extend(quote! {
-                            Self::#v #destruct => std::iter::empty() #children .collect(),
+                            Self::#v #destruct => vec![#children],
                         });
                     }
                 }

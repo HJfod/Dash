@@ -2,7 +2,7 @@
 use std::{sync::Arc, collections::HashMap};
 use dash_macros::ParseNode;
 use crate::{
-    parser::{parse::{FatalParseError, ParseNodeFn, SeparatedWithTrailing, NodePool, RefToNode, Node, ParseRef, NodeID, Ref}, tokenizer::TokenIterator},
+    parser::{parse::{FatalParseError, ParseNodeFn, SeparatedWithTrailing, NodePool, RefToNode, Node, ParseRef, NodeID}, tokenizer::TokenIterator},
     shared::{src::{Src, ArcSpan}, logger::{Message, Level, Note}},
     checker::{resolve::{ResolveNode, ResolveRef}, coherency::Checker, ty::Ty, path}, ice
 };
@@ -44,10 +44,8 @@ impl CallNode {
 }
 
 impl Node for CallNode {
-    fn children(&self) -> Vec<NodeID> {
-        self.target.ids().into_iter()
-            .chain(self.args.ids())
-            .collect()
+    fn children(&self) -> Vec<&dyn ResolveRef> {
+        vec![&self.target, &self.args]
     }
 }
 
@@ -186,11 +184,8 @@ impl IndexNode {
 }
 
 impl Node for IndexNode {
-    fn children(&self) -> Vec<NodeID> {
-        self.target.ids().into_iter()
-            .chain(self.index.ids())
-            .chain(self.trailing_comma.ids())
-            .collect()
+    fn children(&self) -> Vec<&dyn ResolveRef> {
+        vec![&self.target, &self.index, &self.trailing_comma]
     }
 }
 
@@ -225,10 +220,8 @@ impl UnOpNode {
 }
 
 impl Node for UnOpNode {
-    fn children(&self) -> Vec<NodeID> {
-        self.op.ids().into_iter()
-            .chain(self.target.ids())
-            .collect()
+    fn children(&self) -> Vec<&dyn ResolveRef> {
+        vec![&self.op, &self.target]
     }
 }
 
@@ -288,11 +281,8 @@ impl BinOpNode {
 }
 
 impl Node for BinOpNode {
-    fn children(&self) -> Vec<NodeID> {
-        self.lhs.ids().into_iter()
-            .chain(self.op.ids())
-            .chain(self.rhs.ids())
-            .collect()
+    fn children(&self) -> Vec<&dyn ResolveRef> {
+        vec![&self.lhs, &self.op, &self.rhs]
     }
 }
 

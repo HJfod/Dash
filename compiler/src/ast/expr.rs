@@ -3,7 +3,13 @@ use std::sync::Arc;
 
 use dash_macros::{ParseNode, ResolveNode};
 use crate::{
-    parser::{parse::{Separated, ParseNode, FatalParseError, ParseNodeFn, RefToNode, NodePool, Node, ParseRef, NodeID, Ref}, tokenizer::TokenIterator},
+    parser::{
+        parse::{
+            Separated, ParseNode, FatalParseError, ParseNodeFn,
+            RefToNode, NodePool, Node, ParseRef, NodeID
+        },
+        tokenizer::TokenIterator
+    },
     shared::src::Src,
     checker::{resolve::{ResolveNode, ResolveRef}, coherency::{Checker, ScopeID}, ty::Ty, path}
 };
@@ -130,13 +136,13 @@ impl ExprNode {
 }
 
 impl Node for ExprNode {
-    fn children(&self) -> Vec<NodeID> {
+    fn children(&self) -> Vec<&dyn ResolveRef> {
         match self {
-            Self::BinOp(binop) => binop.ids(),
-            Self::UnOp(unop) => unop.ids(),
-            Self::Call(call) => call.ids(),
-            Self::Index(index) => index.ids(),
-            Self::Scalar(scalar) => scalar.ids(),
+            Self::BinOp(binop) => vec![binop],
+            Self::UnOp(unop) => vec![unop],
+            Self::Call(call) => vec![call],
+            Self::Index(index) => vec![index],
+            Self::Scalar(scalar) => vec![scalar],
         }
     }
 }

@@ -111,9 +111,9 @@ pub(crate) mod punct {
     use crate::{
         shared::{src::Src, logger::{Message, Level}},
         parser::{
-            parse::{ParseNode, FatalParseError, calculate_span, NodePool, Node, NodeID, Ref, ParseRef, RefToNode},
+            parse::{ParseNode, FatalParseError, calculate_span, NodePool, Node, NodeID, ParseRef, RefToNode},
             tokenizer::TokenIterator
-        }, checker::{resolve::ResolveNode, coherency::Checker, ty::Ty}
+        }, checker::{resolve::{ResolveNode, ResolveRef}, coherency::Checker, ty::Ty}
     };
 
     #[token(kind = "Punct", raw = ",")]
@@ -135,8 +135,8 @@ pub(crate) mod punct {
     }
 
     impl Node for TerminatingSemicolonNode {
-        fn children(&self) -> Vec<NodeID> {
-            self.semicolons.iter().flat_map(|s| s.ids()).collect()
+        fn children(&self) -> Vec<&dyn ResolveRef> {
+            vec![&self.semicolons]
         }
     }
 

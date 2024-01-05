@@ -45,11 +45,15 @@ pub struct FatalParseError;
 /// A Node that is allocated on the NodePool
 pub trait Node: AsAny {
     /// Get the children of this Node
-    fn children(&self) -> Vec<NodeID>;
+    fn children(&self) -> Vec<&dyn ResolveRef>;
 
     /// Get the span of this Node
     fn span(&self, pool: &NodePool) -> Option<ArcSpan> {
-        calculate_span(self.children().into_iter().map(|id| pool.get(id).span(pool)))
+        calculate_span(
+            self.children().into_iter()
+                .flat_map(|c| c.ids())
+                .map(|id| pool.get(id).span(pool))
+        )
     }
 
     fn span_or_builtin(&self, pool: &NodePool) -> ArcSpan {
@@ -158,6 +162,26 @@ macro_rules! impl_tuple_parse {
                 $a::peek(pos, tokenizer)
             }
         }
+
+        impl<$a: ResolveRef, $($r: ResolveRef),*> ResolveRef for ($a, $($r),*) {
+            fn try_resolve_ref(&self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+                let mut some_unresolved = false;
+                #[allow(unused_parens, non_snake_case)]
+                let ($a $(, $r)*) = &self;
+                if $a.try_resolve_ref(pool, checker).is_none() {
+                    some_unresolved = true;
+                }
+                $(
+                    if $r.try_resolve_ref(pool, checker).is_none() {
+                        some_unresolved = true;
+                    }
+                )*
+                (!some_unresolved).then_some(Ty::Invalid)
+            }
+            fn resolved_ty(&self, _: &NodePool) -> Ty {
+                Ty::Invalid
+            }
+        }
     };
     ($a: ident) => {
         impl_tuple_parse!($a;);
@@ -211,6 +235,15 @@ impl<T: ParseRef> ParseRef for Option<T> {
     }
 }
 
+impl<T: ResolveRef> ResolveRef for Option<T> {
+    fn try_resolve_ref(&self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+        self.as_ref().map(|s| s.try_resolve_ref(pool, checker)).unwrap_or(Some(Ty::Invalid))
+    }
+    fn resolved_ty(&self, pool: &NodePool) -> Ty {
+        self.as_ref().map(|s| s.resolved_ty(pool)).unwrap_or(Ty::Invalid)
+    }
+}
+
 impl<T: Ref> Ref for Vec<T> {
     fn ids(&self) -> Vec<NodeID> {
         self.iter().flat_map(|n| n.ids()).collect()
@@ -231,9 +264,9 @@ impl<T: ParseRef> ParseRef for Vec<T> {
 }
 
 impl<T: ResolveRef> ResolveRef for Vec<T> {
-    fn try_resolve_ref(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_ref(&self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
         let mut some_unresolved = false;
-        for item in self.iter_mut() {
+        for item in self.iter() {
             if item.try_resolve_ref(pool, checker).is_none() {
                 some_unresolved = true;
             }
@@ -283,7 +316,7 @@ impl<T: ParseRef, S: ParseRef> ParseRef for Separated<T, S> {
 }
 
 impl<T: ResolveRef, S: Ref> ResolveRef for Separated<T, S> {
-    fn try_resolve_ref(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_ref(&self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
         self.items.try_resolve_ref(pool, checker)
     }
     fn resolved_ty(&self, _: &NodePool) -> Ty {
@@ -336,7 +369,7 @@ impl<T: ParseRef, S: ParseRef> ParseRef for SeparatedWithTrailing<T, S> {
 }
 
 impl<T: ResolveRef + ParseRef, S: Ref> ResolveRef for SeparatedWithTrailing<T, S> {
-    fn try_resolve_ref(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_ref(&self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
         self.items.try_resolve_ref(pool, checker)
     }
     fn resolved_ty(&self, _: &NodePool) -> Ty {
@@ -366,7 +399,7 @@ impl<T: ParseRef, M: CompileMessage> ParseRef for DontExpect<T, M> {
 }
 
 impl<T: ParseRef, M: CompileMessage> ResolveRef for DontExpect<T, M> {
-    fn try_resolve_ref(&mut self, _: &NodePool, _: &mut Checker) -> Option<Ty> {
+    fn try_resolve_ref(&self, _: &NodePool, _: &mut Checker) -> Option<Ty> {
         Some(Ty::Invalid)
     }
     fn resolved_ty(&self, _: &NodePool) -> Ty {
@@ -496,13 +529,13 @@ impl<T: ResolveNode + ParseNode> ParseRef for RefToNode<T> {
 }
 
 impl<T: ResolveNode> ResolveRef for RefToNode<T> {
-    fn try_resolve_ref(&mut self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
+    fn try_resolve_ref(&self, pool: &NodePool, checker: &mut Checker) -> Option<Ty> {
         if let Some(ty) = pool.get_ty(self.0) {
             return Some(ty);
         }
         let mut some_unresolved = false;
         for child in self.get(pool).children() {
-            if pool.get_mut(child).try_resolve_node(pool, checker).is_none() {
+            if child.try_resolve_ref(pool, checker).is_none() {
                 some_unresolved = true;
             }
         }
