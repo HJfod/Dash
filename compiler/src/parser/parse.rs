@@ -1,6 +1,9 @@
 
 use std::{sync::Arc, marker::PhantomData, cell::RefCell};
-use crate::{shared::{src::{Src, ArcSpan}, logger::{LoggerRef, Message, Level, Note}}, checker::{resolve::{ResolveRef, ResolveNode}, coherency::Checker, ty::Ty}};
+use crate::{
+    shared::{src::{Src, ArcSpan}, logger::LoggerRef},
+    checker::{resolve::{ResolveRef, ResolveNode}, coherency::Checker, ty::Ty}
+};
 use super::tokenizer::TokenIterator;
 use as_any::AsAny;
 
@@ -540,19 +543,6 @@ impl<T: ResolveNode> ResolveRef for RefToNode<T> {
         })();
         if pool.get_data(self.0).previous_resolve_state != result.is_some() {
             checker.mark_some_nodes_resolve_state_changed();
-        }
-        if let Some(nid) = checker.should_warn_about_unreachable_code() {
-            checker.logger().lock().unwrap().log(Message::new(
-                Level::Warning,
-                "Unreachable code detected",
-                self.get(pool).span_or_builtin(pool).as_ref()
-            ).note(Note::new_at(
-                "This expression never results in a value",
-                pool.get(nid).span_or_builtin(pool).as_ref()
-            )));
-        }
-        if result.as_ref().is_some_and(|t| t.is_never()) {
-            checker.encountered_never(self.0);
         }
         pool.get_data_mut(self.0).previous_resolve_state = result.is_some();
         result
